@@ -1,0 +1,26 @@
+# ---- secrets（絕對不要 commit）----
+OAI_CONFIG_LIST.json
+.env
+*.key
+
+# ---- runtime 產物 ----
+misty_memory.json
+_live_test_memory.json
+_test_memory.json
+DB/
+*.wav
+*.mp3
+
+# ---- python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- AutoMisty 生成的 code（想保留當 skill library 範例就註解掉這行）----
+# code/mistyPy/generated_*.py
+
+# ---- OS / IDE ----
+.DS_Store
+.idea/
+.vscode/

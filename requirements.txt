@@ -1,0 +1,23 @@
+# Core
+openai>=1.30
+pyautogen>=0.2.30
+mediapipe>=0.10
+opencv-python>=4.9
+numpy
+
+# Misty AV / audio pipeline
+av>=12.0
+openai-whisper
+librosa
+websocket-client
+requests
+
+# AutoMisty agents
+langchain-openai
+langchain-core
+langchain-community
+
+# misc (used by CUBS_Misty / demos)
+pyfiglet
+termcolor
+pynput

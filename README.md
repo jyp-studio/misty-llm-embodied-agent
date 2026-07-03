@@ -85,8 +85,8 @@ flowchart LR
 **Requirements:** Python 3.10+, a Misty II robot on the same network, an OpenAI API key.
 
 ```bash
-git clone https://github.com/<you>/misty-embodied-agent.git
-cd misty-embodied-agent
+git clone https://github.com/jyp-studio/misty-llm-embodied-agent.git
+cd misty-llm-embodied-agent
 pip install -r requirements.txt
 
 # Configure (never commit the real file — it is gitignored)

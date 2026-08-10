@@ -1,0 +1,281 @@
+# PLAN — misty-embodied-agent 重構
+
+> 取代舊的 `HANDOFF.md`（已刪除，副本在 `~/dev/misty-embodied-agent.backup/`）。
+> 本文件是 grilling 後的定案共識，給沒有前文脈絡的新對話看的，內容自足。
+> 定案日期：2026-08-09 · 分支：`refactor/react-agent`
+
+---
+
+## 0. 一句話
+
+把一個課堂專案（LLM 驅動的 Misty II 具身 agent）重構成**完整的 ReAct agent**，移除第三方 code-gen 框架、重寫驅動層取得乾淨授權、建立無硬體的重放測試台證明並修正感知延遲缺陷，最後以 Docker + CI/CD 交付。
+
+**這是履歷作品，不是可上線的機器人系統。** 所有未經實機驗證的部分都必須誠實標註。
+
+---
+
+## 1. 前提（不可協商）
+
+| 項目 | 定案 |
+|---|---|
+| 交付定位 | 履歷作品：完整 ReAct agent + Docker + CI/CD |
+| 硬體 | **永久無實機**。`approach_user()` 從未在真機執行過 |
+| 下游使用者 | 假設無人拿真機跑；但校正參數必須可從 config 調整 |
+| 預算 | 大。開發直接呼叫真 LLM API，離線錄放測試暫不做（保留為 later） |
+| README | **最後才重寫**，不是重點 |
+| 工作方式 | 只改本地 `/Users/jyp/dev/misty-embodied-agent`，不動 GitHub |
+
+**不要提出任何需要碰硬體的方案**（包括「借 30 分鐘錄 trace」——已排除）。
+
+---
+
+## 2. 架構決定
+
+### 移除
+`Agents/`（14 檔 / 8512 行）、`AutoMisty.py`、`complex_task` 欄位與整條程式碼生成路徑。
+依賴移除：`pyautogen`、`langchain-openai`、`langchain-core`、`langchain-community`、`openai-whisper`（連帶 torch）。
+
+> 主程式對 AutoMisty 的接觸面只有兩處：`full_robot_v3.py:41` 的 import 與 `:800` 的呼叫。這是切除，不是重構。
+
+### 移到 `legacy/`（不刪，加 `.gitignore`）
+`Mistydemo/`（932K，上游展示素材）、`code/mistyPy/`（AutoMisty 的 sandbox cwd）。
+→ `CUBS_Misty.py` 的副本數從 **6 份（4 種不同 hash，已分歧）** 降為 1 份。
+
+### 保留
+`RobotCommands.py` —— **Misty Robotics 官方 Python SDK 的自動產生檔**（`GenerateRobot.py` 產出，205 個方法，docstring 全是 `docs.mistyrobotics.com` 連結），**Apache-2.0**。加上來源標頭即可合法保留。
+
+### 重寫
+`CUBS_Misty.py` 的 `Robot(RobotCommands)` 類別（AutoMisty 在官方 SDK 上加的那一層）。
+主程式對它的依賴只有 10 個符號（其中 4 個是私有的，本身就是設計異味），拆成四個子系統：
+
+| 子系統 | 現況符號 | 新位置 |
+|---|---|---|
+| 視訊 | `start_av_stream` / `stop_av_streaming` / `_video_reader_thread` / `frame_queue` | `drivers/av_stream.py` |
+| 音訊 | `_read_audio_stream` / `_process_audio` / `is_silent` / `transcript_queue` | `drivers/audio_stream.py` |
+| 事件 | `register_event`（websocket，foot-bumper e-stop） | `drivers/events.py` |
+| 基底 | `class Robot(RobotCommands)` | `drivers/robot_commands.py`（保留） |
+| ~~Whisper~~ | `load_whisper_model` | **移除**，改 API 轉錄 |
+
+實際重寫量約 200–300 行。
+
+### 目標結構
+
+```
+misty_agent/
+├── config.py                 # pydantic-settings：全範圍常數 + 跨欄位 validator
+├── drivers/
+│   ├── robot_commands.py     # Apache-2.0 官方 SDK（保留 + 來源標頭）
+│   ├── av_stream.py          # 重寫：RTSP → frame_queue（擷取時打時間戳）
+│   ├── audio_stream.py       # 重寫：音訊 → ASR adapter
+│   └── events.py             # 重寫：websocket（bumper e-stop）
+├── perception/
+│   ├── face.py               # MediaPipe 臉部 / 距離估計
+│   └── asr.py                # ASR adapter（API 為預設，介面保留可切換）
+├── agent/
+│   ├── events.py             # 事件型別 + EventBus
+│   ├── react.py              # ReAct 迴圈
+│   ├── tools.py              # 工具 schema + dispatch（註冊表模式）
+│   └── memory.py             # 三層記憶（現有邏輯搬移）
+├── control/
+│   └── approach.py           # 確定性閉環，LLM 不碰物理參數
+└── fakes/fake_robot.py
+harness/                      # 合成影格 replay（= 展示品 + 缺陷 A 的證明）
+tests/
+legacy/                       # 舊 AutoMisty 素材
+```
+
+**Python 3.11**（mediapipe wheel 支援最穩，pin 時再確認）。
+**Docker** `python:3.11-slim`，multi-stage、非 root user、base image digest 釘死。
+
+---
+
+## 3. 授權
+
+現況問題：repo 唯一的 `LICENSE` 是 **Academic Research License，著作權人是 AutoMisty 作者（Xiao Wang 等人）**，且 README 聲明原創元件也採同樣條款——等於使用者自己寫的主控迴圈、記憶系統、閉環控制器全被綁住。
+
+處置：
+
+1. **刪除**現有 `LICENSE`（移除 AutoMisty 元件後已不適用於任何東西）
+2. 全 repo 改 **Apache-2.0**（與唯一保留的第三方檔案同授權，單一授權 repo）
+3. 新增 `NOTICE`，標示 `RobotCommands.py` 來自 Misty Robotics Python SDK (Apache-2.0)，並標示修改
+4. `RobotCommands.py` 檔頭加來源與授權標頭
+
+> ⚠️ **M1 → M3 之間是過渡狀態**：`CUBS_Misty.py`（AutoMisty 衍生）在 M3 前仍留在樹裡，
+> 所以 repo **尚未**完全 Apache-2.0。原授權全文保留於 `legacy/LICENSE.AutoMisty`，
+> `NOTICE` 明確列出「已移除」與「仍存在」兩份清單。**M3 完成時必須更新 `NOTICE`。**
+>
+> 著作權人：`Chieh-Yu Pan`（`LICENSE` 與 `NOTICE` 兩處）。
+
+**工具描述必須自己寫。** AutoMisty paper 的「136 個 optimized APIs 加完整文件」實體在 `Agents/MistyActionAgent.py`(92K) 與 `MistyPerceptionAgent.py`(96K) 的 prompt 裡，在他們的授權底下。來源改用官方 `docs.mistyrobotics.com`（照官方文件寫參數語意是照抄事實，不是抄他們的文字）。
+
+> 順帶清掉：`CUBS_Misty.py:24` 有一行 `sys.path.append("/Users/xiaowang/Documents/AutoMisty/...")`；`:22,25` 是壞的自我 import（`from RobotCommands import RobotCommands` 三行後被 `from CUBS_Misty import RobotCommands` 蓋掉）。
+
+---
+
+## 4. ReAct 設計
+
+### 機制
+- **OpenAI function calling**（模型端保證結構，天然提供 `tool` role 的 observation 回填位置）
+- 工具集 **12 個左右**，註冊表模式（decorator 註冊），加工具 = 一個函式 + 一份 schema，不動 `react.py`
+- `MAX_REACT_STEPS = 5` —— **初值，用事件流量測後修正**
+- **無獨立快路徑**：LLM 第一輪就能輸出 `done`（自主終止本來就是 ReAct 判準之一，硬編碼特例等於自廢武功）
+- **必須保留 step cap**：目前系統最強的性質是「每個 episode 可證明回到 IDLE」，ReAct 化最容易弄丟這個
+
+### 分層開放（工具集邊界）
+```
+直接開放（加參數 clamp）：display_image(表情) / move_arms / move_head /
+                          change_led / play_audio / speak / look_around
+高階意圖（走確定性閉環）：approach / back_up      ← LLM 不碰 velocity / timeMs
+終止：                    done
+```
+
+**分層原則是硬的**：LLM 決定「要不要接近、失敗了改做什麼」，控制層決定「這一步走幾公分」。
+讓 LLM 直接算「速度 × 時間」正是 README 開頭批判的事，也是專案最站得住腳的設計主張。
+
+AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 ReAct step 裡組合 `move_arms` + `change_led` + `play_audio`。比 code-gen 更好——有界、可觀測、不執行任意 Python、每步都有 observation。
+
+### Observation 的組成
+每步 observation = **動作結果 + 便宜的感知快照**：
+```jsonc
+{"result": "arrived", "distance_cm": 63,
+ "face_present": true, "new_speech": null}
+```
+距離、臉在不在、transcript queue 有無新句子——**三樣都已經在跑，零額外 LLM 呼叫、零額外延遲**。
+不做每步重跑 VLM（每步 +1–2 秒，而 5–10 秒的 episode 內場景幾乎不變）。
+
+**連帶必須處理**：目前 ACT 期間整段 `perception.pause()`，新語音進不來。要把抑制範圍縮小到**只在 TTS 播放期間**（用 `speak` 回傳的 `spoken_ms` 當抑制窗）。可在 harness 測：餵「機器人講話期間使用者插話」情境，斷言插話有收到、自己的話沒有。
+
+### 結構化事件流（`agent/events.py`）
+每件值得記錄的事發出有型別的紀錄，終端機輸出退化成其中一個渲染器：
+```jsonl
+{"t":12.34,"type":"llm_call","step":1,"latency_ms":1840,"tokens":{"in":1203,"out":47}}
+{"t":14.18,"type":"tool_call","step":1,"tool":"approach","args":{}}
+{"t":19.02,"type":"observation","step":1,"result":"arrived","distance_cm":63}
+{"t":19.90,"type":"episode_done","steps":2,"total_latency_ms":5600}
+```
+一個模組同時餵養三件已決定要做的事：LLM 決策測試的斷言標的、延遲與步數量測、未來 web UI（只是另一個訂閱者，agent code 一行不改）。
+
+---
+
+## 5. 已確認的缺陷與處置
+
+以下皆為**已驗證**，非猜測。
+
+### A. 閉環實際上是開環——距離讀數是過期的（最嚴重）
+- **A1** `frame_queue` 無界（`CUBS_Misty.py:115`），producer 每幀 put 只 sleep 10ms（`:323`），consumer 每幀跑 MediaPipe（30–50ms，`full_robot_v3.py:292`）→ **queue 單調成長 + 記憶體單調成長**
+- **A2** 時間戳蓋在「處理當下」而非「擷取當下」（`full_robot_v3.py:299`）→ `get_distance(max_age_sec=2.0)` 的 age filter **在檢查錯的東西**：只保證「2 秒內算出來」，不保證「2 秒內拍的」
+- **A3** 移動後沒作廢舊樣本：`_flush()`（`:264`）清了 `frame_queue`/`transcript_queue`/`visual_events`/`audio_events`，**獨漏 `_distance_samples`**；而 `deque(maxlen=9)` 的中位數會被移動前樣本主導
+
+**修法**：consumer 只處理最新幀（drain 到空取最後一張，或 `maxsize=1` 丟舊）+ 時間戳在擷取時打上並隨幀傳遞 + `approach` 每步後清 `_distance_samples` 並等 ≥2 筆新樣本。
+
+> ⚠️ 這是**正確性**問題，不是效能問題。**不做效能最佳化**（不調 MediaPipe 參數、不換模型），只修正時間語意。
+
+> 現有測試抓不到的原因：`test_sim.py` 的 `FakePerception.get_distance()` 直接回傳世界瞬時真值加雜訊——零延遲、零積壓，等於把要測的東西假設掉了。
+
+### B. `MIN_SAFE_DISTANCE_CM` 是 dead code
+已窮舉驗證：進入 `direction > 0` 需 `delta > 12` 即 `d > 72`，此時 `max_forward = d − 45 > 27` 恆成立 → `full_robot_v3.py:714-717` 分支不可達，clamp 從未生效。真正防撞的是 0.7 gain。
+且它 clamp 的是**命令距離**而非**實際行走距離**，擋不住校準誤差超衝（實速為校準值 2 倍時模擬會突破 45cm 至 44.0）。
+→ **實作成真正生效的邊界**（門檻值 config 化後它不再是死碼）。
+
+### C. `max(8.0, ...)` 是 dead code 兼未爆彈
+`full_robot_v3.py:706`：`abs(delta) > 12` ⟹ `abs(delta)×0.7 > 8.4 > 8`，下限永不生效。
+但 `DISTANCE_TOLERANCE_CM` 一旦調到 11 以下就會活過來，而**後退方向完全沒有 clamp** → 後退超衝 → 來回震盪至 step cap。
+→ **實作 + 補後退方向的 clamp**。
+
+### D. 動作回傳值被完全丟棄
+`approach_user()` 回傳 `arrived`/`lost_user`/`timeout`/`drive_error`，`full_robot_v3.py:784` 直接丟掉，memory 也沒記錄。
+→ **在重寫後自動消失**：工具層本來就回傳結構化結果並寫回 memory。
+
+### E. 第一輪就放棄
+`full_robot_v3.py:693`：`get_distance` 需 ≥2 筆樣本，剛 `pause()` 完常不足 → 第一輪直接 `return "lost_user"`，零重試。
+→ 先 poll 1–2 秒再判定。
+
+---
+
+## 6. 測試與驗證策略
+
+### replay harness（`harness/`）—— 專案中軸
+**一份工作交付四件事**：可跑的 demo、缺陷 A 的證明、ReAct 的 observation 來源、CI 能跑的東西。
+
+**影格來源**：CC0 授權人臉圖 + 程式按已知比例縮放貼到畫布。
+→ MediaPipe **真的偵測得到**（耗時真實發生）+ 真值距離**精確已知** + 完全可重現 + 零外部素材。
+（純合成色塊 MediaPipe 偵測不到；繞過 MediaPipe 則把主因假設掉，重蹈 `test_sim.py` 的錯。）
+
+**主斷言**：`get_distance()` 讀數落後真值的秒數（互相關估計），p95。
+**門檻先量再定**——先跑一次量出現況，再訂在「修好後實測值 × 安全係數」。
+**修復前必須是紅的**（先證明缺陷存在，再修），否則等於沒證明。
+
+**診斷指標**（不掛門檻）：queue 深度上界、幀齡 p95。
+
+### 可量測 vs 不可量測的分界
+```
+[真值] ─ 相機曝光 → Misty 編碼 → RTSP over WiFi ─▶ [進 process] ─ put/queue/MediaPipe/deque ─▶ [get_distance()]
+        └────────── 截段 A：需要硬體，量不到 ──────┘  └──────── 截段 B：100% 在 Python 裡，可精確量測 ────┘
+```
+**缺陷 A1/A2/A3 全部在截段 B。** harness 注入影格的位置正是 RTSP 交付的位置。
+截段 A → `SENSOR_TRANSPORT_LAG_S` config 參數，標 `# UNCALIBRATED`，並用它做**參數掃描畫出控制律的魯棒邊界**（比單點數字更有說服力，且是無硬體下能做出的最強結果）。
+
+### LLM 決策測試
+**不變量斷言**（斷言事件流），非金標準文字比對：
+- 「這個情境必須在 ≤3 步內 `done`」
+- 「第一步必須是 `speak` 而非 `approach`」
+- 「使用者說『別過來』時，整個 episode 不得出現 `approach`」
+
+不會因 GPT-4o 換句話說而變紅。
+
+### 其他
+- `test_sim.py`（現為自寫的 28 案例 runner，非 pytest）→ **遷移到 pytest**
+- 驅動層 → **契約測試**：對照官方 REST/WebSocket 文件驗證送出的 HTTP 請求格式。**證明請求格式正確，不證明機器人會照做**——這條線寫進 README
+- `FakeRobot.__getattr__` 對未定義方法回 noop，等於假設所有 API 呼叫成功 → `drive_error` 路徑從未被執行，需補錯誤注入
+
+### CI（`.github/workflows/`）
+- **每個 push**：`ruff` + `pytest` + `docker build`
+- **不加 mypy**（codebase 大量動態屬性，投報率低，等主體穩了再說）
+- **真 LLM 測試** → `workflow_dispatch` 手動觸發，**不擋 merge**
+  （CI 必須免費、確定性；一個會因為模型心情變紅的 CI 等於沒有 CI）
+- 離線錄放（把手動 workflow 的輸出存成 fixture）保留為 later，不是現在
+
+---
+
+## 7. 執行順序
+
+> **順序更正**：原 `HANDOFF` 的 `D → A → ReAct` 建立在「修補現有 code」的假設上。改成重寫後缺陷 D 自動消失，實際順序如下。
+
+| | 里程碑 | 產出 |
+|---|---|---|
+| **M0** | 安全網 | 目錄備份至 `~/dev/misty-embodied-agent.backup`；分支 `refactor/react-agent` ✅ |
+| **M1** | 清理與授權 | 移除 `Agents/`+`AutoMisty.py`；`Mistydemo/`+`code/mistyPy/` → `legacy/`；Apache-2.0 + NOTICE + 檔頭；requirements 部分瘦身 ✅ |
+| **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator |
+| **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 |
+| **M4** | harness | 合成影格 + 真值軌跡；量現況延遲曲線 **← 此時應為紅** |
+| **M5** | 修缺陷 A | 只處理最新幀 / 時間戳隨幀傳遞 / 每步清 `_distance_samples` → **harness 轉綠 + before/after 對照表** |
+| **M6** | 控制層 | 缺陷 B（真安全底線）、C（後退 clamp）、E（重試） |
+| **M7** | 事件流 | `agent/events.py`；`test_sim.py` 遷 pytest |
+| **M8** | ReAct | `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗） |
+| **M9** | 部署 | Docker multi-stage + CI workflows |
+| **M10** | 文件 | README 與架構圖重寫 |
+| **M11** | 收尾 | 開新 repo，乾淨歷史匯入 |
+
+---
+
+## 8. 必須誠實標註的未驗證邊界（寫進 README）
+
+- 驅動層 HTTP / WebSocket 請求格式 —— 只有契約測試，**無實機驗證**
+- `CM_PER_SEC_AT_PERCENT`（實際驅動速度）
+- `FOCAL_LENGTH`（相機焦距常數）
+- `SENSOR_TRANSPORT_LAG_S`（相機→process 的傳輸延遲）
+- 馬達 deadband（20% 會不會根本不動）
+- RTSP 端到端延遲的真實數量級
+- ASR 在 Misty 麥克風 + 環境噪音下的辨識率
+- `drive_time` 執行中再下指令的實際行為
+- **`approach_user()` 從未在真機執行過**（公開 demo 的 planner 輸出是 `movement: "stay"`）
+
+處理原則：不試圖「測」這些，而是 ①隔離成明確標註的校正參數，②用參數掃描證明控制律對其誤差的魯棒範圍，③在 README 誠實區分**已模擬驗證** vs **未實機驗證**。
+
+---
+
+## 9. 環境備註
+
+- 專案路徑 `/Users/jyp/dev/misty-embodied-agent`（**不是** `FocusCompany`）
+- 備份 `/Users/jyp/dev/misty-embodied-agent.backup`（含刪除前的 `HANDOFF.md`）
+- 只改本地，**不動 GitHub**；`origin/main` 維持原狀直到 M11

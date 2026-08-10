@@ -103,6 +103,8 @@ def load_api_key() -> str:
 # this file (and test_sim.py) reads unchanged; they disappear as the code moves
 # into the misty_agent package.
 from misty_agent.config import settings
+from misty_agent.control import step_policy
+from misty_agent.control.step_policy import plan_step
 
 ROBOT_IP = settings.robot_ip
 LLM_MODEL = settings.llm_model
@@ -285,7 +287,7 @@ class MistySmartPerception:
 
     def _visual_watchdog(self):
         last_trigger_time = 0
-        TRIGGER_COOLDOWN = 3.0
+        TRIGGER_COOLDOWN = settings.trigger_cooldown_s
         while self.is_running:
             try:
                 frame = self.robot.frame_queue.get(timeout=1.0)
@@ -477,7 +479,7 @@ class ConversationMemory:
                                f"NEW DIALOGUE:\n{text}",
                 }],
                 max_tokens=200,
-                temperature=0.2,
+                temperature=settings.memory_summary_temperature,
             )
             self.summary = resp.choices[0].message.content.strip()
         except Exception:
@@ -502,7 +504,7 @@ class ConversationMemory:
                                f"User: {user_text}\nMisty: {misty_reply}",
                 }],
                 max_tokens=150,
-                temperature=0.0,
+                temperature=settings.memory_fact_temperature,
             )
             raw = resp.choices[0].message.content.strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -587,7 +589,7 @@ RULES:
                     {"role": "system", "content": self.SYSTEM_PROMPT},
                     {"role": "user", "content": user_msg},
                 ],
-                temperature=0.5,
+                temperature=settings.llm_temperature,
                 response_format={"type": "json_object"},
             )
             decision = json.loads(resp.choices[0].message.content)
@@ -688,29 +690,27 @@ class MistyBodyController:
                 self._stop_drive()
                 return "lost_user"
 
-            delta = d - target_cm
-            if abs(delta) <= DISTANCE_TOLERANCE_CM:
+            # The step decision lives in misty_agent.control.step_policy so
+            # that this loop, the reachability analysis and the tests all read
+            # the same implementation.
+            outcome = plan_step(d, settings)
+
+            if outcome is step_policy.ARRIVED:
                 print(f"   ✅ [Approach] arrived ({d}cm)")
                 self._stop_drive()
                 return "arrived"
 
-            # At most MAX_STEP_CM per step, and only 70% of the remaining
-            # delta, to avoid overshooting on the final step.
-            step_cm = max(settings.min_step_cm,
-                          min(MAX_STEP_CM, abs(delta) * settings.approach_gain))
-            direction = 1 if delta > 0 else -1  # too far -> forward; too close -> back
+            if outcome is step_policy.INSIDE_FLOOR:
+                print(f"   🛑 [Approach] inside safety floor ({d}cm), not advancing")
+                self._stop_drive()
+                return "arrived"
 
-            # The safety floor constrains FORWARD motion only: a forward step
-            # may never cross MIN_SAFE. If the user is closer than the target,
-            # delta is negative and the normal backward branch opens distance.
-            if direction > 0:
-                max_forward = d - MIN_SAFE_DISTANCE_CM
-                if max_forward <= 0:
-                    print(f"   🛑 [Approach] inside safety floor ({d}cm), not advancing")
-                    self._stop_drive()
-                    return "arrived"
-                step_cm = min(step_cm, max_forward)
+            step_cm = outcome.commanded_cm
+            direction = outcome.direction
 
+            # This is the only place a calibration constant turns a distance
+            # into a robot command — and the only place the command can differ
+            # from the distance actually travelled (PLAN.md defect B).
             t_ms = int(step_cm / CM_PER_SEC_AT_PERCENT * 1000)
 
             print(f"   🚗 step {step_i+1}: distance {d}cm, moving "

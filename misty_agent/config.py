@@ -14,6 +14,10 @@ tolerate large errors in them; the replay harness sweeps them to show how large.
 *Control-law parameters* are pure software. Their correctness is provable from
 the code, and the cross-field validators at the bottom of this module encode
 the relationships that must hold between them.
+
+This module holds data and its invariants, nothing else. The control law that
+consumes these values — and the analysis of which of its branches are reachable
+— lives in ``misty_agent.control.step_policy``.
 """
 
 from __future__ import annotations
@@ -50,7 +54,18 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         description="Cheaper model used for summarization and fact extraction.",
     )
-    llm_temperature: float = Field(default=0.5, ge=0.0, le=2.0)
+    llm_temperature: float = Field(
+        default=0.5, ge=0.0, le=2.0,
+        description="Sampling temperature for the decision call.",
+    )
+    memory_summary_temperature: float = Field(
+        default=0.2, ge=0.0, le=2.0,
+        description="Summarization tolerates a little variation.",
+    )
+    memory_fact_temperature: float = Field(
+        default=0.0, ge=0.0, le=2.0,
+        description="Fact extraction must not invent; keep it deterministic.",
+    )
 
     # ------------------------------------------------------------------
     # Memory
@@ -180,6 +195,17 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Interaction
+    # ------------------------------------------------------------------
+    trigger_cooldown_s: float = Field(
+        default=3.0, gt=0.0,
+        description=(
+            "Minimum gap between two gaze triggers, so one sustained look "
+            "does not fire an episode every frame."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # ReAct loop
     # ------------------------------------------------------------------
     max_react_steps: int = Field(
@@ -220,65 +246,5 @@ class Settings(BaseSettings):
             )
 
         return self
-
-    # ------------------------------------------------------------------
-    # Derived properties — used by the control layer and by tests that
-    # assert on which branches are reachable (PLAN.md defects B and C).
-    # ------------------------------------------------------------------
-    @property
-    def min_forward_trigger_cm(self) -> float:
-        """Smallest distance at which a FORWARD step is taken.
-
-        The loop only moves forward when ``delta > distance_tolerance_cm``,
-        i.e. when the measured distance exceeds this value.
-        """
-        return self.target_distance_cm + self.distance_tolerance_cm
-
-    @property
-    def safety_floor_is_reachable(self) -> bool:
-        """Whether the ``max_forward <= 0`` guard can ever fire.
-
-        It fires only if a forward step is triggered while already inside the
-        floor, which requires ``min_safe_distance_cm > min_forward_trigger_cm``.
-
-        This is always False for any configuration this class accepts: the
-        validator above demands ``target - tolerance > min_safe``, and the
-        guard needs ``min_safe > target + tolerance``; together they imply
-        ``tolerance < 0``, which the field constraints forbid. The runtime
-        guard is therefore redundant — the invariant is enforced here instead.
-
-        Note this does NOT dispose of PLAN.md defect B. The floor clamps the
-        *commanded* distance, not the *travelled* distance; calibration error
-        can still carry the robot past it. That is M6's problem.
-        """
-        return self.min_safe_distance_cm > self.min_forward_trigger_cm
-
-    @property
-    def forward_clamp_is_reachable(self) -> bool:
-        """Whether ``min(step_cm, max_forward)`` ever actually clamps.
-
-        Solving ``d - min_safe < (d - target) * gain`` for ``d`` gives
-        ``d < (min_safe - gain*target) / (1 - gain)``. The clamp bites only if
-        that bound exceeds the smallest distance at which a forward step
-        happens. False at the default values — this is PLAN.md defect B.
-        """
-        if self.approach_gain >= 1.0:
-            return True
-        bound = (
-            self.min_safe_distance_cm - self.approach_gain * self.target_distance_cm
-        ) / (1.0 - self.approach_gain)
-        return bound > self.min_forward_trigger_cm
-
-    @property
-    def min_step_is_reachable(self) -> bool:
-        """Whether the ``max(min_step_cm, ...)`` lower bound ever binds.
-
-        A step is only taken when ``abs(delta) > distance_tolerance_cm``, so
-        the gain term is always greater than
-        ``distance_tolerance_cm * approach_gain``. False at the default
-        values — this is PLAN.md defect C.
-        """
-        return self.distance_tolerance_cm * self.approach_gain < self.min_step_cm
-
 
 settings = Settings()

@@ -108,7 +108,8 @@ legacy/                       # 舊 AutoMisty 素材
 
 **工具描述必須自己寫。** AutoMisty paper 的「136 個 optimized APIs 加完整文件」實體在 `Agents/MistyActionAgent.py`(92K) 與 `MistyPerceptionAgent.py`(96K) 的 prompt 裡，在他們的授權底下。來源改用官方 `docs.mistyrobotics.com`（照官方文件寫參數語意是照抄事實，不是抄他們的文字）。
 
-> 順帶清掉：`CUBS_Misty.py:24` 有一行 `sys.path.append("/Users/xiaowang/Documents/AutoMisty/...")`；`:22,25` 是壞的自我 import（`from RobotCommands import RobotCommands` 三行後被 `from CUBS_Misty import RobotCommands` 蓋掉）。
+> `CUBS_Misty.py:24` 有一行 `sys.path.append("/Users/xiaowang/Documents/AutoMisty/...")`；`:22,25` 是壞的自我 import（`from RobotCommands import RobotCommands` 三行後被 `from CUBS_Misty import RobotCommands` 蓋掉）。
+> **明確延後到 M3**（M2 code review 指出這條原本掛在 M1 底下）：該檔案在 M3 會被整個取代，現在編輯它是白工，而且它在 M3 前仍受上游授權管轄——改動別人授權下的檔案只為刪三行沒有意義。
 
 ---
 
@@ -176,12 +177,14 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 已窮舉驗證：進入 `direction > 0` 需 `delta > 12` 即 `d > 72`，此時 `max_forward = d − 45 > 27` 恆成立 → `full_robot_v3.py:714-717` 分支不可達，clamp 從未生效。真正防撞的是 0.7 gain。
 且它 clamp 的是**命令距離**而非**實際行走距離**，擋不住校準誤差超衝（實速為校準值 2 倍時模擬會突破 45cm 至 44.0）。
 
-**M2 更新——原本「config 化後它不再是死碼」的推論是錯的。** `config.py` 的 validator 要求
+**M2 更新——原本「config 化後它不再是死碼」的預測，被 M2 的一個設計選擇擋掉了（不是原分析算錯）。** `config.py` 的 validator 要求
 `target − tolerance > min_safe`，而該分支可達需要 `min_safe > target + tolerance`；兩者相加得
 `tolerance < 0`，與欄位約束矛盾。**所以那個 runtime guard 對任何合法 config 都不可達**——
-不是「在預設值下是死碼」，是**由構造保證的死碼**。已由 `tests/test_config.py` 的組合掃描證明。
+不是「在預設值下是死碼」，是**由構造保證的死碼**。已由 `tests/test_step_policy.py` 的組合掃描證明。
 
-這其實是好結果：不變量提前到 config 載入時強制，比在執行期擺一個永不觸發的 guard 假裝有防護強。
+措辭上要誠實：**guard 不可達是因為 M2 選了那條 validator**，不是因為原本的分析有誤。沒有那條 validator，config 化確實會讓它復活。這是一個設計決定，不是一個發現。
+
+而這個決定是好的：不變量提前到 config 載入時強制，比在執行期擺一個永不觸發的 guard 假裝有防護強。
 
 → **M6 的工作因此改變**：不是「讓 guard 活起來」，而是
 ①把 guard 改成明示的不可達斷言（或移除並在註解指向 validator），
@@ -256,6 +259,7 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 | **M0** | 安全網 | 目錄備份至 `~/dev/misty-embodied-agent.backup`；分支 `refactor/react-agent` ✅ |
 | **M1** | 清理與授權 | 移除 `Agents/`+`AutoMisty.py`；`Mistydemo/`+`code/mistyPy/` → `legacy/`；Apache-2.0 + NOTICE + 檔頭；requirements 部分瘦身 ✅ |
 | **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator ✅ |
+| **M2.5** | code review | 兩軸 review（Standards / Spec）+ 修正，見 §10 ✅ |
 | **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 |
 | **M4** | harness | 合成影格 + 真值軌跡；量現況延遲曲線 **← 此時應為紅** |
 | **M5** | 修缺陷 A | 只處理最新幀 / 時間戳隨幀傳遞 / 每步清 `_distance_samples` → **harness 轉綠 + before/after 對照表** |
@@ -289,3 +293,32 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 - 專案路徑 `/Users/jyp/dev/misty-embodied-agent`（**不是** `FocusCompany`）
 - 備份 `/Users/jyp/dev/misty-embodied-agent.backup`（含刪除前的 `HANDOFF.md`）
 - 只改本地，**不動 GitHub**；`origin/main` 維持原狀直到 M11
+
+---
+
+## 10. M2.5 — code review 的結果
+
+用 mattpocock `code-review`（Standards + Spec 兩軸，平行 sub-agent）審 `e0bfa37...HEAD`。
+repo 無自訂規範文件，故 Standards 軸只適用 Fowler smell baseline，**零硬性違規**。
+
+### 已修
+
+| # | 軸 | 問題 | 處置 |
+|---|---|---|---|
+| 1 | Spec (c) | **`forward_clamp_is_reachable` 對合法 config 回答錯誤。** 閉式解只模型化 gain 項，漏了 `min_step_cm` 會把命令步長抬高。反例 `min_step_cm=30`：d=73 時命令 30cm 對上 headroom 28cm，clamp 確實生效，但屬性回 `False`。 | 三個 reachability 函式改為**掃描真實的 `plan_step`**，不再用手推閉式解——這消滅了整類代數推導錯誤。回歸測試 `test_forward_clamp_reachability_accounts_for_the_min_step_floor`。 |
+| 2 | Standards #4 | **控制律在測試裡被手抄一份**，真實控制律改變時副本會默默分歧而測試照樣綠。 | 抽出 `misty_agent/control/step_policy.py`，`plan_step()` 成為唯一實作，三個消費者（`approach_user`、reachability 分析、測試）共用。 |
+| 3 | Spec (b) | reachability 分析寫在 `config.py` 裡是 scope creep，且分層不對。 | 移到 `control/step_policy.py`。`config.py` 現在只有資料與不變量。 |
+| 4 | Spec (a) | `llm_temperature` 宣告了卻沒接線；`TRIGGER_COOLDOWN=3.0` 與記憶呼叫的 `temperature=0.2/0.0` 仍是字面值。**宣告了卻沒接線比字面值更糟——它看起來可調，實際不可調。** | 全部接線，並新增 `memory_summary_temperature` / `memory_fact_temperature` / `trigger_cooldown_s`。 |
+| 5 | Standards #1 | `.env.example` 把 `MISTY_MAX_REACT_STEPS` 當成能用的東西宣傳。 | 獨立成「DECLARED BUT NOT YET WIRED」區塊並註解掉，標明各自落在哪個里程碑。 |
+| 6 | Spec (a) | `CUBS_Misty.py` 的三行清理掛在 §3（M1），但沒做。 | §3 改為**明確延後到 M3** 並寫出理由。 |
+| 7 | Spec | §5-B 的「原本的推論是錯的」把一個設計選擇說成發現。 | 改寫成「被 M2 的一個設計選擇擋掉了（不是原分析算錯）」。 |
+
+### 已知未修（刻意）
+
+- **Middle Man / Shotgun Surgery**：`full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派，留下同一份資料的兩條存取路徑。**刻意保留**——`full_robot_v3.py` 會在 M3–M8 被拆進 `misty_agent/`，屆時整個區塊消失。現在改只是把同一份工作做兩次。
+- **Data Clumps**：六個控制律欄位總是一起旅行，`ApproachPolicy` 子模型想被生出來。M6 重寫控制層時一併處理。
+- **import 時凍結的預設值**：`get_distance(max_age_sec=settings.distance_max_age_s)` 在 import 時綁定。`settings` 是 frozen 且 process-global，目前無害。
+
+### 尚未做的另一軸
+
+**內建 `/code-review` 沒跑過。** 它找的是正確性 bug（失敗情境、崩潰、邏輯錯誤），與上面兩軸完全不重疊。這是 M3 開始前建議補的一步——而且它是**使用者手動觸發**的，agent 不能代跑。

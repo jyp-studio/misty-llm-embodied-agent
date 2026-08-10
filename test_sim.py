@@ -5,7 +5,7 @@ test_sim.py — Hardware-free simulation tests.
 Usage:  python test_sim.py   (from the project root)
 
 How it works:
-  - cv2 / mediapipe / openai / CUBS_Misty are stubbed, so no heavy
+  - cv2 / mediapipe / openai are stubbed, so no heavy
     dependencies, no API key and no robot are required.
   - A 1-D "simulated world" models the user's distance. FakeRobot.drive_time()
     changes that distance according to a TRUE speed (which may differ from the
@@ -74,9 +74,9 @@ class FakeOpenAI:
 
 openai_m.OpenAI = FakeOpenAI
 
-_stub_module("requests").post = lambda *a, **k: None
-
-# CUBS_Misty is absent -> full_robot_v3 falls back to its mock branch.
+# `requests` is NOT stubbed: misty_agent.drivers.robot_commands imports names
+# from it at module load. Nothing here sends a request — the tests below drive
+# FakeRobot, and the drivers are never started.
 
 # Speed-up: make time.sleep a no-op.
 import time as _time

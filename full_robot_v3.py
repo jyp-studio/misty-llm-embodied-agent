@@ -59,25 +59,23 @@ except ImportError:
     print("❌ Missing dependency: pip install openai")
     raise SystemExit(1)
 
-try:
-    from CUBS_Misty import Robot
-    print("✅ CUBS_Misty imported")
-    MOCK_MODE = False
-except ImportError:
-    print("⚠️ CUBS_Misty not found — running in mock mode")
-    MOCK_MODE = True
+from misty_agent.drivers import (
+    AudioStream,
+    AvSession,
+    EventStream,
+    RobotCommands,
+    RtspVideoStream,
+    VideoSource,
+    event_condition,
+)
+from misty_agent.fakes import RecordingCommands
+from misty_agent.perception.asr import OpenAITranscriber
 
-    class Robot:  # minimal mock for running the pipeline without hardware
-        def __init__(self, ip):
-            self.ip = ip
-            self._stop_event = threading.Event()
-            self.frame_queue = queue.Queue()
-            self.transcript_queue = queue.Queue()
-
-        def __getattr__(self, name):
-            def _mock(*args, **kwargs):
-                print(f"  🤖 [Mock] {name}({args}, {kwargs})")
-            return _mock
+# Set MISTY_MOCK=1 to run the whole pipeline with no robot on the network:
+# commands are recorded instead of sent. The sensor streams still try to open
+# RTSP and simply deliver nothing, which is the honest simulation of a robot
+# that is not there. The replay harness (M4) is what feeds them real frames.
+MOCK_MODE = os.environ.get("MISTY_MOCK", "").strip() not in ("", "0", "false")
 
 
 def load_api_key() -> str:
@@ -189,10 +187,10 @@ class MistySmartPerception:
     - get_distance() returns the median of recent samples (noise rejection).
     """
 
-    def __init__(self, robot_instance: Robot, api_key: str):
-        self.robot = robot_instance
+    def __init__(self, video: VideoSource, audio: AudioStream, api_key: str):
+        self.video = video
+        self.audio = audio
         self.client = OpenAI(api_key=api_key)
-        self.robot.load_whisper_model()
         self.detector = HumanDetector()
         self.latest_frame = None
         self.visual_events = queue.Queue()
@@ -205,53 +203,28 @@ class MistySmartPerception:
 
     # ---------- lifecycle ----------
 
-    def _force_kill_av_services(self):
-        """Reset Misty's AV services over HTTP once, before starting."""
-        import requests
-        ip = self.robot.ip
-        print(f"   ☠️ [System] Resetting Misty AV services ({ip})...")
-        try:
-            requests.post(f"http://{ip}/api/avstreaming/disable", json={}, timeout=2)
-            requests.post(f"http://{ip}/api/audio/recording/stop", json={}, timeout=2)
-        except Exception as e:
-            print(f"   ⚠️ Cannot reach Misty API: {e}")
-
     def start(self):
         """Called exactly once per process."""
         if self.is_running:
             return
-        if not MOCK_MODE:
-            self._force_kill_av_services()
-            time.sleep(2.0)
-
-        self.robot._stop_event.clear()
         self._flush()
 
         print("   (starting AV stream...)")
         try:
-            self.robot.start_av_stream()
+            self.video.start()
+            self.audio.start()
         except Exception as e:
             print(f"\n❌ [Fatal] Cannot connect to the camera: {e}")
             return
 
         self.is_running = True
-        threads = [
-            threading.Thread(target=self.robot._video_reader_thread, daemon=True),
-            threading.Thread(target=self.robot._read_audio_stream, daemon=True),
-            threading.Thread(target=self.robot._process_audio, daemon=True),
-            threading.Thread(target=self._visual_watchdog, daemon=True),
-            threading.Thread(target=self._audio_watchdog, daemon=True),
-        ]
-        for t in threads:
-            t.start()
+        for target in (self._visual_watchdog, self._audio_watchdog):
+            threading.Thread(target=target, daemon=True).start()
 
     def shutdown(self):
         self.is_running = False
-        self.robot._stop_event.set()
-        try:
-            self.robot.stop_av_streaming()
-        except Exception:
-            pass
+        self.audio.stop()
+        self.video.stop()
 
     def pause(self):
         """Suspend event triggering during actions; distance keeps updating."""
@@ -263,8 +236,9 @@ class MistySmartPerception:
         self.paused = False
 
     def _flush(self):
-        for q_ in (self.robot.frame_queue, self.robot.transcript_queue,
-                   self.visual_events, self.audio_events):
+        self.video.flush()
+        self.audio.flush()
+        for q_ in (self.visual_events, self.audio_events):
             try:
                 while not q_.empty():
                     q_.get_nowait()
@@ -290,7 +264,13 @@ class MistySmartPerception:
         TRIGGER_COOLDOWN = settings.trigger_cooldown_s
         while self.is_running:
             try:
-                frame = self.robot.frame_queue.get(timeout=1.0)
+                captured = self.video.read(timeout=1.0)
+                if captured is None:
+                    continue
+                # captured.captured_at is deliberately ignored here: rewiring
+                # the age filter onto it is the M5 fix for defect A2, and M4's
+                # harness has to measure the current lag first.
+                frame = captured.image
                 self.latest_frame = frame
                 spatial = self.detector.analyze_spatial(frame)
 
@@ -317,11 +297,11 @@ class MistySmartPerception:
     def _audio_watchdog(self):
         while self.is_running:
             try:
-                if not self.robot.transcript_queue.empty():
-                    _, text = self.robot.transcript_queue.get()
-                    if text.strip() and not self.paused:
-                        self.audio_events.put(text)
-                time.sleep(0.05)
+                utterance = self.audio.read(timeout=0.2)
+                if utterance is None:
+                    continue
+                if utterance.text.strip() and not self.paused:
+                    self.audio_events.put(utterance.text)
             except Exception:
                 continue
 
@@ -616,29 +596,32 @@ RULES:
 # ==========================================
 
 class MistyBodyController:
-    def __init__(self, robot_instance: Robot, perception: MistySmartPerception):
+    def __init__(self, robot_instance: RobotCommands, perception: MistySmartPerception):
         self.misty = robot_instance
         self.perception = perception
 
     # ---------- expressions ----------
 
-    _EXPRESSION_MAP = {
-        "happy": "emotion_Joy",
-        "sad": "emotion_Sadness",
-        "angry": "emotion_Anger",
-        "surprised": "emotion_Surprise",
-        "love": "emotion_Love",
-        "fear": "emotion_ApprehensionConcerned",
-        "neutral": "emotion_DefaultContent",
+    # Misty ships these images on the robot; DisplayImage takes the filename.
+    # https://docs.mistyrobotics.com/misty-ii/robot/misty-ii/#images
+    _EXPRESSION_IMAGES = {
+        "happy": "e_Joy.jpg",
+        "sad": "e_Sadness.jpg",
+        "angry": "e_Anger.jpg",
+        "surprised": "e_Surprise.jpg",
+        "love": "e_Love.jpg",
+        "fear": "e_ApprehensionConcerned.jpg",
+        "neutral": "e_DefaultContent.jpg",
     }
 
     def _set_expression(self, name: str):
-        method = getattr(self.misty, self._EXPRESSION_MAP.get(name, ""), None)
-        if callable(method):
-            try:
-                method()
-            except Exception as e:
-                print(f"   ⚠️ expression error: {e}")
+        image = self._EXPRESSION_IMAGES.get(name)
+        if image is None:
+            return
+        try:
+            self.misty.display_image(fileName=image)
+        except Exception as e:
+            print(f"   ⚠️ expression error: {e}")
 
     # ---------- gestures (deterministic primitives, with reset) ----------
 
@@ -756,14 +739,33 @@ class MistyBodyController:
     def _speak(self, text: str):
         if not text:
             return
+        # Rough speech duration. UNCALIBRATED: Misty's TTS gives no timing back,
+        # so this is a word-count guess, not a measurement (PLAN.md §8).
+        words = max(1, len(text.split()))
+        spoken_s = min(12.0, words / 2.2 + 0.5)
         try:
             self.misty.speak(text)
-            # Rough speech-duration wait so perception does not resume while
-            # Misty is still talking (echo prevention).
-            words = max(1, len(text.split()))
-            time.sleep(min(12.0, words / 2.2 + 0.5))
+            # Deafen the ASR for the duration so Misty does not transcribe
+            # herself, then wait it out so perception does not resume mid-word.
+            self.perception.audio.mute_for(spoken_s)
+            time.sleep(spoken_s)
         except Exception as e:
             print(f"   ⚠️ speak error: {e}")
+
+    # ---------- neutral pose ----------
+
+    def _return_to_neutral(self):
+        """Reset LED, expression and posture — the ACT state always ends here."""
+        for call in (
+            lambda: self.misty.change_led(red=255, green=255, blue=255),
+            lambda: self.misty.display_image(fileName="e_DefaultContent.jpg"),
+            lambda: self.misty.move_arms(leftArmPosition=0, rightArmPosition=0, duration=0.5),
+            lambda: self.misty.move_head(pitch=0, yaw=0, roll=0, duration=0.5),
+        ):
+            try:
+                call()
+            except Exception as e:
+                print(f"   ⚠️ reset error: {e}")
 
     # ---------- main entry ----------
 
@@ -786,17 +788,14 @@ class MistyBodyController:
         self._speak(decision["speak"])
 
         # 5. return to neutral pose — the ACT state always ends cleanly
-        try:
-            self.misty.return_to_normal()
-        except Exception:
-            pass
+        self._return_to_neutral()
 
 
 # ==========================================
 # 6. Main loop (FSM: IDLE -> PERCEIVE -> THINK -> ACT -> IDLE)
 # ==========================================
 
-def register_foot_bumper_stop(robot):
+def register_foot_bumper_stop(events: EventStream):
     """Foot-bumper e-stop: raise KeyboardInterrupt in the main thread."""
     def stop_callback(data):
         is_contacted = False
@@ -814,13 +813,13 @@ def register_foot_bumper_stop(robot):
 
     print("   🛡️ [System] registering foot-bumper e-stop...")
     try:
-        robot.register_event(
-            event_type="BumpSensor",
-            event_name="EmergencyFootStop",
-            condition=[{"Property": "isContacted", "Inequality": "=", "Value": True}],
-            debounce=1000,
+        events.subscribe(
+            "BumpSensor",
+            name="EmergencyFootStop",
+            condition=[event_condition("isContacted", "=", True)],
+            debounce_ms=1000,
             keep_alive=True,
-            callback_function=stop_callback,
+            on_event=stop_callback,
         )
     except Exception as e:
         print(f"   ⚠️ e-stop registration failed: {e}")
@@ -832,17 +831,24 @@ def main():
         return
 
     print("🚀 Misty Embodied Agent v3 (FSM + Memory + Closed-loop)")
-    try:
-        hw = Robot(ROBOT_IP)
-    except Exception as e:
-        print(f"❌ Cannot create Robot: {e}")
-        return
+    if MOCK_MODE:
+        print("⚠️ MISTY_MOCK set — commands are recorded, not sent")
+        hw = RecordingCommands(ROBOT_IP)
+    else:
+        hw = RobotCommands(ROBOT_IP)
 
-    register_foot_bumper_stop(hw)
+    # One AV session, shared: Misty publishes a single RTSP stream carrying
+    # both the camera and the microphone.
+    session = AvSession(hw)
+    video = RtspVideoStream(session)
+    audio = AudioStream(session, OpenAITranscriber(key))
+    events = EventStream(ROBOT_IP)
+
+    register_foot_bumper_stop(events)
 
     client = OpenAI(api_key=key)
     memory = ConversationMemory(client)
-    perception = MistySmartPerception(hw, key)
+    perception = MistySmartPerception(video, audio, key)
     brain = MistyEmbodiedBrain(key, memory)
     body = MistyBodyController(hw, perception)
 
@@ -891,10 +897,7 @@ def main():
     finally:
         body._stop_drive()
         perception.shutdown()
-        try:
-            hw.unregister_all_events()
-        except Exception:
-            pass
+        events.close()
 
 
 if __name__ == "__main__":

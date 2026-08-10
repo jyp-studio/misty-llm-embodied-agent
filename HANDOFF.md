@@ -1,7 +1,7 @@
 # HANDOFF — 交接給下一個對話
 
 > 讀完這份就能接手，不需要前文脈絡。
-> 最後更新：2026-08-10 · 分支 `refactor/react-agent` · HEAD `2e8f745`
+> 最後更新：2026-08-10 · 分支 `refactor/react-agent` · M3 完成
 
 ---
 
@@ -11,11 +11,11 @@
 
 **先讀 [`PLAN.md`](PLAN.md)** —— 那是完整規格與決策紀錄，本文件只補「現在走到哪、接下來做什麼、有哪些坑」。
 
-進度：**M0–M2.5 完成，下一步 M3（驅動層重寫）**。M0–M11 的定義在 `PLAN.md` §7。
+進度：**M0–M3 完成，下一步 M4（replay harness）**。M0–M11 的定義在 `PLAN.md` §7。
 
 ```bash
 cd /Users/jyp/dev/misty-embodied-agent
-python3 -m pytest tests/ -q     # 37 passed
+python3 -m pytest tests/ -q     # 80 passed
 python3 test_sim.py             # 24 passed
 ```
 
@@ -41,45 +41,43 @@ python3 test_sim.py             # 24 passed
 | M1 | `8a8dee8` | 移除 AutoMisty（8512 行）、改 Apache-2.0、`legacy/` 隔離 |
 | M2 | `1d5f2ed` | `misty_agent/config.py`，pydantic-settings 收攏全部可調參數 |
 | M2.5 | `2e8f745` | 兩軸 code review + 修正（`PLAN.md` §10） |
+| M3 | 本次 | 驅動層重寫、刪 `CUBS_Misty.py`、**repo 全面 Apache-2.0**（`PLAN.md` §11） |
 
-**現在的樹**（版控中 20 個檔案）：
+**現在的樹**：
 
 ```
 misty_agent/
 ├── config.py                  # 全部可調參數 + 跨欄位 validator
-└── control/step_policy.py     # plan_step()：控制律的唯一實作
-tests/{test_config,test_step_policy}.py
-full_robot_v3.py               # 主程式，M3–M8 會被拆進 misty_agent/
-CUBS_Misty.py                  # ⚠️ AutoMisty 衍生，M3 要重寫
-RobotCommands.py               # Misty 官方 SDK (Apache-2.0)，保留
+├── control/step_policy.py     # plan_step()：控制律的唯一實作
+├── drivers/
+│   ├── robot_commands.py      # Misty 官方 SDK (Apache-2.0)，保留
+│   ├── av_stream.py           # AvSession + RtspVideoStream（擷取時打時間戳）
+│   ├── audio_stream.py        # AudioStream + UtteranceDetector（純狀態機）
+│   └── events.py              # EventStream（websocket）
+├── perception/asr.py          # Transcriber port + OpenAI adapter
+└── fakes/fake_robot.py        # RecordingCommands：契約測試 + mock mode 共用
+tests/{test_config,test_step_policy,test_drivers_contract}.py
+full_robot_v3.py               # 主程式，M5–M8 會被拆進 misty_agent/
 test_sim.py / test_llm_live.py # 待 M7 遷 pytest
 legacy/                        # 舊素材，已從版控移除（.gitignore）
 ```
 
 ---
 
-## 3. 下一步：M3 驅動層重寫
+## 3. 下一步：M4 replay harness
 
-**目標**：把 `CUBS_Misty.py` 的 `Robot(RobotCommands)` 換成自己寫的 `misty_agent/drivers/`。
+**目標**：合成影格 + 真值軌跡，量出 `get_distance()` 落後真值多少秒。**此時必須是紅的**——先證明缺陷 A 存在，M5 才有東西可修。完整規格在 `PLAN.md` §6。
 
-主程式對它的依賴只有 10 個符號（其中 4 個私有，本身就是設計異味）：
+M3 已經把地基鋪好：
 
-```
-公開  start_av_stream · stop_av_streaming · frame_queue · transcript_queue · ip
-私有  _video_reader_thread · _read_audio_stream · _process_audio · _stop_event
-移除  load_whisper_model  ← 改用 API 轉錄（M2 已決定）
-另有  register_event      ← websocket，foot-bumper e-stop
-```
+- `CapturedFrame.captured_at` 在 `cap.read()` 回來的瞬間打上（`time.monotonic()`）。
+- **`full_robot_v3.py:290` 刻意還沒用它**——consumer 仍在處理當下打 `time.time()`。這就是缺陷 A2 還活著的地方，M5 才改。
+- `VideoSource` 是 Protocol，harness 只要實作 `start/stop/read/flush/backlog` 就能替換掉 `RtspVideoStream`，主程式一行不動。**這是 M4 的注入點。**
+- `backlog` 已在介面上，缺陷 A1 的診斷指標可以直接讀。
 
-拆成四件：`drivers/av_stream.py`、`audio_stream.py`、`events.py`、`robot_commands.py`（後者是保留的官方 SDK）。實際重寫約 200–300 行。
+⚠️ **不要在 M4 順手修 A1/A2。** 先量，紅了，才修（M5）。
 
-**M3 必須連帶做的三件事**（漏了就會留下不一致）：
-
-1. **`av_stream.py` 在擷取影格時就打時間戳並隨幀傳遞** —— 這是缺陷 A2 的地基，M5 修 A 時會用到。
-2. **更新 `NOTICE`** —— 目前它明列 `CUBS_Misty.py` 仍受上游 Academic Research License 管轄。刪掉該檔後要改成「已無 AutoMisty 衍生程式碼」，並可刪 `legacy/LICENSE.AutoMisty`。**在此之前 repo 尚未完全 Apache-2.0。**
-3. **清掉 `requirements.txt` 的過渡依賴區塊** —— `openai-whisper`（連帶 torch ~800MB）、`langchain-*`、`librosa`、`pynput` 只有 `CUBS_Misty.py` 在用。
-
-**驗證方式**：契約測試——對照 `docs.mistyrobotics.com` 驗證送出的 HTTP/WebSocket 請求格式。**證明請求格式正確，不證明機器人會照做。** 這條線要寫進 README。
+**影格來源**：CC0 人臉圖 + 程式按已知比例縮放貼上——MediaPipe 真的偵測得到（耗時真實發生）、真值距離精確已知、零外部素材。純色塊會被 MediaPipe 略過，等於把主因假設掉。
 
 ---
 
@@ -99,9 +97,15 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 ### 刻意沒修的（不要以為是漏掉）
 
-- `full_robot_v3.py:101-120` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派的 Middle Man。M3–M8 拆檔時整個消失，現在改是做兩次工。
-- `CUBS_Misty.py:22,24,25`（`sys.path.append("/Users/xiaowang/...")` 與壞掉的自我 import）。該檔 M3 整個取代，且現在仍受上游授權管轄。
+- `full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派的 Middle Man。M5–M8 拆檔時整個消失，現在改是做兩次工。
 - `config.py` 六個控制律欄位的 Data Clumps（`ApproachPolicy` 子模型想被生出來）→ M6。
+- **`AudioStream` 的轉錄跑在 VAD 同一條 thread 上**，網路慢時解碼音訊會堆在後面。與 A 同類（延遲），但不在 harness 的量測範圍內，等 M5 一起看。
+
+### M3 之後的新事實
+
+- **mock mode 現在要顯式開**：`MISTY_MOCK=1`。以前是「import 失敗就靜靜變假機器人」，設定打錯會被吃掉。
+- **本機沒裝 `cv2` / `av` / `websocket` / `openai` / `mediapipe`**。驅動層因此刻意把這些 import 移進 adapter 內部，模組本身與契約測試在裸環境下 import 得起來。**寫新驅動碼時保持這個性質**，否則 `pytest` 直接掛。
+- `test_sim.py` 不再 stub `requests`——`robot_commands.py` 在 import 時就從它取名字。
 
 ---
 
@@ -111,7 +115,7 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 | | 缺陷 | 狀態 |
 |---|---|---|
-| **A** | 閉環實際是開環：queue 無界積壓 + 時間戳蓋錯位置 + 移動後沒作廢舊樣本 | 未修。M3 打地基 → M4 建 harness 證明 → M5 修 |
+| **A** | 閉環實際是開環：queue 無界積壓 + 時間戳蓋錯位置 + 移動後沒作廢舊樣本 | 未修。**M3 地基已完成**（`CapturedFrame.captured_at`）→ M4 建 harness 證明 → M5 修 |
 | **B** | 安全底線 clamp 的是**命令距離**而非**實際行走距離** | 未修（M6）。⚠️ 見下 |
 | **C** | `min_step_cm` 下限是死碼兼未爆彈，且**後退方向完全沒有 clamp** | 未修（M6）。已有可執行證明 |
 | **D** | 動作回傳值被丟棄 | 重寫後自動消失（工具層本來就回傳結構化結果） |
@@ -126,7 +130,7 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 ## 6. 工作方式（使用者確認過的）
 
 - **每個里程碑 commit 一次**，訊息寫清楚做了什麼與為什麼。commit 前先 `git diff --cached --stat`。
-- **偏離計畫要記回 `PLAN.md`**，不要默默改。M1（requirements 只瘦身一半）、M2（缺陷 B 的推論被推翻）、M2.5（review 修正）都有留紀錄。
+- **偏離計畫要記回 `PLAN.md`**，不要默默改。M1（requirements 只瘦身一半）、M2（缺陷 B 的推論被推翻）、M2.5（review 修正）、M3（三處偏離 + 五個新發現的缺陷）都有留紀錄。
 - **測試先紅**：M4 的 harness 在修復前必須是紅的，否則等於沒證明缺陷 A 存在。
 - 使用者會直接挑戰建議，且挑戰常常是對的（M2 的「沒機器人量這個有意義嗎」、M3 的「砍掉 AutoMisty」都是使用者提的）。
 
@@ -135,10 +139,10 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 ## 7. 建議下一個對話的開場
 
 ```
-讀 PLAN.md 與 HANDOFF.md，然後開始 M3
+讀 PLAN.md 與 HANDOFF.md，然後開始 M4
 ```
 
-**但在 M3 之前，建議先跑一次內建的 code review** —— M2.5 只跑了 Standards + Spec 兩軸，**正確性軸（失敗情境、崩潰、邏輯錯誤）從未跑過**，而那正是抓出 M2 那個 reachability bug 的同類問題會出現的地方：
+**但在 M4 之前，建議先跑一次內建的 code review** —— 到目前為止只跑過 Standards + Spec 兩軸，**正確性軸（失敗情境、崩潰、邏輯錯誤）從未跑過**。M3 新增了約 900 行含 thread 與 socket 的程式碼，是這一軸投報率最高的時候：
 
 ```bash
 /code-review
@@ -152,8 +156,8 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 | skill | 何時用 |
 |---|---|
-| `codebase-design` | **M3 對症**——deep modules / small interfaces，正是「10 個依賴符號有 4 個是私有的」要解的問題 |
-| `tdd` | M4/M5，計畫本來就要求測試先紅 |
+| `tdd` | **M4/M5 對症**——計畫本來就要求測試先紅 |
 | `diagnosing-bugs` | M4/M5 追感知延遲 |
+| `codebase-design` | M3 已用過（deep modules / small interfaces）；M6 拆控制層時再用 |
 | `code-review` | 每個里程碑後（Standards + Spec 兩軸） |
 | `grill-me` | 遇到新的分歧決策時 |

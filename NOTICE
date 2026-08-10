@@ -4,10 +4,10 @@ Copyright 2026 Chieh-Yu Pan
 This product includes software developed by Misty Robotics, Inc.
 
 --------------------------------------------------------------------------------
-RobotCommands.py
+misty_agent/drivers/robot_commands.py
 --------------------------------------------------------------------------------
 
-`RobotCommands.py` is derived from the Misty Robotics Python SDK
+`misty_agent/drivers/robot_commands.py` is derived from the Misty Robotics Python SDK
 (https://github.com/MistyCommunity/Python-SDK), licensed under the
 Apache License, Version 2.0.
 
@@ -18,9 +18,10 @@ Misty II REST API reference (https://docs.mistyrobotics.com/misty-ii/reference/r
 
 Modifications made in this repository:
   - Added a provenance and license header.
+  - Moved from `RobotCommands.py` to `misty_agent/drivers/robot_commands.py`.
 
 --------------------------------------------------------------------------------
-AutoMisty-derived components  (IN PROGRESS — see PLAN.md milestone M3)
+AutoMisty-derived components  (REMOVED — completed at PLAN.md milestone M3)
 --------------------------------------------------------------------------------
 
 This repository previously incorporated components derived from AutoMisty
@@ -28,7 +29,8 @@ This repository previously incorporated components derived from AutoMisty
 Govindaraju; IROS 2025), distributed by their authors under an Academic Research
 License (academic and non-commercial use only, citation required).
 
-A copy of that license is retained at `legacy/LICENSE.AutoMisty`.
+A copy of that license is retained at `legacy/LICENSE.AutoMisty`, for the
+record. Nothing distributed from this repository is governed by it.
 
 REMOVED (milestone M1):
   - Agents/            (multi-agent code-generation framework)
@@ -36,14 +38,17 @@ REMOVED (milestone M1):
   - Mistydemo/         (example task scripts)   -> moved to legacy/, not distributed
   - code/mistyPy/      (code-generation sandbox) -> moved to legacy/, not distributed
 
-STILL PRESENT — governed by legacy/LICENSE.AutoMisty until removed:
+REMOVED (milestone M3):
   - CUBS_Misty.py      (the `Robot` class: audio/video stream layer, Whisper
-                        integration, LangChain LLM wrapper)
+                        integration, LangChain LLM wrapper, websocket events)
 
-`CUBS_Misty.py` is scheduled for replacement at milestone M3 by an original
-implementation under `misty_agent/drivers/`. Until that milestone lands, this
-repository is NOT wholly Apache-2.0: the Apache-2.0 license in `LICENSE` covers
-this project's original components and `RobotCommands.py`, while `CUBS_Misty.py`
-remains subject to the Academic Research License above.
+`CUBS_Misty.py` was replaced by an original implementation under
+`misty_agent/drivers/` (av_stream, audio_stream, events) and
+`misty_agent/perception/asr.py`. That code was written against the public REST
+and WebSocket reference at https://docs.mistyrobotics.com/ — matching a
+documented request format is a statement of fact about the robot's API, not a
+copy of anyone's expression.
 
-This notice must be updated when M3 completes.
+NO AutoMisty-derived code remains in this repository. As of milestone M3 the
+entire repository is licensed under Apache-2.0 (see LICENSE), with the single
+third-party file above under the same license.

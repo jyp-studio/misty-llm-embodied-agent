@@ -260,7 +260,7 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 | **M1** | 清理與授權 | 移除 `Agents/`+`AutoMisty.py`；`Mistydemo/`+`code/mistyPy/` → `legacy/`；Apache-2.0 + NOTICE + 檔頭；requirements 部分瘦身 ✅ |
 | **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator ✅ |
 | **M2.5** | code review | 兩軸 review（Standards / Spec）+ 修正，見 §10 ✅ |
-| **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 |
+| **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 ✅ 見 §11 |
 | **M4** | harness | 合成影格 + 真值軌跡；量現況延遲曲線 **← 此時應為紅** |
 | **M5** | 修缺陷 A | 只處理最新幀 / 時間戳隨幀傳遞 / 每步清 `_distance_samples` → **harness 轉綠 + before/after 對照表** |
 | **M6** | 控制層 | 缺陷 B（真安全底線）、C（後退 clamp）、E（重試） |
@@ -322,3 +322,72 @@ repo 無自訂規範文件，故 Standards 軸只適用 Fowler smell baseline，
 ### 尚未做的另一軸
 
 **內建 `/code-review` 沒跑過。** 它找的是正確性 bug（失敗情境、崩潰、邏輯錯誤），與上面兩軸完全不重疊。這是 M3 開始前建議補的一步——而且它是**使用者手動觸發**的，agent 不能代跑。
+
+---
+
+## 11. M3 — 驅動層重寫的結果
+
+用 mattpocock `codebase-design` 的詞彙做的：舊的 `Robot(RobotCommands)` 是教科書級的
+**shallow module**——呼叫端要知道 10 個符號（4 個私有）**外加 5 條順序規則**：清
+`_stop_event` → `start_av_stream()` → 手動開三條 thread 指向私有方法 → 自己排乾兩個
+不屬於它的 queue → 設 `_stop_event` + `stop_av_streaming()`。呼叫端等於把模組的
+lifecycle 重寫了一遍。
+
+現在的介面：
+
+| 模組 | 介面 | 藏在後面的 |
+|---|---|---|
+| `AvSession` | `open` / `close` / `url` | reset→enable→start 三步、錯誤處理、URL 組裝 |
+| `RtspVideoStream` | `start` / `stop` / `read` / `flush` / `backlog` | reader thread、cv2、旋轉、**擷取時打時間戳** |
+| `AudioStream` | `start` / `stop` / `read` / `flush` / `mute_for` | 兩條 thread、PyAV demux、VAD、轉錄 |
+| `EventStream` | `subscribe` / `close` | websocket、訂閱訊息、死連線回收（原本 6 個公開方法） |
+| `Transcriber` | `transcribe` | 一個方法的 port，OpenAI adapter |
+
+`full_robot_v3.py` 現在**一條 thread 都不開給驅動層**，也不碰任何 queue。
+
+### 過程中發現的既有缺陷（都是「真機會安靜地不理你」那種）
+
+| # | 缺陷 | 處置 |
+|---|---|---|
+| 1 | **AV reset 打的是不存在的端點**。`_force_kill_av_services` 手寫 POST 到 `/api/avstreaming/disable` 與 `/api/audio/recording/stop`，REST reference 裡兩條都沒有；官方是 `services/avstreaming/disable` 與 `audio/record/stop`。原本那個 reset 極可能一直是 404。 | 移進 `AvSession._reset()`，改用 SDK 方法。契約測試 `test_reset_uses_the_documented_endpoints` 釘住。 |
+| 2 | **websocket 訂閱訊息不是 JSON**。`self.ws.send(str(self.get_subscribe_message()))` 送的是 Python dict 的 `str()`——單引號、`True` 而非 `true`。unsubscribe 那條倒是正確用了 `json.dumps`。 | 一律 `json.dumps`。回歸測試 `test_subscribe_frames_serialise_as_json`。 |
+| 3 | **websocket callback 用的是 0.58 以前的簽名**。`on_message(self, message)` 少了 `ws` 參數，而 `requirements.txt` 沒 pin `websocket-client` → 裝到的一定是新版 → `TypeError`。**foot-bumper e-stop 很可能從來沒有真的接上過。** | 改用現行簽名。 |
+| 4 | **音訊 buffer 無界成長**。`audio_buffer` 只在「utterance 結束」時清空，機器人閒置時沒有 utterance 會結束 → 從 process 啟動開始一路 concat；而且每段轉錄都夾帶前面所有靜音。這是 A1 的兄弟，只是在音訊側。 | `UtteranceDetector` 改成沒在講話時只留 `audio_preroll_s` 的 pre-roll。測試 `test_idle_audio_is_bounded_by_the_preroll`。 |
+| 5 | `CUBS_Misty` 的 `speak` / `move_arms` / `move_head` **官方 SDK 本來就有**（`robot_commands.py:762,1547,1562`），那三個只是加長 docstring 的重新宣告。唯一的原創行為是 `speak` 順手設 `ignore_transcript_until`。 | 直接用 SDK 的；TTS 抑制窗變成 `AudioStream.mute_for()`，語意乾淨且 M8 要縮小抑制範圍時就改這一個地方。 |
+
+### 與計畫的偏離（三處，都是刻意的）
+
+1. **缺陷 A1 的修法換了位置。** §5 寫「consumer 只處理最新幀」。但 queue 現在藏在
+   `read()` 後面，M5 只要改 `RtspVideoStream` 一處，consumer 一行都不用動。修法不變，
+   位置從呼叫端移到 seam 後面——這正是把它做成 deep module 換來的 locality。
+
+2. **`min_utterance_s` 的判定基準變了。** 舊碼拿「buffer 全長」比 0.3 秒，而 buffer 含
+   啟動以來的所有靜音，所以那個門檻幾乎永遠通過（缺陷 4 的副作用）。現在 buffer 有界，
+   門檻才真的在擋短音。**這會改變行為**：以前放行的極短哼聲現在會被丟掉。這是原意。
+
+3. **不再重新取樣。** 舊碼用 librosa 把 44.1 kHz 降到 16 kHz 餵 Whisper，**沒有低通濾波**
+   → 混疊。hosted API 吃原生取樣率，所以整段拿掉，順帶少一個相依。
+
+### 授權
+
+`CUBS_Misty.py` 已刪除，`NOTICE` 改為「AutoMisty 衍生程式碼已全部移除」。
+**repo 現在整個是 Apache-2.0。** `requirements.txt` 的過渡區塊清空
+（`openai-whisper`+torch、`langchain-*`、`librosa`、`pynput`）。
+
+### 一併處理掉的 §6 待辦
+
+`FakeRobot.__getattr__` 對所有呼叫回 noop、錯誤路徑從沒執行過 →
+`misty_agent/fakes/fake_robot.py` 的 `RecordingCommands` 有 `fail_endpoints`，
+契約測試已用它跑過 `AvSession` 的兩條失敗分支。同一個類別同時是 mock mode 的機器人，
+所以「無硬體時跑的東西」與「測試涵蓋的東西」不會分岔。
+
+### 行為變更：mock mode 改為顯式
+
+以前是「`import CUBS_Misty` 失敗就進 mock」——安靜地把設定錯誤變成假機器人。
+現在要 `MISTY_MOCK=1`，沒設就是真的連線並且會真的失敗。
+
+### 尚未驗證（照 §8 的原則，寫進 README）
+
+驅動層送出的 HTTP / WebSocket 格式**只有契約測試**：證明格式對照官方文件正確，
+**不證明機器人會照做**。上面第 1–3 點正好說明為什麼這條線要畫清楚——那三個缺陷
+全部是「格式錯了但本地完全看不出來」。

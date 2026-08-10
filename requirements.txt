@@ -14,19 +14,11 @@ av>=12.0
 websocket-client
 requests
 
-# ---------------------------------------------------------------------------
-# Transitional — only CUBS_Misty.py needs these. CUBS_Misty.py is replaced at
-# milestone M3 (see PLAN.md); delete this whole block then.
-#   openai-whisper -> pulls in torch (~800 MB installed). Replaced by API
-#                     transcription in misty_agent/perception/asr.py.
-#   langchain-*    -> AutoMisty's LLM wrapper inside CUBS_Misty.py. Not used by
-#                     the main program, which calls the OpenAI SDK directly.
-#   librosa        -> audio resampling only; replaced by scipy/numpy.
-#   pynput         -> keyboard hook in CUBS_Misty.py.
-# ---------------------------------------------------------------------------
-openai-whisper
-langchain-openai
-langchain-core
-langchain-community
-librosa
-pynput
+# Removed at milestone M3, with CUBS_Misty.py:
+#   openai-whisper  -> pulled in torch (~800 MB installed) to transcribe a few
+#                      seconds of speech. Now a hosted call in
+#                      misty_agent/perception/asr.py.
+#   langchain-*     -> AutoMisty's LLM wrapper. The agent calls the OpenAI SDK.
+#   librosa         -> resampled 44.1 kHz to 16 kHz for Whisper. The hosted API
+#                      takes the native rate, so nothing is resampled at all.
+#   pynput          -> keyboard hook, unused by the main program.

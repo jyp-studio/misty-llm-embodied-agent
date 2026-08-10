@@ -44,6 +44,96 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Drivers — audio-video stream
+    # ------------------------------------------------------------------
+    av_stream_port: int = Field(
+        default=1935, gt=0, le=65535,
+        description="Port Misty serves RTSP on; both audio and video use it.",
+    )
+    av_stream_width: int = Field(default=640, gt=0)
+    av_stream_height: int = Field(default=480, gt=0)
+    av_reset_settle_s: float = Field(
+        default=2.0, ge=0.0,
+        description=(
+            "Pause after tearing down a previous AV session before enabling a "
+            "new one. UNCALIBRATED: how long Misty actually needs is unknown."
+        ),
+    )
+    camera_rotate_degrees: int = Field(
+        default=90,
+        description=(
+            "Clockwise rotation applied to each frame to put the picture "
+            "upright. Must be 0, 90, 180 or 270."
+        ),
+    )
+    video_producer_pause_s: float = Field(
+        default=0.01, ge=0.0,
+        description=(
+            "Sleep between frame reads. Inherited from the original reader; "
+            "it slows but does not prevent the backlog of PLAN.md defect A1."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Drivers — voice activity detection
+    # ------------------------------------------------------------------
+    audio_sample_rate_hz: int = Field(
+        default=44100, gt=0,
+        description="Sample rate Misty's RTSP audio arrives at. UNCALIBRATED.",
+    )
+    silence_threshold_db: float = Field(
+        default=-40.0,
+        description="RMS level below which a block of audio counts as silence.",
+    )
+    silence_duration_s: float = Field(
+        default=0.5, gt=0.0,
+        description=(
+            "Silence that ends one utterance. Distinct from "
+            "silence_timeout_s, which ends a whole multi-utterance turn."
+        ),
+    )
+    min_utterance_s: float = Field(
+        default=0.3, gt=0.0,
+        description="Utterances shorter than this are discarded unheard.",
+    )
+    audio_preroll_s: float = Field(
+        default=0.3, ge=0.0,
+        description=(
+            "Audio kept from just before speech starts, so the first phoneme "
+            "is not clipped. Bounds what an idle robot buffers."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Drivers — speech recognition
+    # ------------------------------------------------------------------
+    asr_model: str = Field(
+        default="gpt-4o-mini-transcribe",
+        description="Hosted transcription model, replacing local Whisper.",
+    )
+    asr_language: str = Field(
+        default="en",
+        description="ISO-639-1 hint for the transcriber.",
+    )
+    asr_ignored_phrases: tuple[str, ...] = Field(
+        default=("thank you", "thanks", "thank"),
+        description=(
+            "Transcripts containing any of these are dropped. A workaround "
+            "for local Whisper hallucinating politeness over near-silence; it "
+            "also deafens the robot to a real 'thanks', so it is worth "
+            "re-measuring against the hosted model and emptying."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Drivers — events
+    # ------------------------------------------------------------------
+    event_ws_ping_timeout_s: float = Field(
+        default=10.0, gt=0.0,
+        description="Websocket ping timeout for Misty's /pubsub subscriptions.",
+    )
+
+    # ------------------------------------------------------------------
     # Language models
     # ------------------------------------------------------------------
     llm_model: str = Field(
@@ -191,7 +281,11 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     silence_timeout_s: float = Field(
         default=4.0, gt=0.0,
-        description="Silence that ends an utterance and flushes it to the ASR.",
+        description=(
+            "Silence that ends a whole conversational turn, after which the "
+            "collected utterances go to the agent. Distinct from "
+            "silence_duration_s, which ends a single utterance inside a turn."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -237,6 +331,19 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"min_step_cm={self.min_step_cm} must be < "
                 f"max_step_cm={self.max_step_cm}."
+            )
+
+        if self.camera_rotate_degrees not in (0, 90, 180, 270):
+            raise ValueError(
+                f"camera_rotate_degrees={self.camera_rotate_degrees} must be "
+                f"one of 0, 90, 180, 270."
+            )
+
+        if self.silence_duration_s >= self.silence_timeout_s:
+            raise ValueError(
+                f"silence_duration_s={self.silence_duration_s} must be < "
+                f"silence_timeout_s={self.silence_timeout_s}; an utterance has "
+                f"to end before the turn containing it does."
             )
 
         if self.memory_fold_size > self.memory_window:

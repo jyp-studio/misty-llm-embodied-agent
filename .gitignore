@@ -17,8 +17,8 @@ __pycache__/
 .venv/
 venv/
 
-# ---- AutoMisty 生成的 code（想保留當 skill library 範例就註解掉這行）----
-# code/mistyPy/generated_*.py
+# ---- 舊 AutoMisty 素材：本地保留，不隨 repo 分發（見 PLAN.md M1）----
+legacy/
 
 # ---- OS / IDE ----
 .DS_Store

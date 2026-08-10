@@ -11,9 +11,7 @@ Architecture (finite-state control loop: IDLE -> PERCEIVE -> THINK -> ACT -> IDL
               into context. The LLM outputs high-level intent only — never
               physical parameters.
   Action      Deterministic executor (expression / gesture / speech) and a
-              closed-loop locomotion controller (approach_user). AutoMisty
-              multi-agent code generation is invoked only for complex
-              expressive tasks (dance, storytelling, ...).
+              closed-loop locomotion controller (approach_user).
 
 Design notes:
   - Every episode is bounded: step limits, round caps and timeouts guarantee
@@ -36,9 +34,6 @@ from dataclasses import dataclass
 from collections import deque
 
 import cv2
-
-# AutoMisty handles only complex expressive tasks; it no longer drives the robot.
-from AutoMisty import complex_action
 
 # ==========================================
 # 0. Dependencies and configuration
@@ -561,18 +556,13 @@ OUTPUT: respond with ONE JSON object only. No markdown, no extra text.
   "movement": "approach" | "stay" | "back_up",
   "expression": "happy" | "sad" | "angry" | "surprised" | "love" | "fear" | "neutral",
   "gesture": "wave" | "nod" | "shake_head" | "arms_up" | "arms_open" | "none",
-  "speak": "what to say out loud (empty string if nothing)",
-  "complex_task": null
+  "speak": "what to say out loud (empty string if nothing)"
 }
 
 RULES:
 - "movement": choose "approach" only when the user clearly wants you closer or
   is engaging from far away; a low-level controller handles the actual driving,
   so never mention speeds, times or distances.
-- "complex_task": normally null. Set it to a natural-language task description
-  ONLY for elaborate performances (dance, telling a full story, reciting a poem
-  with choreography). Simple replies must use "speak" instead — complex_task is
-  slow and expensive.
 - Keep "speak" short and conversational (1-3 sentences)."""
 
     def think(self, perception: PerceptionData) -> dict:
@@ -604,7 +594,6 @@ RULES:
         # Sanitization: fill missing fields, reject illegal values.
         decision.setdefault("thought", "")
         decision.setdefault("speak", "")
-        decision.setdefault("complex_task", None)
         if decision.get("movement") not in ("approach", "stay", "back_up"):
             decision["movement"] = "stay"
         if decision.get("expression") not in (
@@ -791,17 +780,7 @@ class MistyBodyController:
         # 4. speech
         self._speak(decision["speak"])
 
-        # 5. complex expressive tasks go to AutoMisty (fixed termination,
-        #    round caps and timeouts)
-        task = decision.get("complex_task")
-        if task:
-            print(f"   🎭 [AutoMisty] complex task: {task[:80]}")
-            try:
-                complex_action(task)
-            except Exception as e:
-                print(f"   ❌ AutoMisty error: {e}")
-
-        # 6. return to neutral pose — the ACT state always ends cleanly
+        # 5. return to neutral pose — the ACT state always ends cleanly
         try:
             self.misty.return_to_normal()
         except Exception:

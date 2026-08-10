@@ -23,7 +23,6 @@ Coverage:
   T7  step cap: never exceeds MAX_APPROACH_STEPS (termination guarantee)
   T8  brain sanitization: illegal / missing / malformed JSON -> safe defaults
   T9  memory: window folding, fact persistence, reload
-  T10 AutoMisty termination semantics (exitcode: 0 / exitcode: 1 / ALLSET)
 
 Items that still require real hardware are listed in HARDWARE_CHECKLIST at
 the end of the output.
@@ -76,8 +75,6 @@ class FakeOpenAI:
 openai_m.OpenAI = FakeOpenAI
 
 _stub_module("requests").post = lambda *a, **k: None
-automisty_m = _stub_module("AutoMisty")
-automisty_m.complex_action = lambda task: print(f"    (complex_action stub: {task[:40]})")
 
 # CUBS_Misty is absent -> full_robot_v3 falls back to its mock branch.
 
@@ -234,9 +231,9 @@ check("illegal values fall back to safe defaults",
 
 d = make_brain("this is not json at all").think(pd)
 check("malformed JSON -> no crash, all fields present",
-      all(k in d for k in ("movement", "expression", "gesture", "speak", "complex_task")), d)
+      all(k in d for k in ("movement", "expression", "gesture", "speak")), d)
 
-d = make_brain('{"movement":"approach","expression":"sad","gesture":"nod","speak":"hi","complex_task":null}').think(pd)
+d = make_brain('{"movement":"approach","expression":"sad","gesture":"nod","speak":"hi"}').think(pd)
 check("valid output passes through unchanged",
       d["movement"] == "approach" and d["speak"] == "hi", d)
 
@@ -259,17 +256,6 @@ block = mem.as_prompt_block()
 check("prompt block contains recent turns", "user message 14" in block)
 os.remove(MEMFILE)
 
-print("\n===== T10 AutoMisty termination semantics =====")
-term = lambda x: (x.get("content", "").find("ALLSET") >= 0
-                  or x.get("content", "").find("exitcode: 0") >= 0)
-check("successful execution -> terminate",
-      term({"content": "exitcode: 0 (execution succeeded)\nCode output: done"}))
-check("failed execution -> keep going (draft agent fixes bugs)",
-      not term({"content": "exitcode: 1 (execution failed)\nTraceback..."}))
-check("no-code message -> ALLSET terminates", term({"content": "ALLSET"}))
-check("ordinary chat -> no termination",
-      not term({"content": "Here is the plan for the dance."}))
-
 # ==========================================
 # 4. Summary
 # ==========================================
@@ -287,11 +273,8 @@ Items that still require real hardware (not covered by simulation):
   3. Minimum drive threshold: verify the motors move at 20%; raise
      DRIVE_PERCENT if they stall.
   4. AV stream stability over time (30 min of pause/resume cycles).
-  5. Foot-bumper e-stop interrupts all three stages
-     (perception / locomotion / AutoMisty).
+  5. Foot-bumper e-stop interrupts both stages (perception / locomotion).
   6. Speech echo guard: Misty's own speech must not appear in transcripts.
-  7. Real AutoMisty round-trip (requires an API key): give a dance task and
-     confirm generate -> execute -> exitcode: 0 -> return to idle, exactly once.
 """
 print(HARDWARE_CHECKLIST)
 sys.exit(1 if FAIL else 0)

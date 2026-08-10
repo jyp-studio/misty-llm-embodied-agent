@@ -7,32 +7,20 @@ Usage (project root, on your own machine):
     python test_llm_live.py
 
 What it does:
-  - Feeds four hand-written PerceptionData scenarios (no camera / mic / robot)
+  - Feeds three hand-written PerceptionData scenarios (no camera / mic / robot)
   - The brain uses the REAL GPT-4o to decide -> prints the full decision JSON
   - The body executes on a LoggingRobot -> prints every hardware call
   - approach runs on simulated kinematics so you can watch the closed loop
     converge step by step
   - Scenarios 2 -> 3 validate memory: introduce a name, then ask for it back
-  - Scenario 4 validates complex_task routing (AutoMisty is stubbed by default)
 
-Cost: roughly 6-10 GPT-4o / 4o-mini calls, a few cents.
+Cost: roughly 5-8 GPT-4o / 4o-mini calls, a few cents.
 """
 
 import sys
-import types
 import time
 import os
 import json
-
-# ---- Stub AutoMisty by default (importing it pulls in all of autogen, and a
-#      real run is slow and expensive). Set REAL_AUTOMISTY = True to test the
-#      actual code-generation round-trip (expect execution failures without a
-#      robot — watching it retry and then give up cleanly IS the test).
-REAL_AUTOMISTY = False
-if not REAL_AUTOMISTY:
-    am = types.ModuleType("AutoMisty")
-    am.complex_action = lambda task: print(f"      🎭 [AutoMisty-stub] received task: {task}")
-    sys.modules["AutoMisty"] = am
 
 # ---- Speed up waits (post-speech / post-motion sleeps capped at 50 ms) ----
 _real_sleep = time.sleep
@@ -106,13 +94,6 @@ SCENARIOS = [
         trigger="audio_first",
         distance=90,
     ),
-    dict(
-        name="Scenario 4: complex-task routing (should set complex_task)",
-        visual="The man smiles and gestures enthusiastically at the robot.",
-        audio="Could you perform a happy dance for me?",
-        trigger="audio_first",
-        distance=70,
-    ),
 ]
 
 # ==========================================
@@ -173,7 +154,6 @@ What to look for:
   Scenario 1  expression should be "sad", speak should comfort the user
   Scenario 2  memory should extract the name (see long-term facts)
   Scenario 3  speak should contain "Henry"  <- direct evidence of memory
-  Scenario 4  complex_task should be a non-null dance description
   All         drive_time should converge stepwise, never overshoot, always stop
 -------------------------------------------------------------""")
     os.remove(memfile)

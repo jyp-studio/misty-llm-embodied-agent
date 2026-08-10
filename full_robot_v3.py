@@ -98,20 +98,24 @@ def load_api_key() -> str:
     return input("OpenAI API Key: ").strip()
 
 
-ROBOT_IP = "192.168.1.237"
-LLM_MODEL = "gpt-4o"          # decision / vision model
-MEMORY_MODEL = "gpt-4o-mini"  # cheap model for summarization / fact extraction
-MEMORY_FILE = "misty_memory.json"
+# Every tunable lives in misty_agent.config — one source of truth, validated
+# at load time. The names below are kept as module-level aliases so the rest of
+# this file (and test_sim.py) reads unchanged; they disappear as the code moves
+# into the misty_agent package.
+from misty_agent.config import settings
 
-# --- Locomotion constants (calibrate once on real hardware) ---
-# Misty's drive/drive_time linearVelocity is a PERCENT of max speed (-100..100).
-DRIVE_PERCENT = 20            # fixed low speed for small, safe steps
-CM_PER_SEC_AT_PERCENT = 22.0  # measured speed (cm/s) at DRIVE_PERCENT — CALIBRATE
-TARGET_DISTANCE_CM = 60       # social interaction distance
-DISTANCE_TOLERANCE_CM = 12    # arrival tolerance
-MIN_SAFE_DISTANCE_CM = 45     # never move forward past this floor
-MAX_STEP_CM = 35              # maximum distance per step
-MAX_APPROACH_STEPS = 8        # hard iteration cap (termination guarantee)
+ROBOT_IP = settings.robot_ip
+LLM_MODEL = settings.llm_model
+MEMORY_MODEL = settings.memory_model
+MEMORY_FILE = settings.memory_file
+
+DRIVE_PERCENT = settings.drive_percent
+CM_PER_SEC_AT_PERCENT = settings.cm_per_sec_at_percent
+TARGET_DISTANCE_CM = settings.target_distance_cm
+DISTANCE_TOLERANCE_CM = settings.distance_tolerance_cm
+MIN_SAFE_DISTANCE_CM = settings.min_safe_distance_cm
+MAX_STEP_CM = settings.max_step_cm
+MAX_APPROACH_STEPS = settings.max_approach_steps
 
 
 # ==========================================
@@ -140,8 +144,8 @@ class HumanDetector:
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
-        self.FOCAL_LENGTH = 650    # calibrate: new = 650 * actual_cm / reported_cm
-        self.REAL_FACE_WIDTH = 15  # average face width in cm
+        self.FOCAL_LENGTH = settings.focal_length
+        self.REAL_FACE_WIDTH = settings.real_face_width_cm
 
     def analyze_spatial(self, frame) -> dict:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -194,7 +198,7 @@ class MistySmartPerception:
         self.is_running = False
         self.paused = False
         # (timestamp, distance_cm) samples for median filtering
-        self._distance_samples = deque(maxlen=9)
+        self._distance_samples = deque(maxlen=settings.distance_sample_window)
         self._dist_lock = threading.Lock()
 
     # ---------- lifecycle ----------
@@ -267,7 +271,7 @@ class MistySmartPerception:
 
     # ---------- filtered distance ----------
 
-    def get_distance(self, max_age_sec: float = 2.0) -> int:
+    def get_distance(self, max_age_sec: float = settings.distance_max_age_s) -> int:
         """Median of recent (<= max_age_sec old) samples; -1 if unavailable."""
         now = time.time()
         with self._dist_lock:
@@ -335,7 +339,7 @@ class MistySmartPerception:
         print("   🎤 [Audio trigger] listening for the full utterance...")
         buffer = []
         silence_start = time.time()
-        SILENCE_TIMEOUT = 4.0
+        SILENCE_TIMEOUT = settings.silence_timeout_s
 
         while True:
             try:
@@ -414,8 +418,8 @@ class ConversationMemory:
                      to a JSON file across sessions
     Only text enters memory; raw frames are never stored (token cost).
     """
-    WINDOW = 10
-    FOLD_SIZE = 4  # number of oldest turns folded into the summary at once
+    WINDOW = settings.memory_window
+    FOLD_SIZE = settings.memory_fold_size
 
     def __init__(self, client: OpenAI, path: str = MEMORY_FILE):
         self.client = client
@@ -692,7 +696,8 @@ class MistyBodyController:
 
             # At most MAX_STEP_CM per step, and only 70% of the remaining
             # delta, to avoid overshooting on the final step.
-            step_cm = max(8.0, min(MAX_STEP_CM, abs(delta) * 0.7))
+            step_cm = max(settings.min_step_cm,
+                          min(MAX_STEP_CM, abs(delta) * settings.approach_gain))
             direction = 1 if delta > 0 else -1  # too far -> forward; too close -> back
 
             # The safety floor constrains FORWARD motion only: a forward step
@@ -723,7 +728,7 @@ class MistyBodyController:
                 return "drive_error"
 
             # Wait for the motion to finish and fresh frames to arrive.
-            time.sleep(t_ms / 1000.0 + 0.8)
+            time.sleep(t_ms / 1000.0 + settings.post_step_settle_s)
 
         print("   ⏱️ [Approach] step limit reached, stopping")
         self._stop_drive()
@@ -732,10 +737,10 @@ class MistyBodyController:
     def back_up(self):
         """Single small bounded backward step."""
         try:
-            t_ms = int(20 / CM_PER_SEC_AT_PERCENT * 1000)
+            t_ms = int(settings.back_up_step_cm / CM_PER_SEC_AT_PERCENT * 1000)
             self.misty.drive_time(linearVelocity=-DRIVE_PERCENT,
                                   angularVelocity=0, timeMs=t_ms)
-            time.sleep(t_ms / 1000.0 + 0.3)
+            time.sleep(t_ms / 1000.0 + settings.post_backup_settle_s)
         except Exception as e:
             print(f"   ⚠️ back_up error: {e}")
         self._stop_drive()

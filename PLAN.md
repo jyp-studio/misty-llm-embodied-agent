@@ -175,7 +175,17 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 ### B. `MIN_SAFE_DISTANCE_CM` 是 dead code
 已窮舉驗證：進入 `direction > 0` 需 `delta > 12` 即 `d > 72`，此時 `max_forward = d − 45 > 27` 恆成立 → `full_robot_v3.py:714-717` 分支不可達，clamp 從未生效。真正防撞的是 0.7 gain。
 且它 clamp 的是**命令距離**而非**實際行走距離**，擋不住校準誤差超衝（實速為校準值 2 倍時模擬會突破 45cm 至 44.0）。
-→ **實作成真正生效的邊界**（門檻值 config 化後它不再是死碼）。
+
+**M2 更新——原本「config 化後它不再是死碼」的推論是錯的。** `config.py` 的 validator 要求
+`target − tolerance > min_safe`，而該分支可達需要 `min_safe > target + tolerance`；兩者相加得
+`tolerance < 0`，與欄位約束矛盾。**所以那個 runtime guard 對任何合法 config 都不可達**——
+不是「在預設值下是死碼」，是**由構造保證的死碼**。已由 `tests/test_config.py` 的組合掃描證明。
+
+這其實是好結果：不變量提前到 config 載入時強制，比在執行期擺一個永不觸發的 guard 假裝有防護強。
+
+→ **M6 的工作因此改變**：不是「讓 guard 活起來」，而是
+①把 guard 改成明示的不可達斷言（或移除並在註解指向 validator），
+②**真正要解的是「clamp 命令距離 ≠ clamp 實際距離」**——validator 完全沒碰這個，校準誤差仍會讓機器人衝過 45cm。這才是缺陷 B 的實質。
 
 ### C. `max(8.0, ...)` 是 dead code 兼未爆彈
 `full_robot_v3.py:706`：`abs(delta) > 12` ⟹ `abs(delta)×0.7 > 8.4 > 8`，下限永不生效。
@@ -245,7 +255,7 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 |---|---|---|
 | **M0** | 安全網 | 目錄備份至 `~/dev/misty-embodied-agent.backup`；分支 `refactor/react-agent` ✅ |
 | **M1** | 清理與授權 | 移除 `Agents/`+`AutoMisty.py`；`Mistydemo/`+`code/mistyPy/` → `legacy/`；Apache-2.0 + NOTICE + 檔頭；requirements 部分瘦身 ✅ |
-| **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator |
+| **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator ✅ |
 | **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 |
 | **M4** | harness | 合成影格 + 真值軌跡；量現況延遲曲線 **← 此時應為紅** |
 | **M5** | 修缺陷 A | 只處理最新幀 / 時間戳隨幀傳遞 / 每步清 `_distance_samples` → **harness 轉綠 + before/after 對照表** |

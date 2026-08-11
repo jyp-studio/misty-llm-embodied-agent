@@ -13,11 +13,11 @@ noticed — no environment here had mediapipe installed at all.
 asserts a face comes back with a plausible cheek-to-cheek width. This is the
 first time this repository has executed MediaPipe.
 
-What these do NOT cover: this project's own detector wrapper. It still lives in
-the entry-point script, which imports ``cv2`` at module scope, so importing it
-anywhere pulls in the whole camera stack regardless of what is being tested.
-The extraction that fixes that is the next ticket, and the wrapper's tests
-belong there — written once, against the interface that survives.
+What these do NOT cover: this project's own detector wrapper. It now lives in
+``misty_agent.perception.face`` and is tested in ``test_perception_face.py``.
+What stays here is the layer underneath it — the dependency that must resolve
+and the landmark topology the wrapper reads — because those claims are about
+MediaPipe, and they should not be re-proved every time the wrapper changes.
 """
 
 from __future__ import annotations
@@ -25,11 +25,18 @@ from __future__ import annotations
 import pathlib
 
 import pytest
+from conftest import SKIP_REASON
 from packaging.requirements import Requirement
 from packaging.version import Version
 
+from misty_agent.perception.face import (
+    FACE_MESH_SETTINGS,
+    LEFT_CHEEK,
+    NOSE_TIP,
+    RIGHT_CHEEK,
+)
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 #: First mediapipe release without the legacy ``mp.solutions`` API. Verified by
 #: inspecting the published wheels: 0.10.21 ships ``solutions/face_mesh``,
@@ -89,42 +96,19 @@ def test_the_perception_stack_is_declared_for_installation(package):
 # like a healthy one. Run everything with the project venv (see AGENTS.md).
 # ---------------------------------------------------------------------------
 
-SKIP_REASON = (
-    "mediapipe/opencv not importable — run under the project venv "
-    "(.venv/bin/python), not a bare python3"
-)
-
-#: Landmark indices this project reads, from the canonical face mesh topology.
-LEFT_CHEEK, RIGHT_CHEEK, NOSE_TIP = 234, 454, 1
-
-#: The detector settings the perception layer runs with. Every test here uses
-#: these, so the negative control cannot pass under a laxer configuration than
-#: the positive claim it exists to backstop.
-DETECTOR_SETTINGS = dict(
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
-)
-
-
 def _detect(image):
-    """Run the face mesh over a BGR image, returning the raw MediaPipe result."""
+    """Run the face mesh over a BGR image, returning the raw MediaPipe result.
+
+    Configured from ``FACE_MESH_SETTINGS``, the same object the perception
+    layer constructs its mesh from, so these claims cannot drift away from the
+    detector they are about — and so the negative control below cannot pass
+    under a laxer configuration than the positive claim it backstops.
+    """
     mp = pytest.importorskip("mediapipe", reason=SKIP_REASON)
     cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
 
-    with mp.solutions.face_mesh.FaceMesh(**DETECTOR_SETTINGS) as face_mesh:
+    with mp.solutions.face_mesh.FaceMesh(**FACE_MESH_SETTINGS) as face_mesh:
         return face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-
-
-@pytest.fixture(scope="module")
-def portrait():
-    """The fixture photograph, as OpenCV loads it. See fixtures/PROVENANCE.md."""
-    cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
-    path = FIXTURES / "frontal_face_portrait.jpg"
-    image = cv2.imread(str(path))
-    assert image is not None, f"could not decode {path}"
-    return image
 
 
 @pytest.fixture(scope="module")
@@ -167,6 +151,17 @@ def test_the_cheek_landmarks_come_back_the_way_round_the_estimate_assumes(
     # The distance estimate takes abs(right - left), but a sign flip would mean
     # the topology is not what this project thinks it is.
     assert landmarks[LEFT_CHEEK].x < landmarks[RIGHT_CHEEK].x
+
+
+def test_the_nose_tip_falls_between_the_cheeks_on_a_face_looking_at_the_camera(
+    landmarks,
+):
+    # The gaze test measures how far the nose sits from the midpoint of the
+    # cheeks, so it assumes all three landmarks describe the same face seen
+    # the same way round. A nose outside the cheeks would make that ratio
+    # meaningless while still producing a number — the failure mode the gaze
+    # trigger could not detect on its own.
+    assert landmarks[LEFT_CHEEK].x < landmarks[NOSE_TIP].x < landmarks[RIGHT_CHEEK].x
 
 
 def test_the_face_spans_a_plausible_fraction_of_a_head_and_shoulders_portrait(

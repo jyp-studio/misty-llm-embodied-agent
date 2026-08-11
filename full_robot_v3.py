@@ -4,8 +4,11 @@ full_robot_v3.py — Main entry point for the Misty embodied agent.
 
 Architecture (finite-state control loop: IDLE -> PERCEIVE -> THINK -> ACT -> IDLE):
 
-  Perception  MediaPipe face mesh (gaze trigger, distance) + Whisper ASR
-              + GPT-4o vision for scene description.
+  Perception  misty_agent.perception.face (gaze trigger, distance) + a hosted
+              transcriber + GPT-4o vision for scene description. The face mesh
+              itself has moved into the package; what is left here is the
+              buffering and median filtering, which moves next (M4 ticket 03).
+              M5 is what then FIXES the timing defects in it — see PLAN.md §5.
   Plan        A single structured LLM call. Conversation memory (short-term
               window + rolling summary + persisted long-term facts) is injected
               into context. The LLM outputs high-level intent only — never
@@ -48,12 +51,6 @@ except ImportError:
     pass
 
 try:
-    import mediapipe as mp
-except ImportError:
-    print("❌ Missing dependency: pip install mediapipe")
-    raise SystemExit(1)
-
-try:
     from openai import OpenAI
 except ImportError:
     print("❌ Missing dependency: pip install openai")
@@ -70,6 +67,7 @@ from misty_agent.drivers import (
 )
 from misty_agent.fakes import RecordingCommands
 from misty_agent.perception.asr import OpenAITranscriber
+from misty_agent.perception.face import FaceDetector
 
 # Set MISTY_MOCK=1 to run the whole pipeline with no robot on the network:
 # commands are recorded instead of sent. The sensor streams still try to open
@@ -135,46 +133,6 @@ class PerceptionData:
 # 2. Perception
 # ==========================================
 
-class HumanDetector:
-    def __init__(self):
-        self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        self.FOCAL_LENGTH = settings.focal_length
-        self.REAL_FACE_WIDTH = settings.real_face_width_cm
-
-    def analyze_spatial(self, frame) -> dict:
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.face_mesh.process(rgb_frame)
-        h, w, _ = frame.shape
-        info = {"has_human": False, "distance_cm": -1, "is_looking": False}
-
-        if not results.multi_face_landmarks:
-            return info
-
-        info["has_human"] = True
-        landmarks = results.multi_face_landmarks[0].landmark
-
-        left_x = landmarks[234].x * w
-        right_x = landmarks[454].x * w
-        pixel_width = abs(right_x - left_x)
-
-        if pixel_width > 0:
-            info["distance_cm"] = int(
-                (self.FOCAL_LENGTH * self.REAL_FACE_WIDTH) / pixel_width
-            )
-
-        nose_x = landmarks[1].x * w
-        center_x = (left_x + right_x) / 2
-        offset_ratio = abs(nose_x - center_x) / pixel_width
-        info["is_looking"] = offset_ratio < 0.25
-        return info
-
-
 class MistySmartPerception:
     """
     Key design points:
@@ -191,7 +149,7 @@ class MistySmartPerception:
         self.video = video
         self.audio = audio
         self.client = OpenAI(api_key=api_key)
-        self.detector = HumanDetector()
+        self.detector = FaceDetector()
         self.latest_frame = None
         self.visual_events = queue.Queue()
         self.audio_events = queue.Queue()
@@ -272,19 +230,19 @@ class MistySmartPerception:
                 # harness has to measure the current lag first.
                 frame = captured.image
                 self.latest_frame = frame
-                spatial = self.detector.analyze_spatial(frame)
+                reading = self.detector.detect(frame)
 
-                if spatial["has_human"] and spatial["distance_cm"] > 0:
+                if reading.has_human and reading.distance_cm > 0:
                     with self._dist_lock:
                         self._distance_samples.append(
-                            (time.time(), spatial["distance_cm"])
+                            (time.time(), reading.distance_cm)
                         )
 
                 if self.paused:
                     continue  # during actions: update distance only, no events
 
                 if time.time() - last_trigger_time > TRIGGER_COOLDOWN:
-                    if spatial["is_looking"]:
+                    if reading.is_looking:
                         d = self.get_distance()
                         print(f"   👁️ [Visual] user is looking, distance {d if d > 0 else '?'}cm")
                         self.visual_events.put(frame)

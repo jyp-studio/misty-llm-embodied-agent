@@ -120,6 +120,36 @@ property of the host rather than of the code". A system whose correctness
 depends on the machine being fast enough is defective regardless of which
 machine it is currently running on.
 
+### The crossing, produced on purpose
+
+Rather than argue about it, the consumer was slowed deliberately and the same
+replay run at three costs against the same 33 ms producer:
+
+| Injected delay | Consumer cost | Buffer max | Trend | Frame age p95 | |
+|---|---|---|---|---|---|
+| 5 ms | ~10 ms | 0 | +0.0 /s | 13 ms | not growing |
+| 20 ms | ~25 ms | 0 | +0.0 /s | 31 ms | not growing |
+| **50 ms** | **~55 ms** | **20** | **+10.1 /s** | **734 ms** | **growing** |
+
+The delay is *added to* detection, which costs ~5 ms of its own, so the middle
+row runs at roughly 25 ms against a 33 ms producer — below the crossing but not
+far below, and one run in six showed a transient depth of 1. The reference
+pipeline is none of these rows; it is the 0 ms case, measured above.
+
+At 50 ms the buffer fills at ten frames a second and never recovers, and the
+frames that do get through are nearly three quarters of a second stale by the
+time anything looks at them. That is defect A1 turning into defect A2 in front
+of the instrument.
+
+**`PLAN.md`'s original claim was correct for the hardware it assumed.** The
+30–50 ms per frame it took as given is exactly the regime where the queue grows
+without limit; this laptop simply is not in that regime. Nothing about the code
+differs between the three rows above.
+
+`tests/test_diagnostics.py::test_a_slow_consumer_really_does_make_the_buffer_grow`
+keeps the 50 ms case executable. A diagnostic that has never been seen to fire
+is not a diagnostic, and on this machine the reference pipeline never fires it.
+
 ## What cannot be measured, and why
 
 **Lag is undefined while nobody is moving.** Every recent instant matches a

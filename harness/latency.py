@@ -366,7 +366,8 @@ def lag_by_correlation(trace: Trace) -> Optional[float]:
 # The report
 # ---------------------------------------------------------------------------
 
-def _percentile(values: Sequence[float], fraction: float) -> float:
+def percentile(values: Sequence[float], fraction: float) -> float:
+    """Nearest-rank percentile. Shared with :mod:`harness.diagnostics`."""
     ordered = sorted(values)
     index = min(len(ordered) - 1, int(round(fraction * (len(ordered) - 1))))
     return ordered[index]
@@ -377,7 +378,7 @@ def estimate_lag(trace: Trace) -> LagReport:
     lags = lag_samples(trace)
     return LagReport(
         p50_s=statistics.median(lags) if lags else None,
-        p95_s=_percentile(lags, 0.95) if lags else None,
+        p95_s=percentile(lags, 0.95) if lags else None,
         correlation_s=lag_by_correlation(trace),
         measured_samples=len(lags),
         total_samples=len(trace.samples),
@@ -390,14 +391,22 @@ def estimate_lag(trace: Trace) -> LagReport:
 def throughput(trace: Trace, *, producer_fps: float) -> Optional[ThroughputReport]:
     """What the buffer's emptiness actually rests on.
 
-    ``None`` when the trace carries no frame timestamps — an older trace, or a
-    pipeline that does not report which frame it read. Consumer cost is taken
-    as the median frame age, which is the detection cost only while the buffer
-    is empty; once frames are queueing, age includes the wait and this
-    overstates it. That is the right direction to be wrong in: it brings the
-    estimated inversion point closer, never further away.
+    ``None`` when no frame arrived to an empty buffer — an older trace without
+    timestamps, a pipeline that does not report which frame it read, or a run
+    so backed up that nothing was ever read promptly. The last case is not a
+    failure to measure; it is the answer.
     """
-    ages = [s.frame_age_s for s in trace.samples if s.frame_age_s is not None]
+    # Only frames that waited for nothing. Frame age is queue wait *plus*
+    # detection, so once frames are backing up it stops being a measure of what
+    # the consumer costs: with a 50 ms consumer behind a 33 ms producer it
+    # reads 441 ms, thirteen times the truth. Taking it from unqueued samples
+    # keeps it the detection cost it claims to be — and if there are none,
+    # saying so beats reporting a number that means something else.
+    ages = [
+        s.frame_age_s
+        for s in trace.samples
+        if s.frame_age_s is not None and s.backlog == 0
+    ]
     if not ages:
         return None
     return ThroughputReport(

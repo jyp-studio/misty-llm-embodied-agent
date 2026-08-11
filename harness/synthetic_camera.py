@@ -30,7 +30,7 @@ from typing import Optional
 import numpy as np
 
 from misty_agent.config import settings
-from misty_agent.drivers.av_stream import CapturedFrame, FrameBuffer
+from misty_agent.drivers.av_stream import CapturedFrame, FrameBuffer, WorkerThread
 from misty_agent.perception.face import (
     FACE_MESH_SETTINGS,
     LEFT_CHEEK,
@@ -207,8 +207,7 @@ class SyntheticCamera:
         self._composer = composer
         self._interval_s = 1.0 / fps
         self._buffer = FrameBuffer()
-        self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._worker = WorkerThread(self._emit_loop, name="synthetic-camera")
         # Written by whoever drives the scene, read by the producer thread. A
         # float rebind is atomic under the GIL and the producer is content with
         # whichever value it happens to see — a frame either shows the old
@@ -229,19 +228,10 @@ class SyntheticCamera:
     # ---------- VideoSource ----------
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._emit_loop, name="synthetic-camera", daemon=True
-        )
-        self._thread.start()
+        self._worker.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        thread, self._thread = self._thread, None
-        if thread is not None:
-            thread.join(timeout=2.0)
+        self._worker.stop()
 
     def read(self, timeout: float) -> Optional[CapturedFrame]:
         return self._buffer.read(timeout)
@@ -255,19 +245,13 @@ class SyntheticCamera:
 
     # ---------- implementation ----------
 
-    def _emit_loop(self) -> None:
-        try:
-            while not self._stop.is_set():
-                due_at = time.monotonic() + self._interval_s
-                image = self._composer.frame_at(self._distance_cm)
-                # Stamped where the RTSP reader stamps it: the moment the frame
-                # becomes available to this process, before anyone looks at it.
-                self._buffer.put(
-                    CapturedFrame(image=image, captured_at=time.monotonic())
-                )
-                self._stop.wait(max(0.0, due_at - time.monotonic()))
-        except Exception as exc:
-            # A dead producer is indistinguishable from a very slow one at the
-            # seam — `read` just returns None — so the harness would go on
-            # measuring enormous lag with no clue why. Say so loudly.
-            log.exception("synthetic camera stopped producing: %s", exc)
+    def _emit_loop(self, stop: threading.Event) -> None:
+        while not stop.is_set():
+            due_at = time.monotonic() + self._interval_s
+            image = self._composer.frame_at(self._distance_cm)
+            # Stamped where the RTSP reader stamps it: the moment the frame
+            # becomes available to this process, before anyone looks at it.
+            self._buffer.put(
+                CapturedFrame(image=image, captured_at=time.monotonic())
+            )
+            stop.wait(max(0.0, due_at - time.monotonic()))

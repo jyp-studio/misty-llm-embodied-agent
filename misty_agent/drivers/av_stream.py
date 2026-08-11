@@ -31,7 +31,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional, Protocol, runtime_checkable
+from typing import Callable, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -57,6 +57,57 @@ class CapturedFrame:
     def age_s(self, now: Optional[float] = None) -> float:
         """Seconds since this frame left the camera pipeline."""
         return (time.monotonic() if now is None else now) - self.captured_at
+
+
+class WorkerThread:
+    """A background loop with a stop flag, started and stopped idempotently.
+
+    Three things now run a producer or consumer loop behind a
+    :class:`VideoSource`-shaped interface — the RTSP reader, the replay
+    harness's camera, and the harness's pipeline — and each needs the same
+    six lines of thread bookkeeping. This is that, once. The same argument as
+    :class:`FrameBuffer`: two copies are two things that can drift apart while
+    both keep passing (PLAN.md §10).
+
+    ``run`` is the whole loop, and receives the stop event to poll. It is
+    expected to return promptly once that is set. An exception escaping it is
+    logged rather than swallowed: a dead worker is indistinguishable from a
+    very slow one at the seam — the reader just gets nothing — so a silent
+    death would be measured as enormous latency with no clue why.
+    """
+
+    def __init__(
+        self, run: "Callable[[threading.Event], None]", *, name: str
+    ) -> None:
+        self._run = run
+        self._name = name
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self.is_running:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._guarded, name=self._name, daemon=True
+        )
+        self._thread.start()
+
+    def stop(self, *, timeout: float = 2.0) -> None:
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=timeout)
+
+    @property
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def _guarded(self) -> None:
+        try:
+            self._run(self._stop)
+        except Exception as exc:
+            log.exception("%s stopped unexpectedly: %s", self._name, exc)
 
 
 class FrameBuffer:
@@ -247,26 +298,18 @@ class RtspVideoStream:
         self._rotate_degrees = rotate_degrees
         self._producer_pause_s = producer_pause_s
         self._buffer = FrameBuffer()
-        self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._worker = WorkerThread(self._read_loop, name="rtsp-video")
 
     # ---------- VideoSource ----------
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
+        if self._worker.is_running:
             return
-        url = self._session.open()
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._read_loop, args=(url,), name="rtsp-video", daemon=True
-        )
-        self._thread.start()
+        self._session.open()
+        self._worker.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        thread, self._thread = self._thread, None
-        if thread is not None:
-            thread.join(timeout=2.0)
+        self._worker.stop()
         self._session.close()
 
     def read(self, timeout: float) -> Optional[CapturedFrame]:
@@ -281,8 +324,13 @@ class RtspVideoStream:
 
     # ---------- implementation ----------
 
-    def _read_loop(self, url: str) -> None:
+    def _read_loop(self, stop: threading.Event) -> None:
         import cv2
+
+        url = self._session.url
+        if url is None:
+            log.error("video reader started before the AV session was opened")
+            return
 
         capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not capture.isOpened():
@@ -296,7 +344,7 @@ class RtspVideoStream:
         )
         log.info("RTSP video reader started")
         try:
-            while not self._stop.is_set():
+            while not stop.is_set():
                 ok, image = capture.read()
                 # Stamp the instant the frame arrived, before any work is done
                 # on it. Everything after this point is measurable lag.
@@ -314,8 +362,6 @@ class RtspVideoStream:
                 # slower than 100 fps — it only slows the growth.
                 if self._producer_pause_s:
                     time.sleep(self._producer_pause_s)
-        except Exception as exc:
-            log.exception("RTSP video reader crashed: %s", exc)
         finally:
             capture.release()
             log.info("RTSP video reader stopped")

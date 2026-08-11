@@ -167,10 +167,24 @@ class Trajectory:
 #: commands at 90 cm: ``plan_step(90)`` returns 21 cm at the default gain.
 #: ``test_trajectory.py`` pins the two together, so a change to the control law
 #: shows up here rather than leaving the script quietly unrealistic.
+#:
+#: **The walk is 40 cm/s, revised up from 6.7.** Two reasons, and the first
+#: alone is enough: 6.7 cm/s is not a walk. A person crosses a room at roughly
+#: 120 cm/s; the original figure was slower than that by a factor of eighteen,
+#: closer to a shuffle than to anyone approaching a robot.
+#:
+#: The second reason is what makes the number usable. Readings are quantised to
+#: whole centimetres, so one reading pins the person's position no better than
+#: ``1 cm / speed`` — at 6.7 cm/s that is 150 ms, six times the lag being
+#: measured, and the estimate came back at −45 ms with the noise swamping it
+#: entirely. At 40 cm/s the same quantum is 25 ms and the signal survives.
+#: Choosing the speed to make the measurement possible is legitimate; choosing
+#: it to make the answer nicer would not be, which is why the realism argument
+#: is stated first and the numbers behind both are in the baseline document.
 APPROACH_HOLD_STEP = (
     Trajectory.starting_at(130.0)
-    .walk_to(90.0, over=6.0)  # ~6.7 cm/s, an unhurried walk
-    .hold(2.0)
+    .walk_to(90.0, over=1.0)  # 40 cm/s — an unhurried but genuine walking pace
+    .hold(1.5)
     .step_to(69.0)
-    .hold(2.0)
+    .hold(1.5)
 )

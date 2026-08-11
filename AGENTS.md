@@ -11,6 +11,29 @@ The hard premise that shapes every technical choice: **there is no robot, and
 there never will be.** Nothing here has run against hardware. Anything not
 verified in simulation must say so.
 
+## Running anything
+
+**Use `.venv`. Never bare `python3`.**
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python test_sim.py
+```
+
+`python3` on this machine resolves to a miniforge 3.10 install that has no
+mediapipe and no opencv. The trap is that `python3 -m pytest tests/` still
+reports green — the perception tests skip rather than fail, so a wrong
+interpreter looks like a healthy one. **The tell is the skip count**: run with
+`-rs`, and if anything reports "not importable — run under the project venv",
+you are on the wrong interpreter. Under `.venv` nothing in `tests/` skips.
+
+`.venv` is Python 3.11, matching the Docker target in `PLAN.md`, with the
+dependencies actually installed.
+
+If `.venv` is missing: `python3.11 -m venv .venv && .venv/bin/python -m pip
+install --only-binary=:all: -r requirements.txt`. Run **one** pip process at a
+time — two concurrent installs against the same venv deadlock silently.
+
 ## Agent skills
 
 ### Issue tracker

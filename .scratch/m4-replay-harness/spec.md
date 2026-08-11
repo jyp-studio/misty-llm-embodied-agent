@@ -238,10 +238,15 @@ harness 掛在每個 push(`ruff` + `pytest` + `docker build` 那條線上)。免
 - **queue 藏在 `read()` 後面**是 M3 的設計偏離(記於 `PLAN.md` §11):M5 修 A1 只需
   改 `RtspVideoStream` 一處,呼叫端不動。M4 的 harness 因此也不需要模擬 queue 行為,
   它只要餵影格。
-- **本機環境**:Python 3.10.6,無 venv,`cv2` / `av` / `websocket` / `openai` /
-  `mediapipe` 皆未安裝。M4 是第一個真的需要 `mediapipe` 與 `opencv-python` 的里程碑,
-  安裝步驟屬於 M4 的一部分。M3 的驅動層刻意把重相依 import 移進 adapter 內部,讓模組
-  在裸環境下 import 得起來——**新增的感知模組應維持這個性質**,否則 `pytest` 會直接掛。
+- **M4 是第一個真的需要 `mediapipe` 與 `opencv-python` 的里程碑,安裝步驟屬於 M4 的
+  一部分**(這句授權了 ticket 01 的存在,不要在更新環境現況時把它一起改掉)。
+- **本機環境**(2026-08-11 更新):專案 venv 建於 `.venv`,Python **3.11.3**,相依已
+  安裝完畢(mediapipe 0.10.21、opencv 4.11、av 18、openai 2.53、numpy 1.26)。
+  這順帶消除了原本「本機 3.10.6 vs Docker 3.11」的不一致。
+  **一律用 `.venv/bin/python`,不要用 `python3`** ——後者是 miniforge 3.10,沒有
+  mediapipe,而且用它跑 `pytest tests/` 仍然全綠,錯的直譯器看起來和對的一模一樣。
+  M3 的驅動層刻意把重相依 import 移進 adapter 內部,讓模組在裸環境下 import 得起來
+  ——**新增的感知模組應維持這個性質**,否則 `pytest` 會直接掛。
 - **M9 的 Docker 提醒**:mediapipe 0.10.21 沒有 `aarch64` 的 manylinux wheel。在 Apple
   Silicon 上建 image 需指定 `--platform linux/amd64`。
 - **驗證邊界的措辭**:harness 證明的是**截段 B 的時間語意**,不證明真機上的端到端延遲。

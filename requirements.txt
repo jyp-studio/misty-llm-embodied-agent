@@ -2,12 +2,23 @@
 openai>=1.30
 pydantic>=2.0
 pydantic-settings>=2.0
-mediapipe>=0.10
+# PINNED, and the ceiling is load-bearing — do not loosen it.
+# Face detection uses the legacy `mp.solutions.face_mesh` API, which upstream
+# REMOVED in 0.10.31 (and in 1.0.0). `mediapipe>=0.10` therefore resolves to a
+# release where importing the perception layer raises AttributeError.
+# 0.10.21 is the last release that both ships that API and bundles the face
+# landmark models; from 0.10.31 you must supply a .task bundle yourself.
+# Migrating to the Tasks API is scheduled AFTER M5, so that the replay harness
+# exists as a safety net for the swap — see .scratch/m4-replay-harness/spec.md.
+mediapipe==0.10.21
 opencv-python>=4.9
 numpy
 
 # Test
 pytest>=8.0
+# Parses the requirement lines above, in tests/test_perception_stack.py. It
+# arrives with pytest anyway; declared because it is imported directly.
+packaging
 
 # Misty AV / audio pipeline
 av>=12.0

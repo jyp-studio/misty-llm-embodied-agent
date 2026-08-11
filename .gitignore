@@ -20,6 +20,13 @@ venv/
 # ---- 舊 AutoMisty 素材：本地保留，不隨 repo 分發（見 PLAN.md M1）----
 legacy/
 
+# ---- agent 工具在本地展開的第三方 skill 全文 ----
+# 執行 skill 時由工具鏈自動產生，內容是上游 skill 的原文
+# （github.com/mattpocock/skills），本機安裝未附授權條款。
+# 這個 repo 是單一授權 Apache-2.0（見 NOTICE），不得混入來源不明的第三方文字。
+# 它可以被重新產生，沒有納入版控的必要。
+.agents/
+
 # ---- OS / IDE ----
 .DS_Store
 .idea/

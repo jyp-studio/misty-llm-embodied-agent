@@ -59,6 +59,47 @@ class CapturedFrame:
         return (time.monotonic() if now is None else now) - self.captured_at
 
 
+class FrameBuffer:
+    """What a video source holds between producing a frame and it being read.
+
+    Every :class:`VideoSource` needs the same thing here, and the replay
+    harness's camera needs it to behave *identically* to the RTSP stream —
+    otherwise the harness measures its own buffering rather than the system's.
+    Two copies of this would be two things that could drift apart while both
+    kept passing, which is the failure PLAN.md §10 records against the control
+    law.
+
+    **Unbounded, deliberately.** Producing faster than the consumer reads makes
+    it grow without limit, and nothing here stops that: the growth is PLAN.md
+    defect A1, and the harness exists to measure it. Bounding it is a decision
+    for the pipeline rewrite (§12.3), not a property of the container.
+    """
+
+    def __init__(self) -> None:
+        self._frames: "queue.Queue[CapturedFrame]" = queue.Queue()
+
+    def put(self, frame: CapturedFrame) -> None:
+        self._frames.put(frame)
+
+    def read(self, timeout: float) -> Optional[CapturedFrame]:
+        """Next frame, or ``None`` if none arrived within ``timeout``."""
+        try:
+            return self._frames.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def flush(self) -> None:
+        while True:
+            try:
+                self._frames.get_nowait()
+            except queue.Empty:
+                return
+
+    @property
+    def depth(self) -> int:
+        return self._frames.qsize()
+
+
 @runtime_checkable
 class VideoSource(Protocol):
     """A source of timestamped camera frames.
@@ -205,9 +246,7 @@ class RtspVideoStream:
         self._session = session
         self._rotate_degrees = rotate_degrees
         self._producer_pause_s = producer_pause_s
-        # Unbounded, exactly as before. Bounding it is the M5 fix for defect
-        # A1 and must not happen before M4 has measured the damage.
-        self._frames: "queue.Queue[CapturedFrame]" = queue.Queue()
+        self._buffer = FrameBuffer()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -231,21 +270,14 @@ class RtspVideoStream:
         self._session.close()
 
     def read(self, timeout: float) -> Optional[CapturedFrame]:
-        try:
-            return self._frames.get(timeout=timeout)
-        except queue.Empty:
-            return None
+        return self._buffer.read(timeout)
 
     def flush(self) -> None:
-        while True:
-            try:
-                self._frames.get_nowait()
-            except queue.Empty:
-                return
+        self._buffer.flush()
 
     @property
     def backlog(self) -> int:
-        return self._frames.qsize()
+        return self._buffer.depth
 
     # ---------- implementation ----------
 
@@ -274,7 +306,9 @@ class RtspVideoStream:
                     break
                 if rotation is not None:
                     image = cv2.rotate(image, rotation)
-                self._frames.put(CapturedFrame(image=image, captured_at=captured_at))
+                self._buffer.put(
+                    CapturedFrame(image=image, captured_at=captured_at)
+                )
                 # Producer throttle carried over from the original reader. It
                 # does not prevent the backlog in defect A1 — the consumer is
                 # slower than 100 fps — it only slows the growth.

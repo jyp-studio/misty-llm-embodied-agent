@@ -20,6 +20,7 @@ from misty_agent.drivers.audio_stream import AudioStream, Utterance
 from misty_agent.drivers.av_stream import (
     AvSession,
     CapturedFrame,
+    FrameBuffer,
     RtspVideoStream,
     VideoSource,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "AvSession",
     "CapturedFrame",
     "EventStream",
+    "FrameBuffer",
     "RobotCommands",
     "RtspVideoStream",
     "Subscription",

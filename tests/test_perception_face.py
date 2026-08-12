@@ -338,3 +338,54 @@ def test_the_module_imports_with_no_camera_stack_installed():
     assert result.returncode == 0, (
         f"importing the module without cv2/mediapipe failed:\n{result.stderr}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Gaze — the negative control
+# ---------------------------------------------------------------------------
+
+def test_a_face_turned_away_is_not_looking(turned_portrait):
+    """The half of the gaze test that was missing until now.
+
+    Only one fixture existed before this, and it was frontal, so every gaze
+    assertion in the suite could be satisfied by an ``is_looking`` that
+    returned ``True`` and nothing else. This is the case that fails such an
+    implementation.
+
+    Detection and gaze are asserted **separately and in that order**. If the
+    detector simply found no face, ``is_looking`` would also be ``False`` and a
+    single combined assertion would call that a pass — reporting a failure to
+    see anyone as a correct judgement about where they were looking.
+    """
+    with FaceDetector() as detector:
+        reading = detector.detect(turned_portrait)
+
+    assert reading.has_human, (
+        "no face found in the turned-head fixture — this test would then be "
+        "asserting a detection failure rather than a gaze judgement"
+    )
+    assert not reading.is_looking
+
+
+def test_the_two_fixtures_disagree_about_gaze(portrait, turned_portrait):
+    """The pair, as a pair.
+
+    Neither photograph on its own says anything about whether the threshold
+    discriminates between them. Together they do.
+
+    Detection is asserted per image rather than as one combined condition:
+    ``frontal.has_human and turned.has_human`` would let a failure to see
+    either face hide inside a single line, which is the merge the ticket
+    forbids.
+    """
+    with FaceDetector() as detector:
+        frontal = detector.detect(portrait)
+    with FaceDetector() as detector:
+        turned = detector.detect(turned_portrait)
+
+    assert frontal.has_human, "no face in the frontal fixture"
+    assert turned.has_human, "no face in the turned fixture"
+    assert frontal.is_looking is not turned.is_looking, (
+        "both fixtures were judged the same way — the pair discriminates "
+        "nothing and the gaze test has no negative control after all"
+    )

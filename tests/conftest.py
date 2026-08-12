@@ -22,11 +22,25 @@ SKIP_REASON = (
 )
 
 
-@pytest.fixture(scope="session")
-def portrait():
-    """The fixture photograph, as OpenCV loads it. See fixtures/PROVENANCE.md."""
+def _load(filename: str):
     cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
-    path = FIXTURES / "frontal_face_portrait.jpg"
+    path = FIXTURES / filename
     image = cv2.imread(str(path))
     assert image is not None, f"could not decode {path}"
     return image
+
+
+@pytest.fixture(scope="session")
+def portrait():
+    """Someone looking straight at the camera. See fixtures/PROVENANCE.md."""
+    return _load("frontal_face_portrait.jpg")
+
+
+@pytest.fixture(scope="session")
+def turned_portrait():
+    """Someone with their head turned away, face still fully visible.
+
+    The negative control for the gaze test. Without it, an ``is_looking`` that
+    returned ``True`` unconditionally would pass every test in the suite.
+    """
+    return _load("turned_head_portrait.jpg")

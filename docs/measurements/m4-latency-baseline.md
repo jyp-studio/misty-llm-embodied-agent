@@ -104,7 +104,16 @@ unbounded and has no backpressure whatsoever. It stayed empty because the
 consumer costs 5 ms against a producer arriving every 33 ms — a ratio of 0.15.
 
 The two costs cross at **≈200 fps**. Equivalently, the queue starts growing if
-the consumer becomes ~6.6× slower. That is well within the range of a slower
+the consumer becomes ~6.6× slower.
+
+> **Re-measured after ticket 07: ≈270 fps.** That ticket changed how consumer
+> cost is derived — frame age is queue wait *plus* detection, so it is only the
+> detection cost while the buffer is empty, and it is now taken from unqueued
+> samples only. The figures in this section predate that change and read the
+> cost as slightly higher, hence a lower crossing. The live figure is in
+> `m4-harness-report.md`, regenerated with `python -m harness`; this section is
+> kept as recorded rather than edited, because the point of the numbers above
+> is the derivation of the bound, and that is unaffected. That is well within the range of a slower
 host: `PLAN.md` §5 originally assumed 30–50 ms per frame, which is 6–10× what
 was measured here, and at those figures the buffer grows without limit.
 

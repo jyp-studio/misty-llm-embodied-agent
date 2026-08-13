@@ -187,8 +187,19 @@ class Settings(BaseSettings):
             "Travel speed (cm/s) at drive_percent. UNCALIBRATED. To measure: "
             "drive_time(linearVelocity=drive_percent, angularVelocity=0, "
             "timeMs=2000), measure the distance travelled, divide by 2. "
-            "The closed loop tolerates large errors here; calibration only "
-            "reduces the number of steps."
+            "The closed loop adapts within max_actual_motion_multiplier; "
+            "behaviour beyond that separate bound is unknown."
+        ),
+    )
+    max_actual_motion_multiplier: float = Field(
+        default=2.0,
+        gt=0.0,
+        description=(
+            "Upper bound on the maximum monotone distance travelled during "
+            "one drive command, relative to its commanded distance. "
+            "UNCALIBRATED: the default is a simulation assumption covering "
+            "the 2.0x M4 counterexample, not a hardware measurement. "
+            "Behaviour beyond this multiplier is unknown."
         ),
     )
 
@@ -211,17 +222,16 @@ class Settings(BaseSettings):
     min_step_cm: float = Field(
         default=8.0, gt=0.0,
         description=(
-            "Lower bound on a commanded step. Currently unreachable — see "
-            "PLAN.md defect C: abs(delta) > distance_tolerance_cm implies "
-            "abs(delta) * approach_gain > min_step_cm at the default values."
+            "Preferred lower bound on a commanded step. The arrival-band "
+            "safety cap takes precedence, so this value cannot force a step "
+            "through the band."
         ),
     )
     approach_gain: float = Field(
         default=0.7, gt=0.0, le=1.0,
         description=(
-            "Fraction of the remaining error commanded per step. This — not "
-            "min_safe_distance_cm — is what actually prevents collisions at "
-            "the default values (PLAN.md defect B)."
+            "Fraction of the remaining error preferred per step, before the "
+            "shared arrival-band and conditional safety bounds are applied."
         ),
     )
     max_approach_steps: int = Field(

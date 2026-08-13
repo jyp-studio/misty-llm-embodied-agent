@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 
+import harness.robustness as robustness
 from harness.robustness import (
     ApproachOutcome,
     DelayedPerception,
@@ -28,6 +29,7 @@ from harness.robustness import (
     sweep_transport_lag,
 )
 from misty_agent.config import Settings
+from misty_agent.control.approach import approach as public_approach
 
 SETTINGS = Settings()
 ARRIVAL_LO = SETTINGS.target_distance_cm - SETTINGS.distance_tolerance_cm
@@ -100,11 +102,30 @@ def test_the_model_reproduces_the_lag_it_was_given():
 # ---------------------------------------------------------------------------
 
 def test_with_no_lag_and_perfect_calibration_the_robot_arrives():
-    outcome = simulate_approach(transport_lag_s=0.0, start_cm=130.0)
+    outcome = simulate_approach(
+        transport_lag_s=0.0,
+        start_cm=130.0,
+        speed_error=1.0,
+    )
 
     assert outcome.outcome == "arrived"
     assert ARRIVAL_LO <= outcome.final_cm <= ARRIVAL_HI
     assert outcome.steps <= SETTINGS.max_approach_steps
+
+
+def test_the_simulation_enters_through_public_approach(monkeypatch):
+    calls = 0
+
+    def recording_approach(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return public_approach(*args, **kwargs)
+
+    monkeypatch.setattr(robustness, "approach", recording_approach, raising=False)
+
+    simulate_approach(transport_lag_s=0.0)
+
+    assert calls == 1
 
 
 def test_the_step_cap_is_never_exceeded_however_bad_the_lag():
@@ -118,21 +139,20 @@ def test_the_step_cap_is_never_exceeded_however_bad_the_lag():
 
 
 def test_a_lag_shorter_than_the_settle_changes_nothing():
-    """The threshold is `post_step_settle_s`, not the control cycle.
+    """Most of the settle can absorb lag, but its median has a boundary.
 
-    A delay that reaches back only into the settle sees the robot already
-    stationary at its new position: stale, but correct. One that reaches into
-    the drive sees the person further away and commands a step for ground
-    already covered.
+    Public ``approach`` collects fresh-ingress samples throughout settling.
+    Once lag makes more than half of that window describe the drive, its median
+    changes.  The sweep below locates that boundary precisely.
     """
     baseline = simulate_approach(transport_lag_s=0.0)
     settle = SETTINGS.post_step_settle_s
 
-    for lag in (0.1, 0.5, settle - 0.05):
+    for lag in (0.1, 0.5):
         brief = simulate_approach(transport_lag_s=lag)
         assert brief.final_cm == pytest.approx(baseline.final_cm, abs=0.01)
 
-    assert simulate_approach(transport_lag_s=settle).final_cm != pytest.approx(
+    assert simulate_approach(transport_lag_s=settle - 0.05).final_cm != pytest.approx(
         baseline.final_cm, abs=0.01
     )
 
@@ -151,32 +171,20 @@ def test_a_slow_robot_undershoots_rather_than_overshoots():
     outcome = simulate_approach(transport_lag_s=0.0, speed_error=0.5)
 
     assert outcome.closest_cm > SETTINGS.min_safe_distance_cm
+    assert outcome.converged
 
 
-def test_a_fast_robot_walks_through_the_safety_floor():
-    """PLAN.md defect B, reproduced to the centimetre.
-
-    The floor clamps the *commanded* distance, never the distance actually
-    travelled, so a robot that moves twice as far as it believes goes straight
-    through it without the clamp ever firing. §5-B records this as "実速為校準
-    值 2 倍時模擬會突破 45cm 至 44.0" — and 44.0 is what comes back, from a
-    simulation written years later and independently of the one that produced
-    that figure.
-
-    This does not assert the robot is safe. It records that it is not.
-    """
+def test_the_two_x_counterexample_stays_outside_the_safety_floor():
+    """Conditional simulation regression for M4's former 100 -> 44 cm path."""
     outcome = simulate_approach(
         transport_lag_s=0.0, start_cm=100.0, speed_error=2.0
     )
 
-    assert outcome.closest_cm == pytest.approx(44.0)
-    assert outcome.inside_safety_floor
+    assert outcome.closest_cm >= SETTINGS.min_safe_distance_cm
+    assert outcome.converged
 
 
-def test_whether_a_fast_robot_is_dangerous_depends_where_it_started():
-    # Not every miscalibrated approach breaches the floor: from 130cm the
-    # doubled first step happens to land inside the arrival band. A single
-    # starting distance would have made defect B look conditional on luck.
+def test_the_two_x_bound_is_not_luck_at_one_starting_distance():
     breached = [
         simulate_approach(
             transport_lag_s=0.0, start_cm=start, speed_error=2.0
@@ -184,7 +192,7 @@ def test_whether_a_fast_robot_is_dangerous_depends_where_it_started():
         for start in (130.0, 120.0, 110.0, 100.0, 90.0)
     ]
 
-    assert any(breached) and not all(breached)
+    assert not any(breached)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +215,12 @@ def test_the_envelope_reports_where_convergence_stops():
     assert limits.first_failing_lag_s is None or (
         limits.first_failing_lag_s > limits.largest_converging_lag_s
     )
-    assert limits.failure_mode in (None, "timeout", "collision", "lost")
+    assert limits.failure_mode in (
+        None,
+        "timeout",
+        "safety_floor_breach",
+        "lost_user",
+    )
 
 
 def test_the_envelope_says_it_is_a_sweep_and_not_a_measurement():
@@ -225,9 +238,14 @@ def test_the_sweep_drives_the_real_control_law():
     # own parameters change, which it cannot if the sweep models the law
     # rather than calling it. PLAN.md §10 records a hand-derived closed form
     # that was wrong and passed anyway.
-    wide = simulate_approach(transport_lag_s=0.0, settings=SETTINGS)
+    wide = simulate_approach(
+        transport_lag_s=0.0,
+        speed_error=1.0,
+        settings=SETTINGS,
+    )
     narrow = simulate_approach(
         transport_lag_s=0.0,
+        speed_error=1.0,
         settings=Settings(distance_tolerance_cm=2.0),
     )
 
@@ -247,19 +265,18 @@ def test_the_controller_reports_success_even_when_it_drove_through_the_person():
     as everything else, so eventually a stale one lands in the band while the
     truth is somewhere else entirely.
 
-    There is no lag at which this controller notices. That is the argument for
-    the rewrite bounding reading age at the point of decision rather than
-    trusting whatever the estimator last produced.
+    Process-local freshness cannot detect transport staleness that happened
+    before frame ingress.  This remaining boundary is why the report sweeps
+    sensor transport lag and truth-audits the raw public status separately.
     """
-    # 2.0s: physical, and enough to make the point — the robot ends 4cm inside
-    # a floor it may not cross, and says it arrived. Larger lags drive the
-    # model to negative distances, which no camera could report; the claim is
-    # kept on the rows that could actually happen.
+    # 2.0s is enough to make the point: simulator truth breaches the floor,
+    # while the delayed public reading still makes the controller say arrived.
     outcome = simulate_approach(transport_lag_s=2.0, start_cm=130.0)
 
     assert outcome.outcome == "arrived"
     assert outcome.inside_safety_floor
     assert not outcome.converged
+    assert outcome.audited_outcome == "safety_floor_breach"
 
 
 def test_the_episode_still_terminates_at_every_swept_lag():
@@ -271,31 +288,25 @@ def test_the_episode_still_terminates_at_every_swept_lag():
 
 
 def test_the_envelope_boundary_is_where_the_documented_sweep_says():
-    # Pins the published table (docs/measurements/m4-transport-lag-sweep.md).
+    # Pins the M5 report, while the M4 table remains the pre-rewrite baseline.
     # Not a threshold to pass — a record of what was reported, so that a change
     # to the control law shows up as this test disagreeing with the document
     # rather than as the document quietly going stale.
     limits = envelope(sweep_transport_lag())
 
-    assert limits.largest_converging_lag_s == pytest.approx(1.55)
-    assert limits.first_failing_lag_s == pytest.approx(1.60)
-    assert limits.failure_mode == "overshoot"
-    assert limits.first_floor_breach_s == pytest.approx(1.75)
+    assert limits.largest_converging_lag_s == pytest.approx(0.65)
+    assert limits.first_failing_lag_s == pytest.approx(0.70)
+    assert limits.failure_mode == "safety_floor_breach"
+    assert limits.first_floor_breach_s == pytest.approx(0.70)
 
 
-def test_a_coarse_grid_reports_the_wrong_failure_mode():
-    """Regression for the first published table, which was wrong twice over.
-
-    Stepping 1.5 → 2.0 s skips the 1.60–1.70 s band entirely, so the overshoot
-    that happens first never appears and the collision beyond it is reported as
-    the first failure. The spec asked which of oscillation, overshoot or step
-    exhaustion the controller fails by; the coarse answer named the wrong one.
-    """
+def test_a_coarse_grid_localises_the_new_boundary_poorly():
     coarse = envelope(sweep_transport_lag([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]))
     fine = envelope(sweep_transport_lag())
 
-    assert coarse.failure_mode == "collision"
-    assert fine.failure_mode == "overshoot"
+    assert coarse.first_failing_lag_s == pytest.approx(1.0)
+    assert fine.first_failing_lag_s == pytest.approx(0.70)
+    assert coarse.failure_mode == fine.failure_mode == "safety_floor_breach"
     assert coarse.resolution_s > fine.resolution_s
 
 

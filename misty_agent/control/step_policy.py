@@ -1,9 +1,9 @@
 """The approach controller's step decision, in one place.
 
 `plan_step` is the single implementation of "given a measured distance, what
-does the robot do next". It has three consumers — the runtime controller, the
-reachability analysis below, and the tests — so that none of them can drift
-from the others. A copy of this logic living in a test was how the bug in the
+does the robot do next". The runtime controller, reachability analysis,
+robustness sweep (through public ``approach``), and tests all use it, so none
+of them can drift. A copy of this logic living in a test was how the bug in the
 first version of the reachability analysis stayed invisible.
 
 Nothing here imports the config module: callers pass their settings object in.
@@ -17,7 +17,7 @@ measured distance, and it is therefore fully verifiable without a robot.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 class StepPolicyConfig(Protocol):
@@ -29,6 +29,7 @@ class StepPolicyConfig(Protocol):
     max_step_cm: float
     min_step_cm: float
     approach_gain: float
+    max_actual_motion_multiplier: float
 
 
 @dataclass(frozen=True)
@@ -37,8 +38,10 @@ class Step:
 
     direction: int  # +1 toward the user, -1 away
     commanded_cm: float
-    #: True when the forward step was shortened to stop at the safety floor.
+    #: True when the explicit forward safety-floor cap shortened the step.
     clamped_by_floor: bool
+    #: True when the shared arrival-band cap shortened either direction.
+    clamped_by_arrival_band: bool
     #: True when the gain term was below `min_step_cm` and got raised to it.
     raised_to_min_step: bool
 
@@ -56,9 +59,16 @@ def plan_step(
 ) -> Step | str:
     """Decide the next move. Returns a `Step`, `ARRIVED`, or `INSIDE_FLOOR`.
 
-    The command is a *distance*, never a velocity or a duration — converting it
-    to `drive_time` arguments is the caller's job, and it is the only place a
-    calibration constant enters.
+    First choose the gain/min/max preference.  Then cap both directions so an
+    actual monotone excursion up to ``max_actual_motion_multiplier`` times the
+    command cannot cross the far edge of the arrival band.  Forward motion also
+    carries an explicit safety-floor cap; the valid-config invariant makes the
+    arrival cap stricter, but keeping both makes the safety premise visible.
+
+    The multiplier is UNCALIBRATED.  This is a conditional software guarantee,
+    not a hardware claim; excursions beyond the configured bound are unknown.
+    Conversion of the returned distance to velocity and duration remains the
+    caller's responsibility.
     """
     delta = measured_cm - cfg.target_distance_cm
     if abs(delta) <= cfg.distance_tolerance_cm:
@@ -67,22 +77,36 @@ def plan_step(
     direction = 1 if delta > 0 else -1
 
     gain_step = abs(delta) * cfg.approach_gain
-    commanded = min(cfg.max_step_cm, max(cfg.min_step_cm, gain_step))
+    preferred = min(cfg.max_step_cm, max(cfg.min_step_cm, gain_step))
     raised_to_min_step = gain_step < cfg.min_step_cm
 
-    clamped_by_floor = False
+    lower_arrival_cm = cfg.target_distance_cm - cfg.distance_tolerance_cm
+    upper_arrival_cm = cfg.target_distance_cm + cfg.distance_tolerance_cm
+    if direction > 0:
+        distance_to_far_edge = measured_cm - lower_arrival_cm
+    else:
+        distance_to_far_edge = upper_arrival_cm - measured_cm
+    arrival_cap = max(
+        0.0,
+        distance_to_far_edge / cfg.max_actual_motion_multiplier,
+    )
+
+    floor_cap = float("inf")
     if direction > 0:
         headroom = measured_cm - cfg.min_safe_distance_cm
         if headroom <= 0:
             return INSIDE_FLOOR
-        if headroom < commanded:
-            commanded = headroom
-            clamped_by_floor = True
+        floor_cap = headroom / cfg.max_actual_motion_multiplier
+
+    commanded = min(preferred, arrival_cap, floor_cap)
+    clamped_by_arrival_band = arrival_cap < preferred
+    clamped_by_floor = floor_cap < min(preferred, arrival_cap)
 
     return Step(
         direction=direction,
         commanded_cm=commanded,
         clamped_by_floor=clamped_by_floor,
+        clamped_by_arrival_band=clamped_by_arrival_band,
         raised_to_min_step=raised_to_min_step,
     )
 
@@ -124,17 +148,30 @@ def safety_floor_is_reachable(cfg: StepPolicyConfig) -> bool:
     ``min_safe > target + tolerance``; together they give ``tolerance < 0``.
     The invariant is enforced at config load instead of at runtime.
 
-    This does NOT dispose of PLAN.md defect B. The floor bounds the *commanded*
-    distance, not the distance actually travelled, so calibration error can
-    still carry the robot past it. That is M6's problem.
+    M5 closes the calibration-error hole conditionally: each forward command
+    is divided by the configured maximum actual-motion multiplier.  Exceeding
+    that uncalibrated assumption remains unknown.
     """
     return any(outcome is INSIDE_FLOOR for _, outcome in _sweep(cfg))
 
 
 def forward_clamp_is_reachable(cfg: StepPolicyConfig) -> bool:
-    """Whether the safety floor ever actually shortens a forward step."""
+    """Whether the explicit floor cap ever shortens a forward step.
+
+    The arrival band's lower edge is required to sit outside the floor, so its
+    shared cap is normally stricter.  Keeping this scan makes that relationship
+    executable rather than silently deleting the defensive floor bound.
+    """
     return any(
         isinstance(outcome, Step) and outcome.clamped_by_floor
+        for _, outcome in _sweep(cfg)
+    )
+
+
+def arrival_bound_is_reachable(cfg: StepPolicyConfig) -> bool:
+    """Whether the shared arrival-band bound shortens a preferred step."""
+    return any(
+        isinstance(outcome, Step) and outcome.clamped_by_arrival_band
         for _, outcome in _sweep(cfg)
     )
 
@@ -145,8 +182,9 @@ def min_step_is_reachable(cfg: StepPolicyConfig) -> bool:
     False at the default values (PLAN.md defect C): a step is only commanded
     when ``abs(delta) > distance_tolerance_cm``, so the gain term always exceeds
     ``12 * 0.7 = 8.4``, which is above the 8 cm floor. Lower the tolerance to 11
-    — or the gain to 0.5 — and it starts binding. The backward direction has no
-    clamp at all, so the step it forces there can overshoot.
+    — or the gain to 0.5 — and it starts binding.  The shared arrival-band cap
+    takes precedence in both directions, so a live minimum cannot force an
+    overshoot through the band.
     """
     return any(
         isinstance(outcome, Step) and outcome.raised_to_min_step

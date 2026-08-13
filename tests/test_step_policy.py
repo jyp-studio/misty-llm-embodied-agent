@@ -24,6 +24,7 @@ from misty_agent.control.step_policy import (
     ARRIVED,
     INSIDE_FLOOR,
     Step,
+    arrival_bound_is_reachable,
     forward_clamp_is_reachable,
     min_forward_trigger_cm,
     min_step_is_reachable,
@@ -53,9 +54,12 @@ def test_too_close_commands_a_backward_step():
     assert step.direction == -1
 
 
-def test_step_is_the_gain_fraction_of_the_remaining_error():
-    # 100 - 60 = 40 remaining; 40 * 0.7 = 28, under both caps.
-    assert plan_step(100.0, Settings()).commanded_cm == pytest.approx(28.0)
+def test_step_yields_to_the_calibration_aware_arrival_bound():
+    # Preferred: (100 - 60) * .7 = 28.  The 2x bound reserves the 52cm
+    # headroom to the far edge of the arrival band, so the command is 26cm.
+    step = plan_step(100.0, Settings())
+    assert step.commanded_cm == pytest.approx(26.0)
+    assert step.clamped_by_arrival_band is True
 
 
 def test_step_is_capped_by_max_step_cm():
@@ -63,15 +67,11 @@ def test_step_is_capped_by_max_step_cm():
     assert plan_step(500.0, Settings()).commanded_cm == pytest.approx(35.0)
 
 
-def test_backward_direction_has_no_floor_clamp():
-    """PLAN.md defect C: only forward motion is bounded.
-
-    Nothing stops a backward step from being as large as the cap allows, which
-    is what makes the min-step floor dangerous if it ever starts binding.
-    """
+def test_backward_direction_uses_the_shared_arrival_bound():
     step = plan_step(10.0, Settings())
     assert step.direction == -1
     assert step.clamped_by_floor is False
+    assert step.clamped_by_arrival_band is True
 
 
 def test_commanded_distance_is_always_positive():
@@ -79,6 +79,39 @@ def test_commanded_distance_is_always_positive():
         outcome = plan_step(d, Settings())
         if isinstance(outcome, Step):
             assert outcome.commanded_cm > 0
+
+
+def test_config_names_the_uncalibrated_actual_motion_bound():
+    cfg = Settings()
+
+    assert cfg.max_actual_motion_multiplier == pytest.approx(2.0)
+    assert "UNCALIBRATED" in Settings.model_fields[
+        "max_actual_motion_multiplier"
+    ].description
+
+
+def test_each_direction_is_bounded_by_the_far_edge_of_the_arrival_band():
+    cfg = Settings(
+        distance_tolerance_cm=5.0,
+        approach_gain=0.2,
+        min_step_cm=30.0,
+    )
+    lower = cfg.target_distance_cm - cfg.distance_tolerance_cm
+    upper = cfg.target_distance_cm + cfg.distance_tolerance_cm
+
+    forward = plan_step(80.0, cfg)
+    backward = plan_step(50.0, cfg)
+
+    assert isinstance(forward, Step)
+    assert isinstance(backward, Step)
+    assert (
+        80.0 - forward.commanded_cm * cfg.max_actual_motion_multiplier
+        >= lower
+    )
+    assert (
+        50.0 + backward.commanded_cm * cfg.max_actual_motion_multiplier
+        <= upper
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +128,12 @@ def test_defect_B_safety_floor_branch_is_unreachable_by_default():
 
 
 def test_defect_B_forward_clamp_never_binds_by_default():
-    """0.7 * (d - 60) < d - 45 holds for every d > 10, so the clamp is inert."""
+    """The arrival-band bound is stricter than the defensive floor bound."""
     assert forward_clamp_is_reachable(Settings()) is False
+
+
+def test_shared_arrival_bound_is_reachable_by_default():
+    assert arrival_bound_is_reachable(Settings()) is True
 
 
 def test_defect_C_min_step_bound_is_unreachable_by_default():
@@ -112,9 +149,8 @@ def test_defect_B_safety_floor_branch_is_unreachable_for_EVERY_valid_config():
     give ``tolerance < 0``, which the field constraints forbid. So no
     configuration ``Settings`` accepts can ever reach that branch.
 
-    What this does NOT address — and what M6 still must — is that the floor
-    bounds the *commanded* distance rather than the *travelled* distance, so
-    calibration error can still carry the robot past it.
+    Travel beyond ``max_actual_motion_multiplier`` is still unknown; this only
+    proves the old fallback branch cannot be selected by a valid config.
     """
     from pydantic import ValidationError
 
@@ -155,35 +191,34 @@ def test_defect_C_min_step_bound_becomes_live(override):
 # Regression — the M2 code review finding
 # ---------------------------------------------------------------------------
 
-def test_forward_clamp_reachability_accounts_for_the_min_step_floor():
-    """Regression: the closed-form version answered False here, wrongly.
+def test_arrival_bound_reachability_accounts_for_the_min_step_floor():
+    """Regression: reachability must scan the real law, not hand-copy it.
 
     ``min_step_cm=30`` passes every validator. At d = 73 cm the gain term is
-    13 * 0.7 = 9.1, raised to the 30 cm floor, while the headroom to the safety
-    floor is only 28 cm — so the clamp binds. The original formula solved
-    ``d - min_safe < (d - target) * gain`` and never saw the floor.
+    13 * 0.7 = 9.1, raised to the 30 cm preference.  The shared 2x bound
+    shortens that to 12.5 cm, so maximum assumed travel stops at 48 cm.
     """
     cfg = Settings(min_step_cm=30.0)
 
     step = plan_step(73.0, cfg)
-    assert step.clamped_by_floor is True
-    assert step.commanded_cm == pytest.approx(28.0)
+    assert step.clamped_by_arrival_band is True
+    assert step.clamped_by_floor is False
+    assert step.commanded_cm == pytest.approx(12.5)
 
-    assert forward_clamp_is_reachable(cfg) is True
+    assert arrival_bound_is_reachable(cfg) is True
 
 
-def test_clamped_step_never_crosses_the_safety_floor():
-    """Whatever else happens, a commanded forward step stops at the floor.
-
-    This is the property the clamp exists to provide — for the COMMAND. The
-    distance actually travelled is a different question (PLAN.md defect B).
-    """
+def test_bounded_step_never_crosses_the_floor_at_the_assumed_maximum():
+    """Conditional property: actual travel is at most the configured bound."""
     cfg = Settings(min_step_cm=30.0)
     d = 45.05
     while d <= 500.0:
         outcome = plan_step(d, cfg)
         if isinstance(outcome, Step) and outcome.direction == 1:
-            assert d - outcome.commanded_cm >= cfg.min_safe_distance_cm - 1e-9, (
+            maximum_travel = (
+                outcome.commanded_cm * cfg.max_actual_motion_multiplier
+            )
+            assert d - maximum_travel >= cfg.min_safe_distance_cm - 1e-9, (
                 f"d={d} step={outcome.commanded_cm}"
             )
         d += 0.05

@@ -30,7 +30,7 @@ DEFAULT_OUTPUT = (
     pathlib.Path(__file__).resolve().parent.parent
     / "docs"
     / "measurements"
-    / "m4-harness-report.md"
+    / "m5-approach-report.md"
 )
 
 
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         traces.append(default_replay(portrait, sample_hz=args.sample_hz))
     report = build_report(
-        traces, sweep_transport_lag(), pipeline="DirectPipeline"
+        traces, sweep_transport_lag(), pipeline="DistancePipeline"
     )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

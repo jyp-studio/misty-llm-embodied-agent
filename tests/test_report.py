@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from harness.__main__ import DEFAULT_OUTPUT
 from harness.report import build_report
 from harness.replay import Sample, Trace
 from harness.robustness import sweep_transport_lag
@@ -50,7 +51,7 @@ def report():
     return build_report(
         [walking_trace(), walking_trace()],
         sweep_transport_lag([0.0, 0.5, 1.0, 1.5, 2.0]),
-        pipeline="DirectPipeline",
+        pipeline="DistancePipeline",
     )
 
 
@@ -65,10 +66,17 @@ def test_the_report_carries_every_figure_the_ticket_lists(report):
         assert expected in text.lower(), f"{expected!r} missing from the report"
 
 
+def test_the_process_local_latency_bound_is_reported_green(report):
+    text = report.to_markdown()
+
+    assert "Process-local latency bound" in text
+    assert "**PASS**" in text
+
+
 def test_the_report_names_the_pipeline_it_measured(report):
     # Ticket 06 measures one pipeline; M5 will measure another against the same
     # bound. A report that does not say which is not comparable to anything.
-    assert "DirectPipeline" in report.to_markdown()
+    assert "DistancePipeline" in report.to_markdown()
 
 
 def test_the_report_names_the_machine_it_ran_on(report):
@@ -103,7 +111,40 @@ def test_every_claim_is_labelled_verified_or_not(report):
     # The ticket asks for these to be distinguished 逐條 — item by item, not as
     # one disclaimer at the bottom that a skimming reader skips.
     for claim in report.claims:
-        assert claim.status in ("simulated", "unverified"), claim
+        assert claim.status in (
+            "measured",
+            "parameter_sweep",
+            "conditional_simulation",
+            "unverified",
+        ), claim
+
+
+def test_the_report_distinguishes_all_four_evidence_classes(report):
+    statuses = {claim.status for claim in report.claims}
+    text = report.to_markdown().lower()
+
+    assert statuses == {
+        "measured",
+        "parameter_sweep",
+        "conditional_simulation",
+        "unverified",
+    }
+    for label in (
+        "process-local measurement",
+        "parameter sweep",
+        "conditional simulation",
+        "unverified",
+    ):
+        assert label in text
+
+
+def test_the_conditional_safety_claim_names_its_uncalibrated_boundary(report):
+    text = report.to_markdown().lower()
+
+    assert "max_actual_motion_multiplier" in text
+    assert "2.0" in text
+    assert "monotone" in text
+    assert "beyond" in text and "unknown" in text
 
 
 def test_nothing_claims_to_have_run_on_a_robot(report):
@@ -112,6 +153,8 @@ def test_nothing_claims_to_have_run_on_a_robot(report):
     assert not any(claim.status == "hardware" for claim in report.claims)
     assert "has ever run against a Misty II" in report.to_markdown()
     assert "No line of this project" in report.to_markdown()
+    assert "approach()" in report.to_markdown()
+    assert "approach_user()" in report.to_markdown()
 
 
 def test_the_unverified_claims_say_what_would_settle_them(report):
@@ -152,6 +195,10 @@ def test_the_document_is_markdown_a_reader_can_open(report):
     assert text.startswith("#")
     assert "|" in text  # at least one table
     assert text.endswith("\n")
+
+
+def test_the_default_command_writes_a_new_m5_artifact():
+    assert DEFAULT_OUTPUT.name == "m5-approach-report.md"
 
 
 def test_a_report_needs_at_least_one_trace():
@@ -211,7 +258,9 @@ def test_every_unverified_boundary_in_the_plan_reaches_the_report():
     )
     unverified = [c for c in report.claims if c.status == "unverified"]
 
-    # Nine in the plan, eight here: it names the camera-to-process delay twice.
-    assert len(listed) == 9
+    # Ten in the plan, eight here: transport lag appears twice, while speed and
+    # maximum excursion are two fields covered by one drive-calibration claim.
+    assert len(listed) == 10
     assert len(unverified) == 8
     assert "listed twice" in report.to_markdown()
+    assert "groups them" in report.to_markdown()

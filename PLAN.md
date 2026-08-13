@@ -19,7 +19,7 @@
 | 項目 | 定案 |
 |---|---|
 | 交付定位 | 履歷作品：完整 ReAct agent + Docker + CI/CD |
-| 硬體 | **永久無實機**。`approach_user()` 從未在真機執行過 |
+| 硬體 | **永久無實機**。`approach_user()` 與 public `approach()` 都從未在真機執行過 |
 | 下游使用者 | 假設無人拿真機跑；但校正參數必須可從 config 調整 |
 | 預算 | 大。開發直接呼叫真 LLM API，離線錄放測試暫不做（保留為 later） |
 | README | **最後才重寫**，不是重點 |
@@ -188,14 +188,26 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 
 而這個決定是好的：不變量提前到 config 載入時強制，比在執行期擺一個永不觸發的 guard 假裝有防護強。
 
-→ **M6 的工作因此改變**：不是「讓 guard 活起來」，而是
+→ **M5 的工作因此改變**：不是「讓 guard 活起來」，而是
 ①把 guard 改成明示的不可達斷言（或移除並在註解指向 validator），
 ②**真正要解的是「clamp 命令距離 ≠ clamp 實際距離」**——validator 完全沒碰這個，校準誤差仍會讓機器人衝過 45cm。這才是缺陷 B 的實質。
+
+**M5 更新——已在明示假設內修復。** `max_actual_motion_multiplier=2.0` 明列為
+UNCALIBRATED 假設；`plan_step()` 先算 gain/min/max 偏好，再把前進與後退命令限制在
+「最大單調實際位移仍不得穿過抵達帶遠端」的距離。前進另保留 safety-floor cap；合法
+config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `approach()` 於 2× 情境
+停在抵達帶內且不低於 45cm。這不是實機安全認證：超過倍率、非單調瞬間超衝、距離尺度
+誤差與未掃描的 transport lag 都仍未知，見 §13 與 M5 證據報告。
 
 ### C. `max(8.0, ...)` 是 dead code 兼未爆彈
 `full_robot_v3.py:706`：`abs(delta) > 12` ⟹ `abs(delta)×0.7 > 8.4 > 8`，下限永不生效。
 但 `DISTANCE_TOLERANCE_CM` 一旦調到 11 以下就會活過來，而**後退方向完全沒有 clamp** → 後退超衝 → 來回震盪至 step cap。
 → **實作 + 補後退方向的 clamp**。
+
+**M5 更新——已修復。** `min_step_cm` 改成偏好下限，正式 arrival-band cap 在兩個方向
+都優先於它；非預設 tolerance、gain、min-step 已經由 public `approach()` 外部行為測試
+驗證不會強迫跨帶或可預見地往返震盪。Runtime、reachability、sweep 與測試都走同一個
+`plan_step()`，沒有第二份控制公式。
 
 ### D. 動作回傳值被完全丟棄
 `approach_user()` 回傳 `arrived`/`lost_user`/`timeout`/`drive_error`，`full_robot_v3.py:784` 直接丟掉，memory 也沒記錄。
@@ -263,8 +275,8 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 | **M2** | config | `pydantic-settings`，全範圍常數 + `SENSOR_TRANSPORT_LAG_S` + 跨欄位 validator ✅ |
 | **M2.5** | code review | 兩軸 review（Standards / Spec）+ 修正，見 §10 ✅ |
 | **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 ✅ 見 §11 |
-| **M4** | harness | 合成影格 + 真值軌跡 + 延遲量測。**任務已改**，見 §12 |
-| **M5** | 重寫感知→控制管線 | 原 M5（缺陷 A）與 M6（缺陷 B/C/E）合併。不是修補，是照 harness 的數字設計一條新管線，把已知的坑一次避開 |
+| **M4** | harness | 合成影格 + 真值軌跡 + 延遲量測。**任務已改**，見 §12 ✅ |
+| **M5** | 重寫感知→控制管線 | latest-value 距離管線 + fresh post-move readings + bounded public `approach()` + 條件式安全與 M5 證據，見 §13 ✅ |
 | **M6** | 事件流 | `agent/events.py`；`test_sim.py` 遷 pytest |
 | **M7** | ReAct | `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗） |
 | **M8** | 部署 | Docker multi-stage + CI workflows |
@@ -277,13 +289,14 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 
 - 驅動層 HTTP / WebSocket 請求格式 —— 只有契約測試，**無實機驗證**
 - `CM_PER_SEC_AT_PERCENT`（實際驅動速度）
+- `MAX_ACTUAL_MOTION_MULTIPLIER`（一次命令中的最大單調實際位移倍率；預設 2× 只是模擬假設）
 - `FOCAL_LENGTH`（相機焦距常數）
 - `SENSOR_TRANSPORT_LAG_S`（相機→process 的傳輸延遲）
 - 馬達 deadband（20% 會不會根本不動）
 - RTSP 端到端延遲的真實數量級
 - ASR 在 Misty 麥克風 + 環境噪音下的辨識率
 - `drive_time` 執行中再下指令的實際行為
-- **`approach_user()` 從未在真機執行過**（公開 demo 的 planner 輸出是 `movement: "stay"`）
+- **`approach_user()` 與 public `approach()` 都從未在真機執行過**（公開 demo 的 planner 輸出是 `movement: "stay"`）
 
 處理原則：不試圖「測」這些，而是 ①隔離成明確標註的校正參數，②用參數掃描證明控制律對其誤差的魯棒範圍，③在 README 誠實區分**已模擬驗證** vs **未實機驗證**。
 
@@ -306,7 +319,7 @@ repo 無自訂規範文件，故 Standards 軸只適用 Fowler smell baseline，
 
 | # | 軸 | 問題 | 處置 |
 |---|---|---|---|
-| 1 | Spec (c) | **`forward_clamp_is_reachable` 對合法 config 回答錯誤。** 閉式解只模型化 gain 項，漏了 `min_step_cm` 會把命令步長抬高。反例 `min_step_cm=30`：d=73 時命令 30cm 對上 headroom 28cm，clamp 確實生效，但屬性回 `False`。 | 三個 reachability 函式改為**掃描真實的 `plan_step`**，不再用手推閉式解——這消滅了整類代數推導錯誤。回歸測試 `test_forward_clamp_reachability_accounts_for_the_min_step_floor`。 |
+| 1 | Spec (c) | **`forward_clamp_is_reachable` 對合法 config 回答錯誤。** 閉式解只模型化 gain 項，漏了 `min_step_cm` 會把命令步長抬高。反例 `min_step_cm=30`：d=73 時命令 30cm 對上 headroom 28cm，clamp 確實生效，但屬性回 `False`。 | Reachability 改為**掃描真實的 `plan_step`**，不再用手推閉式解。M5 的對稱控制律沿用同一原則，現由 `test_arrival_bound_reachability_accounts_for_the_min_step_floor` 回歸。 |
 | 2 | Standards #4 | **控制律在測試裡被手抄一份**，真實控制律改變時副本會默默分歧而測試照樣綠。 | 抽出 `misty_agent/control/step_policy.py`，`plan_step()` 成為唯一實作，三個消費者（`approach_user`、reachability 分析、測試）共用。 |
 | 3 | Spec (b) | reachability 分析寫在 `config.py` 裡是 scope creep，且分層不對。 | 移到 `control/step_policy.py`。`config.py` 現在只有資料與不變量。 |
 | 4 | Spec (a) | `llm_temperature` 宣告了卻沒接線；`TRIGGER_COOLDOWN=3.0` 與記憶呼叫的 `temperature=0.2/0.0` 仍是字面值。**宣告了卻沒接線比字面值更糟——它看起來可調，實際不可調。** | 全部接線，並新增 `memory_summary_temperature` / `memory_fact_temperature` / `trigger_cooldown_s`。 |
@@ -317,7 +330,7 @@ repo 無自訂規範文件，故 Standards 軸只適用 Fowler smell baseline，
 ### 已知未修（刻意）
 
 - **Middle Man / Shotgun Surgery**：`full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派，留下同一份資料的兩條存取路徑。**刻意保留**——`full_robot_v3.py` 會在 M3–M8 被拆進 `misty_agent/`，屆時整個區塊消失。現在改只是把同一份工作做兩次。
-- **Data Clumps**：六個控制律欄位總是一起旅行，`ApproachPolicy` 子模型想被生出來。M6 重寫控制層時一併處理。
+- **Data Clumps**：控制律欄位仍在 frozen `Settings` 中一起旅行。M5 刻意用窄的 `StepPolicyConfig` protocol 隔離依賴，沒有再引入一層 `ApproachPolicy` 公開模型；理由見 §13.3。
 - **import 時凍結的預設值**：`get_distance(max_age_sec=settings.distance_max_age_s)` 在 import 時綁定。`settings` 是 frozen 且 process-global，目前無害。
 
 ### 尚未做的另一軸
@@ -494,3 +507,52 @@ M8 的 Docker 是 x86、無 GPU 加速，很可能就落在翻轉點的另一邊
 > fixture 的 8% 誤差線（60px），不是控制器的作用起點。已更正。
 
 軌跡起點的選擇因此是 05 要明寫的決定：起點 ≤130cm，或接受遠端誤差並標註。
+
+---
+
+## 13. M5 — 可信 approach 後端的結果
+
+> 完成於 2026-08-13。範圍停在 ReAct 將來會呼叫的 deterministic backend；沒有展開
+> Audio、事件流、LLM tool registry 或 ReAct orchestration。
+
+### 13.1 交付的窄介面
+
+- `misty_agent.perception.distance.DistancePipeline` 只保留 process 內最新影格，距離讀數攜帶
+  process ingress 與 detection completion 時間；process 之外的 transport lag 仍不可見。
+- `misty_agent.control.approach.approach()` 隱藏輪詢、兩筆新樣本中位數、移動失效 epoch、
+  settle、步數與整次 deadline、驅動錯誤轉譯。公開結果仍是 `arrived`、`lost_user`、
+  `timeout`、`drive_error` 與已執行步數。
+- `plan_step()` 是唯一正式控制律。Runtime 直接呼叫；reachability 直接掃描；robustness
+  透過 public `approach()` 間接呼叫；測試不另抄公式。
+
+### 13.2 證據與邊界
+
+`docs/measurements/m5-approach-report.md` 由 `.venv/bin/python -m harness` 產生，刻意把四種
+證據分開：process-local measurement、parameter sweep、conditional simulation、UNVERIFIED。
+
+| 證據 | 2026-08-13 結果 | 能主張的範圍 |
+|---|---|---|
+| Production `DistancePipeline`，三次 real-time synthetic replay | process-local lag p95 **43ms**；同次最嚴格 2× floor bound **74ms，PASS** | 真實 MediaPipe、thread 與 clock；沒有 Misty、網路或 sensor transport |
+| Transport-lag sweep，0.05s 網格 | 在 configured 2× motion multiplier 下收斂至 **0.65s**；**0.70s** 第一個失敗即 safety-floor breach | 參數掃描，不是量到真實 sensor lag |
+| M4 的 100→44cm 反例 | public `approach()` 在 2×、零 transport lag 下抵達且不低於 45cm | 只在最大單調位移 ≤ `max_actual_motion_multiplier` 時成立 |
+| 高延遲時的 raw `arrived` | 0.70s 之後仍可因不可見的 transport staleness 回報 `arrived`；report 以 simulator truth 改列失敗 | 說明 public status 不是硬體真值，安全異常不在證據中被成功狀態掩蓋 |
+
+M4 的 1.55/1.60/1.75s 舊數字保留作 pre-rewrite 歷史，**不可直接拿來說 M5 退步**：
+M4 掃的是 1× 完美驅動且手動迴圈；M5 發布的是 configured worst case 2×，並完整經過
+public `approach()` 的 freshness、median 與 settle 語意。
+
+條件式安全還假設：距離尺度在模擬模型內正確、動作沿命令方向單調、一次命令的最大瞬間
+位移（不是只看最後淨位移）不超過 2×。超過倍率、慣性瞬間超衝、真實 focal error、馬達
+deadband、RTSP lag 與真機 API 行為全部仍是 UNVERIFIED。`approach_user()` 與 public
+`approach()` 都從未在硬體執行。
+
+### 13.3 與早期計畫的偏離
+
+1. **沒有新增第五種 public safety status。** Runtime 看不到 delayed reading 背後的物理真值；
+   假裝能回報 `collision` 會製造證據。四個既定 status 保持不變，harness 另存 raw status 與
+   truth-audited outcome。
+2. **沒有建立 `ApproachPolicy` 子模型。** Frozen `Settings` 仍是 config 入口，控制模組只依賴
+   `StepPolicyConfig` protocol 的窄切片。為一張 ticket 改環境變數與所有呼叫端的巢狀形狀，
+   風險大於 locality 收益。
+3. **M5 產物另寫新檔。** `python -m harness` 現在寫
+   `docs/measurements/m5-approach-report.md`，不覆蓋 M4 的歷史 before-state。

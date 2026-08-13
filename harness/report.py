@@ -18,15 +18,19 @@ project has ever run against one**. A report that let a reader believe
 otherwise would be the most damaging artefact in the repository — worse than a
 bug, because a bug is eventually found.
 
-So every claim carries a status, and there are only two of them:
+So every claim carries one of four evidence statuses:
 
-``simulated``   measured, in software, against a synthetic camera. Real
-                MediaPipe on real pixels, real threads, real clock — but no
-                robot and no network.
-``unverified``  not established by anything here, with a note saying what
-                would settle it.
+``measured``                process-local measurement against a synthetic
+                            camera, using real pixels, detector, threads, and
+                            clock — but no robot or network.
+``parameter_sweep``         deterministic exploration of an unknown input;
+                            explicitly not a measurement of that input.
+``conditional_simulation``  a software guarantee whose calibration and lag
+                            assumptions are stated beside it.
+``unverified``              not established here, with the experiment that
+                            would settle it.
 
-There is deliberately no third status meaning "confirmed on hardware". Adding
+There is deliberately no fifth status meaning "confirmed on hardware". Adding
 one is not a small change; it would need a robot.
 """
 
@@ -77,12 +81,17 @@ class Claim:
     """
 
     what: str
-    status: str  # "simulated" | "unverified"
+    status: str
     detail: str
     settled_by: str = ""
 
     def __post_init__(self) -> None:
-        if self.status not in ("simulated", "unverified"):
+        if self.status not in (
+            "measured",
+            "parameter_sweep",
+            "conditional_simulation",
+            "unverified",
+        ):
             raise ValueError(f"unknown claim status {self.status!r}")
         if self.status == "unverified" and not self.settled_by:
             raise ValueError(f"unverified claim {self.what!r} needs settled_by")
@@ -124,7 +133,7 @@ class Report:
     def to_markdown(self) -> str:
         return "\n".join(
             [
-                "# Perception harness — findings",
+                "# M5 approach backend — evidence",
                 "",
                 _preamble(self),
                 _headline_table(self),
@@ -144,6 +153,7 @@ class RunFigures:
     frame_age_p95_s: Optional[float]
     consumer_cost_s: Optional[float]
     inversion_fps: Optional[float]
+    lag_floor_s: Optional[float]
 
 
 def build_report(
@@ -177,6 +187,7 @@ def build_report(
                 frame_age_p95_s=diagnose(trace).frame_age_p95_s,
                 consumer_cost_s=run_rates.consumer_cost_s if run_rates else None,
                 inversion_fps=run_rates.inversion_fps if run_rates else None,
+                lag_floor_s=run_rates.lag_floor_s if run_rates else None,
             )
         )
 
@@ -207,16 +218,31 @@ def _claims(
         if lag.p95_s is None
         else f"p95 {lag.p95_s * 1000:.0f}ms"
     )
+    multiplier = (
+        limits.outcomes[0].actual_motion_multiplier if limits.outcomes else None
+    )
+    multiplier_text = "unrecorded" if multiplier is None else f"{multiplier:.1f}"
+    safe_lag_text = (
+        "no swept transport lag"
+        if limits.largest_converging_lag_s is None
+        else f"transport lag through {limits.largest_converging_lag_s:.2f}s"
+    )
+    silent_failures = [
+        outcome
+        for outcome in limits.outcomes
+        if outcome.outcome == "arrived" and not outcome.converged
+    ]
     return (
         Claim(
             "Distance readings lag reality, and by how much",
-            "simulated",
+            "measured",
             f"{lag_figure}, against a synthetic camera at {CAMERA_FPS:.0f} fps "
-            f"with the real detector in the loop.",
+            f"with the production DistancePipeline and real detector in the "
+            f"loop. This is a process-local measurement only.",
         ),
         Claim(
             "The process-local frame buffer keeps only the latest value",
-            "simulated",
+            "measured",
             (
                 "Its backlog is bounded at one frame; a slower consumer "
                 "replaces old frames and exposes the replacement count. "
@@ -228,16 +254,29 @@ def _claims(
             ),
         ),
         Claim(
-            "The approach controller converges under a stale reading, up to a point",
-            "simulated",
+            "Transport-lag convergence and failure boundary",
+            "parameter_sweep",
             limits.summary(),
         ),
         Claim(
-            "The controller reports success even when it has failed",
-            "simulated",
-            "Every row of the sweep returns `arrived`, including rows that end "
-            "inside the safety floor. It judges arrival from the same stale "
-            "reading it steers by.",
+            "Safety inside the explicit drive-calibration assumption",
+            "conditional_simulation",
+            f"With `max_actual_motion_multiplier={multiplier_text}` and a "
+            f"monotone maximum excursion no greater than that multiple of "
+            f"each command, public `approach()` truth-audits as arrived for "
+            f"{safe_lag_text}, without crossing the configured floor. This "
+            f"is a conditional simulation guarantee, not hardware evidence; "
+            f"behaviour beyond that multiplier is unknown.",
+        ),
+        Claim(
+            "Public status is compared with simulator truth",
+            "parameter_sweep",
+            (
+                f"{len(silent_failures)} swept row(s) reported `arrived` while "
+                f"truth was outside the arrival band or below the floor; the "
+                f"report classifies those rows by truth instead of presenting "
+                f"them as success."
+            ),
         ),
         Claim(
             "Camera-to-process delay on a real robot (segment A)",
@@ -252,9 +291,11 @@ def _claims(
         Claim(
             "Travel speed at the commanded drive percentage",
             "unverified",
-            "`cm_per_sec_at_percent` is an assumption. The sweep shows a robot "
-            "travelling twice as far as commanded walks through the safety "
-            "floor.",
+            "`cm_per_sec_at_percent` and "
+            "`max_actual_motion_multiplier` are UNCALIBRATED assumptions. The "
+            "conditional simulation covers a monotone maximum excursion up to "
+            "the stated multiplier; transient overshoot and behaviour beyond "
+            "it remain unknown.",
             settled_by="drive_time(linearVelocity=20, timeMs=2000) on a real "
             "robot, then measuring the distance covered.",
         ),
@@ -300,8 +341,9 @@ def _claims(
         Claim(
             "The robot ever approached anyone",
             "unverified",
-            "`approach_user()` has never executed on hardware. The public demo "
-            "the project came from produced `movement: \"stay\"`.",
+            "Neither legacy `approach_user()` nor public `approach()` has ever "
+            "executed on hardware. The public demo the project came from "
+            "produced `movement: \"stay\"`.",
             settled_by="Running an episode on a Misty II.",
         ),
     )
@@ -321,6 +363,8 @@ def _preamble(report: Report) -> str:
         f"run against a Misty II**, and none ever will — the hardware is not "
         f"available and that is a fixed premise, not a temporary gap "
         f"(`PLAN.md` §1).\n"
+        f"Neither `approach_user()` nor public `approach()` has run on "
+        f"hardware.\n"
         f"\n"
         f"| | |\n"
         f"|---|---|\n"
@@ -396,11 +440,35 @@ def _headline_table(report: Report) -> str:
             f"{_range(crossings, 'fps', 0) if crossings else f'{report.rates.inversion_fps:.0f} fps'}"
             f" |"
         )
-        rows.append(
-            f"| Lag bound for the rewrite | {MAX_LAG_OVER_FLOOR:g} x the lag "
-            f"floor, recomputed per run (~{report.rates.lag_floor_s * 1000:.0f} ms "
-            f"here) rather than pinned, so it travels between machines |"
-        )
+        observed_lags = [
+            run.lag_p95_s for run in runs if run.lag_p95_s is not None
+        ]
+        allowed_lags = [
+            run.lag_floor_s * MAX_LAG_OVER_FLOOR
+            for run in runs
+            if run.lag_floor_s is not None
+        ]
+        if observed_lags and allowed_lags:
+            bound_passed = max(observed_lags) <= min(allowed_lags)
+            rows.append(
+                f"| Process-local latency bound | **"
+                f"{'PASS' if bound_passed else 'FAIL'}** — worst p95 "
+                f"{max(observed_lags) * 1000:.0f} ms vs tightest "
+                f"{MAX_LAG_OVER_FLOOR:g}x-floor bound "
+                f"{min(allowed_lags) * 1000:.0f} ms |"
+            )
+        else:
+            rows.append(
+                "| Process-local latency bound | not evaluable: this trace "
+                "contained no measurable lag |"
+            )
+    rows.append("")
+    rows.append("## What was swept")
+    rows.append("")
+    rows.append(
+        "The transport lag below is an unknown parameter, not a measured "
+        "sensor value."
+    )
     rows.append("")
     rows.append(f"**Robustness envelope.** {report.limits.summary()}")
     rows.append("")
@@ -415,17 +483,25 @@ def _claims_table(report: Report) -> str:
         "disclaimer a reader skips.",
         "",
         "The unverified rows cover every item on `PLAN.md` §8's list. That "
-        "list has nine entries and this table has "
+        "list has ten entries and this table has "
         f"{sum(1 for c in report.claims if c.status == 'unverified')}: §8 names "
         "the camera-to-process delay twice — once as "
         "`SENSOR_TRANSPORT_LAG_S` and once as \"RTSP 端到端延遲\" — and they "
-        "are the same quantity.",
+        "are the same quantity. It also lists `CM_PER_SEC_AT_PERCENT` and "
+        "`MAX_ACTUAL_MOTION_MULTIPLIER` separately; this report groups them "
+        "into one drive-calibration claim while naming both assumptions.",
         "",
         "| Claim | Status | |",
         "|---|---|---|",
     ]
+    labels = {
+        "measured": "process-local measurement",
+        "parameter_sweep": "parameter sweep",
+        "conditional_simulation": "conditional simulation",
+        "unverified": "**UNVERIFIED**",
+    }
     for claim in report.claims:
-        mark = "simulated" if claim.status == "simulated" else "**UNVERIFIED**"
+        mark = labels[claim.status]
         detail = claim.detail
         if claim.settled_by:
             detail += f" *Would be settled by: {claim.settled_by}*"
@@ -467,7 +543,7 @@ def _pointers() -> str:
         "|---|---|\n"
         "| Latency, and how the bound was derived | "
         "`docs/measurements/m4-latency-baseline.md` |\n"
-        "| The robustness sweep in full | "
+        "| Pre-rewrite robustness comparison | "
         "`docs/measurements/m4-transport-lag-sweep.md` |\n"
         "| Defects, decisions and retractions | `PLAN.md` §5, §12 |\n"
         "| The harness itself | `harness/` |\n"

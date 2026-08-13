@@ -4,9 +4,10 @@ The caller supplies the already-running distance pipeline and robot command
 adapter. Everything else — sampling, freshness epochs, aggregation, movement
 conversion, settling, and error translation — stays behind :func:`approach`.
 
-This behaviour has only been verified in simulation. Its speed calibration,
-motor deadband, and interaction with real Misty II drive commands are
-uncalibrated and have never been exercised on hardware.
+This behaviour has only been verified in simulation. Its safety statement is
+conditional on the UNCALIBRATED maximum actual-motion multiplier; speed,
+motor deadband, transient overshoot, and interaction with real Misty II drive
+commands have never been exercised on hardware.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 # HANDOFF — 交接給下一個對話
 
 > 讀完這份就能接手，不需要前文脈絡。
-> 最後更新：2026-08-12 · 分支 `refactor/react-agent` · **M4 完成，下一站 M5**
+> 最後更新：2026-08-13 · 分支 `refactor/react-agent` · **M5 完成，下一站 M6**
 
 ---
 
@@ -11,12 +11,12 @@
 
 **先讀 [`PLAN.md`](PLAN.md)** —— 那是完整規格與決策紀錄，本文件只補「現在走到哪、接下來做什麼、有哪些坑」。
 
-進度：**M0–M4 完成。下一站 M5：重寫感知→控制管線。** M0–M10 的定義在 `PLAN.md` §7。
+進度：**M0–M5 完成。下一站 M6：事件流。** M0–M10 的定義在 `PLAN.md` §7。
 
 ```bash
 cd /Users/jyp/dev/misty-embodied-agent
-.venv/bin/python -m pytest tests/ -q     # 232 passed
-.venv/bin/python -m harness              # 跑一次量測，產出報告
+.venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
+.venv/bin/python -m harness              # 產出 M5 approach 證據報告
 .venv/bin/python test_sim.py             # 24 passed
 ```
 
@@ -55,14 +55,26 @@ cd /Users/jyp/dev/misty-embodied-agent
 | M4 #08 | `2d892df` | 傳輸延遲的魯棒邊界掃描 |
 | M4 #09 | `e4b7ad2` | `python -m harness` 一行產出人可讀報告 |
 | M4 #10 | `5005462` | 凝視判斷的陰性對照 fixture |
+| M5 #01 | `dc785ca` | latest-value production distance pipeline + 可判定 freshness 的讀數 |
+| M5 #02 | `e773f73` | public bounded `approach()` + post-move fresh readings |
+| M5 #03 | 本次提交 | 2× 條件式安全、對稱 bounded step、public-approach sweep、M5 證據 |
 
-**M4 量到的數字**（`docs/measurements/`，`python -m harness` 可重跑）：
+**M4 歷史基準**（pre-rewrite，不要當成 M5 現況）：
 
 | | |
 |---|---|
 | 讀數延遲 p95 | **43ms**，物理下限 38ms（影格週期 33 + 偵測 5），比值 1.11 |
 | 佇列翻轉點 | 約 270fps——消費者慢 6 倍以上才會開始積 |
-| 控制律魯棒邊界 | 收斂到 **1.55s** 假設傳輸延遲；1.60s 超衝；1.75s 撞線 |
+| 舊控制律魯棒邊界 | 1× 完美驅動下收斂到 **1.55s**；1.60s 超衝；1.75s 撞線 |
+
+**M5 正式證據**（`docs/measurements/m5-approach-report.md`）：
+
+| | |
+|---|---|
+| Production 距離管線延遲 | 三次 replay p95 **43ms**；最嚴格 2× floor bound **74ms，PASS** |
+| 新 robustness 邊界 | configured 2× 實際移動倍率下收斂至 **0.65s**；**0.70s** 起 safety-floor breach |
+| 2× 舊反例 | 100cm 起步經 public `approach()` 不再低於 45cm，並抵達 band |
+| 證據邊界 | 2× 是 UNCALIBRATED、單調最大瞬間位移假設；sweep 不是 sensor measurement；從未跑真機 |
 
 ⚠️ **2026-08-11 起改為「重寫」而非「修補」，`PLAN.md` §12 是必讀。** 兩個原本的前提被實測推翻：
 MediaPipe 的跨幀追蹤**不是**缺陷（真實軌跡下誤差 0.8%，且比關掉它更準更快），
@@ -73,8 +85,10 @@ MediaPipe 的跨幀追蹤**不是**缺陷（真實軌跡下誤差 0.8%，且比�
 
 ```
 misty_agent/
-├── config.py                  # 全部可調參數 + 跨欄位 validator
-├── control/step_policy.py     # plan_step()：控制律的唯一實作
+├── config.py                  # 全部可調參數；2× motion bound 明列 UNCALIBRATED
+├── control/
+│   ├── step_policy.py         # plan_step()：控制律的唯一實作
+│   └── approach.py            # public bounded closed loop + structured result
 ├── drivers/
 │   ├── robot_commands.py      # Misty 官方 SDK (Apache-2.0)，保留
 │   ├── av_stream.py           # AvSession + RtspVideoStream（擷取時打時間戳）
@@ -82,6 +96,7 @@ misty_agent/
 │   └── events.py              # EventStream（websocket）
 ├── perception/
 │   ├── asr.py                 # Transcriber port + OpenAI adapter
+│   ├── distance.py            # latest-value production pipeline + timestamps
 │   └── face.py                # 吃一張影像 → 有沒有人 / 距離 / 是否正在看
 └── fakes/fake_robot.py        # RecordingCommands：契約測試 + mock mode 共用
 harness/                       # M4：量測台
@@ -90,11 +105,11 @@ harness/                       # M4：量測台
 ├── replay.py                  # 錄製 + DistancePipeline（被測物是參數）
 ├── latency.py                 # 延遲估計（反演 + 互相關）與上界
 ├── diagnostics.py             # 緩衝深度、幀齡（診斷，不掛門檻）
-├── robustness.py              # 傳輸延遲掃描，閉環驅動真實控制律
+├── robustness.py              # fake world 經 public approach() 掃 transport lag
 ├── report.py                  # 組報告（純函式）
 └── __main__.py                # python -m harness
-docs/measurements/             # 三份，產物納入版控供無相依者閱讀
-tests/                         # 232 passed；fixtures/ 有兩張人臉 + PROVENANCE
+docs/measurements/             # M4 歷史基準 + M5 正式證據，產物納入版控
+tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
 test_sim.py / test_llm_live.py # 待 M6 遷 pytest
 legacy/                        # 舊素材，已從版控移除（.gitignore）
@@ -102,40 +117,27 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 ---
 
-## 3. 下一步：M5 重寫感知→控制管線
+## 3. 下一步：M6 事件流
 
-**範圍只到感知→控制那條線**（影格 → 距離 → 走幾公分）。ReAct、記憶、事件流不在內——那些不是寫壞了而是還沒寫（`PLAN.md` §12.3）。原 M5（修缺陷 A）與 M6（修控制層）已合併成這一個。
+M5 已把 ReAct 最需要的 deterministic backend 做完：未來 LLM 只需呼叫 public
+`approach()`，取得結構化結果，不碰 velocity、`timeMs`、freshness epoch 或控制參數。
 
-`full_robot_v3.py` 是**唯讀參考**：不再執行、不再維護，只在需要對照舊行為時去讀。它仍是 LLM prompt 與記憶折疊邏輯的唯一記載，等 M7 把該搬的搬完再刪。
+M6 的範圍是 `agent/events.py` 與把 `test_sim.py` 的 24 個 scenario 遷入 pytest。事件流至少要
+能記錄 episode lifecycle、tool call、observation、latency 與 step count，供 M7 的 ReAct
+不變量測試和未來 UI 共用。**M6 不開始 tool registry、LLM orchestration、Audio 或 Docker**；
+那些仍依 PLAN 的 M7/M8 順序。
 
-### 靶已經很具體，而且可執行
+建議下一個流程：先用 `/grill-with-docs` 對照 `PLAN.md` §4、§7、§13 與現在的 simulation
+runner，釐清 event schema 與遷移邊界；若沒有新的產品歧義，再 `/to-spec` → `/to-tickets`。
 
-| 要達成的 | 依據 | 怎麼知道有沒有達成 |
-|---|---|---|
-| 延遲 p95 ≤ 物理下限的 2 倍 | #06 | `tests/test_latency_bound.py`，現在綠的，新管線接上同一把尺 |
-| 佇列要有背壓 | #07 | `test_diagnostics.py` 演示過沒有背壓時幀齡衝到 734ms |
-| **決策當下限制讀數年齡** | #08 | 見下，這是最重要的一條 |
+`full_robot_v3.py` 繼續是**唯讀參考**。LLM prompt 與 memory folding 等 M7 搬出後再刪，M6
+不要順手維護舊 approach。
 
-### #08 的發現：失敗是無聲的
-
-掃描顯示控制器在安全底線內 4 公分處**仍回報 `arrived`**，而且**沒有任何延遲值會讓它察覺**——它判斷「抵達」的依據是拿讀數比對抵達帶，而讀數和其他東西一樣過期。
-
-所以新管線不能只是「讀數變新鮮」，它必須讓**過期的讀數無法被當成決策依據**。M3 備好的影格時間戳在 M5 明確命名為 `CapturedFrame.arrived_at`：它是影格進入 process 的時間，不是無法量測的相機曝光時間。
-
-魯棒邊界 1.55s 也不是控制器聰明，是 `post_step_settle_s = 0.8s` 剛好買到的——把沉澱時間減半讓機器人反應快一點，邊界就跟著減半。
-
-### 接上 harness 的方式
-
-新管線只要滿足 `harness.replay.DistancePipeline`（一個方法：`latest_reading()`），就能用**同一把尺**量，和 `DirectPipeline` 的基準線直接可比。這是刻意的：#03 被作廢後，被測物就設計成參數而不是寫死的。
-
-```python
-.venv/bin/python -m harness          # 跑量測，寫 docs/measurements/m4-harness-report.md
-.venv/bin/python -m pytest tests/ -q # 232 passed
+```bash
+.venv/bin/python -m harness              # 重產 docs/measurements/m5-approach-report.md
+.venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
+.venv/bin/python test_sim.py             # M6 遷移前仍是 24 passed
 ```
-
-### 缺陷 B/C/E 也在這個里程碑
-
-`PLAN.md` §5 的 B（安全底線 clamp 的是命令距離而非實際距離）、C（後退方向沒有 clamp）、E（樣本不足就放棄）都併進 M5。#08 已經把 B 重現到公分：`speed_error=2.0` 從 100cm 起步，最近距離 44.0cm。
 
 ---
 
@@ -144,7 +146,9 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 ### 一定要知道的
 
 - **`git commit` 送的是整個索引**，不是你剛 `git add` 的東西。M0 第一次 commit 就因為索引裡有先前 staged 的刪除，把 34,837 行刪除混進一支「新增 PLAN.md」的 commit。**每次 commit 前先 `git diff --cached --stat` 確認。**
-- **`architecture.svg` 有一筆使用者在重構開始前就存在的未提交修改。** 一路刻意排除在所有 commit 之外（`git add -A -- . ':!architecture.svg'`）。不要順手 commit 它。
+- 工作樹有四筆不屬於 M5 #03 的既有修改：`.env.example`、`architecture.svg`、
+  `docs/measurements/m4-harness-report.md`、`tests/conftest.py`。全部保留，提交時用明確檔案清單
+  stage；不要用 `git add -A`。
 - **備份在 `~/dev/misty-embodied-agent.backup`**（含原始 `HANDOFF.md`）。`main` 分支未動。
 
 ### 環境
@@ -155,9 +159,11 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 ### 刻意沒修的（不要以為是漏掉）
 
-- `full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派的 Middle Man。M5–M8 拆檔時整個消失，現在改是做兩次工。
-- `config.py` 六個控制律欄位的 Data Clumps（`ApproachPolicy` 子模型想被生出來）→ M5。
-- **`AudioStream` 的轉錄跑在 VAD 同一條 thread 上**，網路慢時解碼音訊會堆在後面。與 A 同類（延遲），但不在 harness 的量測範圍內，等 M5 一起看。
+- `full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派的 Middle Man。
+  它會在 M7 搬完 prompt / memory 並刪除舊主腳本時整個消失，現在改是做兩次工。
+- `config.py` 的控制欄位仍是一組 Data Clump。M5 刻意保留 frozen `Settings` 作 config 入口，
+  只用 `StepPolicyConfig` protocol 縮窄依賴；`PLAN.md` §13.3 已記錄這個決定。
+- **`AudioStream` 的轉錄跑在 VAD 同一條 thread 上**，網路慢時解碼音訊會堆在後面。與 A 同類（延遲），但不在 visual harness 或 M5 範圍；等 M7 語音工具前另開 ticket。
 
 ### M4 學到的（會再咬人的那種）
 
@@ -181,23 +187,27 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 | | 缺陷 | 狀態 |
 |---|---|---|
-| **A** | 閉環實際是開環 | **M4 已全部量完。** A1：佇列翻轉點約 270fps，這台機器上不會積——但管線**沒有背壓**，#07 故意把消費者拖慢到 50ms 就重現了無限成長與 734ms 幀齡。A2/A3 是邏輯錯，與機器無關。M5 重寫 |
-| **B** | 安全底線 clamp 的是**命令距離**而非**實際行走距離** | 未修（**M5**，已與原 M6 合併）。⚠️ 見下 |
-| **C** | `min_step_cm` 下限是死碼兼未爆彈，且**後退方向完全沒有 clamp** | 未修（**M5**）。已有可執行證明 |
-| **D** | 動作回傳值被丟棄 | 重寫後自動消失（工具層本來就回傳結構化結果） |
-| **E** | 樣本不足時第一輪就 `lost_user`，零重試 | 未修（**M5**） |
+| **A** | 閉環實際是開環 | **M5 已修。** latest-value buffer、process-ingress freshness、每次移動後 epoch + 至少兩筆新樣本 |
+| **B** | 安全底線 clamp 的是**命令距離**而非**實際行走距離** | **M5 條件式修復。** configured 2× 最大單調位移內不越線；超界與真機仍未知 |
+| **C** | `min_step_cm` 下限是死碼兼未爆彈，且**後退方向完全沒有 clamp** | **M5 已修。** min step 是偏好；兩方向共享 arrival-band cap |
+| **D** | 動作回傳值被丟棄 | Backend 已修：public `ApproachResult` 結構化回傳；M7 接進 ReAct observation |
+| **E** | 樣本不足時第一輪就 `lost_user`，零重試 | **M5 已修。** 在 reading timeout 內輪詢，整次 call 另有 deadline |
 
-**缺陷 B 的措辭要小心。** M2 加的 validator（`target − tolerance > min_safe`）讓那個 runtime guard 對**任何合法 config** 都不可達——這是設計選擇的結果，不是「原分析算錯」。但 validator **完全沒解決** B 的實質：校準誤差為 2 倍時，機器人照樣衝過 45cm。那才是 M5 要做的。
+**缺陷 B 的措辭要小心。** M2 的 validator 仍讓舊 runtime guard 對任何合法 config 不可達；
+M5 不是讓它復活，而是用 `max_actual_motion_multiplier` 對實際位移預留 headroom。這個
+guarantee 只存在於明示的模擬前提，不能寫成「真機安全」。
 
-**缺陷 C 仍是真的未爆彈**，且有三種喚醒方式（`tests/test_step_policy.py` 已參數化驗證）：`distance_tolerance_cm=11`、`approach_gain=0.5`、`min_step_cm=10`。
+**缺陷 C 的三種喚醒方式仍有回歸測試**，但現在只會讓 min-step preference 生效；最後命令
+仍受兩方向共同的 arrival-band cap 約束，不會把已知缺陷叫回來。
 
 ---
 
 ## 6. 工作方式（使用者確認過的）
 
 - **每個里程碑 commit 一次**，訊息寫清楚做了什麼與為什麼。commit 前先 `git diff --cached --stat`。
-- **偏離計畫要記回 `PLAN.md`**，不要默默改。M1（requirements 只瘦身一半）、M2（缺陷 B 的推論被推翻）、M2.5（review 修正）、M3（三處偏離 + 五個新發現的缺陷）都有留紀錄。
-- **先量再定**：門檻與上界一律從實測推導，不憑感覺挑。（原本的「測試先紅」規矩隨著改成重寫而失效，見 `PLAN.md` §12.4。）
+- **偏離計畫要記回 `PLAN.md`**，不要默默改。M5 的四 status + truth audit、未建立
+  `ApproachPolicy` 子模型、另存 M5 report 都記在 §13.3。
+- **先量再定 + public seam TDD**：效能門檻從量測推導；行為修正先由公開介面的失敗測試重現。M5 #03 兩者都有做。
 - **推翻既有結論要用量的**：M4 期間兩個寫在 `PLAN.md` 裡的前提被實測推翻，都是量出來的，不是想出來的。
 - 使用者會直接挑戰建議，且挑戰常常是對的（M2 的「沒機器人量這個有意義嗎」、M3 的「砍掉 AutoMisty」都是使用者提的）。
 
@@ -206,25 +216,24 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 ## 7. 建議下一個對話的開場
 
 ```
-讀 PLAN.md（特別是 §12）與 HANDOFF.md，然後開始 M5
+讀 PLAN.md（特別是 §4、§7、§13）與 HANDOFF.md，grill M6 event stream 的邊界
 ```
 
-**另外建議找個時間跑一次內建的 code review** —— 到目前為止只跑過 Standards + Spec 兩軸，**正確性軸（失敗情境、崩潰、邏輯錯誤）從未跑過**（`PLAN.md` §10 末段）。M3 與 M4 加起來新增了約 4000 行，含 thread、socket 與整套量測程式，是這一軸投報率最高的時候：
+M5 各 ticket 已跑 Standards + Spec 雙軸 review。較廣的**正確性軸**（失敗情境、崩潰、
+thread/socket 邏輯）仍可在進 M7 前另做一次，不與 ticket review 混為一談。
 
 ```bash
 /code-review
 ```
 
-這是**使用者手動觸發**的，agent 不能代跑。
-
 ### 可用的 skills
 
-`~/.claude/skills/` 有 29 個 mattpocock skills。與本專案最相關的：
+`~/.agents/skills/` 中與下一步最相關的：
 
 | skill | 何時用 |
 |---|---|
-| `tdd` | **M4/M5 對症**——計畫本來就要求測試先紅 |
-| `diagnosing-bugs` | M4/M5 追感知延遲 |
-| `codebase-design` | M3 已用過（deep modules / small interfaces）；M5 重寫管線時再用 |
+| `grill-with-docs` | 對照 PLAN/HANDOFF 壓 M6 的 schema 與 scope |
+| `to-spec` / `to-tickets` | grill 後把 M6 定案並拆票 |
+| `tdd` / `implement` | 逐 ticket 由 event-stream public behavior 開始 |
+| `codebase-design` | 決定 EventBus seam 與 subscriber 邊界 |
 | `code-review` | 每個里程碑後（Standards + Spec 兩軸） |
-| `grill-me` | 遇到新的分歧決策時 |

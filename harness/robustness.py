@@ -31,19 +31,14 @@ properties are what ticket 06 *measured* the real pipeline to do, not
 assumptions about it, and ``test_the_model_reproduces_the_lag_it_was_given``
 checks the model with the same estimator that measured the real thing.
 
-What the model leaves out, beyond the obvious: the controller under review
-does not read a single sample. ``get_distance`` takes the **median of a window**
-of recent samples and refuses to answer with fewer than two, which is defect A3
-and adds staleness this model does not have. The delay line matches the
-*reference* pipeline ticket 06 measured, not the one in ``full_robot_v3``, so
-every figure here **understates** how bad the current controller is. It also
-leaves out MediaPipe's per-frame cost, its cross-frame tracking, and the
-detection dropouts beyond 195 cm. Including them would mean
-running the real detector through eight control steps per configuration and
-several seconds of settle each — minutes per sweep, and non-deterministic.
-The omission is defensible because ticket 06 measured the real pipeline's
-behaviour to be a delay of 43 ms plus 1 cm quantisation and very little else;
-it is recorded here because "defensible" is not "identical".
+The sweep now enters through public ``approach()``.  It therefore exercises
+the real two-reading minimum, freshness epochs, median aggregation, settling,
+step cap, timeout, and the one formal ``plan_step`` implementation.  What it
+does not rerun at every grid point is MediaPipe: the delay line substitutes the
+43 ms process lag and 1 cm quantisation measured by ticket 06.  Cross-frame
+tracking, detection dropouts beyond 195 cm, focal-length error, and motor
+transients remain outside the model.  The separate real-time replay keeps the
+production DistancePipeline under the M4 latency bound.
 
 ## Nothing here is a threshold
 
@@ -56,11 +51,12 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from types import SimpleNamespace
+from typing import List, Literal, Optional, Sequence, Tuple
 
 from misty_agent.config import Settings, settings as default_settings
-from misty_agent.control import step_policy
-from misty_agent.control.step_policy import plan_step
+from misty_agent.control.approach import approach
+from misty_agent.perception.distance import DistanceReading
 
 #: Segment B, as ticket 06 measured it. See
 #: docs/measurements/m4-latency-baseline.md — this one *is* a measurement, and
@@ -112,12 +108,17 @@ class DelayedPerception:
 
     def read(self, t: float) -> Optional[int]:
         """What the pipeline would report at ``t``, or ``None`` if nothing yet."""
+        sample = self.sample(t)
+        return sample[1] if sample is not None else None
+
+    def sample(self, t: float) -> Optional[Tuple[float, int]]:
+        """Latest available ``(capture time, distance)`` at ``t``."""
         delayed_to = t - self._lag_s
         index = bisect_right(self._times, delayed_to) - 1
         if index < 0:
             return None
         # Truncated, matching FaceReading.distance_cm.
-        return int(self._distances[index])
+        return self._times[index], int(self._distances[index])
 
 
 @dataclass(frozen=True)
@@ -125,19 +126,19 @@ class ApproachOutcome:
     """What one approach did, under one assumed transport lag."""
 
     transport_lag_s: float
-    outcome: str  # "arrived" | "timeout" | "lost"
+    outcome: Literal["arrived", "lost_user", "timeout", "drive_error"]
     steps: int
     closest_cm: float
     final_cm: float
     settings: Settings
+    actual_motion_multiplier: float
 
     @property
     def inside_safety_floor(self) -> bool:
         """Whether the robot ever got closer than it is allowed to.
 
-        PLAN.md defect B: the floor clamps the *commanded* distance, never the
-        distance actually travelled, so a miscalibrated robot walks through it
-        without the clamp ever firing.
+        This is simulator truth, not something the runtime controller can
+        observe through a delayed distance reading.
         """
         return self.closest_cm < self.settings.min_safe_distance_cm
 
@@ -152,82 +153,176 @@ class ApproachOutcome:
             and not self.inside_safety_floor
         )
 
+    @property
+    def audited_outcome(self) -> str:
+        """Truth-audited result; stale-reading success cannot hide failure."""
+        if self.inside_safety_floor:
+            return "safety_floor_breach"
+        if self.outcome != "arrived":
+            return self.outcome
+        if not self.converged:
+            return "overshoot"
+        return "arrived"
+
+
+@dataclass(frozen=True)
+class _Motion:
+    start_s: float
+    end_s: float
+    from_cm: float
+    to_cm: float
+
+
+class _SimulatedWorld:
+    """Fake clock, reading source, and robot adapter for public ``approach``.
+
+    Frames are captured at 30 fps.  A frame reaches the process after the
+    swept transport lag, then becomes a reading after the measured process
+    lag.  Consequently ``frame_arrived_at`` exposes only process-local age,
+    exactly like the production pipeline: transport staleness cannot be
+    detected from inside the process.
+    """
+
+    def __init__(
+        self,
+        *,
+        transport_lag_s: float,
+        pipeline_lag_s: float,
+        start_cm: float,
+        actual_motion_multiplier: float,
+        config: Settings,
+    ) -> None:
+        if transport_lag_s < 0 or pipeline_lag_s < 0:
+            raise ValueError("perception lags cannot be negative")
+        if actual_motion_multiplier < 0:
+            raise ValueError("actual motion multiplier cannot be negative")
+
+        self._transport_lag_s = transport_lag_s
+        self._pipeline_lag_s = pipeline_lag_s
+        self._actual_motion_multiplier = actual_motion_multiplier
+        self._config = config
+        self._now_s = 0.0
+        self._distance_cm = start_cm
+        self.closest_cm = start_cm
+        self._motion: Optional[_Motion] = None
+        self._eyes = DelayedPerception(transport_lag_s + pipeline_lag_s)
+
+        total_lag_s = transport_lag_s + pipeline_lag_s
+        priming_frames = int(total_lag_s / WORLD_STEP_S) + 2
+        for frame in range(priming_frames, -1, -1):
+            self._eyes.observe(-frame * WORLD_STEP_S, start_cm)
+        self._next_capture_s = WORLD_STEP_S
+
+    @property
+    def distance_cm(self) -> float:
+        return self._distance_cm
+
+    def monotonic(self) -> float:
+        return self._now_s
+
+    def latest_reading(self) -> Optional[DistanceReading]:
+        sample = self._eyes.sample(self._now_s)
+        if sample is None:
+            return None
+        captured_at, distance_cm = sample
+        frame_arrived_at = captured_at + self._transport_lag_s
+        return DistanceReading(
+            distance_cm=distance_cm,
+            frame_arrived_at=frame_arrived_at,
+            detected_at=frame_arrived_at + self._pipeline_lag_s,
+        )
+
+    def drive_time(
+        self,
+        linearVelocity: float,
+        angularVelocity: float,
+        timeMs: int,
+        timeout: float,
+    ):
+        del angularVelocity, timeout
+        duration_s = timeMs / 1000.0
+        commanded_cm = duration_s * self._config.cm_per_sec_at_percent
+        direction = 1 if linearVelocity > 0 else -1
+        travelled_cm = commanded_cm * self._actual_motion_multiplier
+        self._motion = _Motion(
+            start_s=self._now_s,
+            end_s=self._now_s + duration_s,
+            from_cm=self._distance_cm,
+            to_cm=self._distance_cm - direction * travelled_cm,
+        )
+        return SimpleNamespace(status_code=200)
+
+    def sleep(self, seconds: float) -> None:
+        if seconds < 0:
+            raise ValueError("sleep cannot go backwards")
+        end_s = self._now_s + seconds
+        while self._next_capture_s <= end_s + 1e-12:
+            distance_cm = self._distance_at(self._next_capture_s)
+            self._eyes.observe(self._next_capture_s, distance_cm)
+            self.closest_cm = min(self.closest_cm, distance_cm)
+            self._next_capture_s += WORLD_STEP_S
+
+        self._distance_cm = self._distance_at(end_s)
+        self.closest_cm = min(self.closest_cm, self._distance_cm)
+        self._now_s = end_s
+        if self._motion is not None and end_s >= self._motion.end_s - 1e-12:
+            self._distance_cm = self._motion.to_cm
+            self.closest_cm = min(self.closest_cm, self._distance_cm)
+            self._motion = None
+
+    def _distance_at(self, instant_s: float) -> float:
+        motion = self._motion
+        if motion is None:
+            return self._distance_cm
+        if instant_s <= motion.start_s:
+            return motion.from_cm
+        if instant_s >= motion.end_s:
+            return motion.to_cm
+        fraction = (instant_s - motion.start_s) / (motion.end_s - motion.start_s)
+        return motion.from_cm + (motion.to_cm - motion.from_cm) * fraction
+
 
 def simulate_approach(
     *,
     transport_lag_s: float,
     start_cm: float = 130.0,
-    speed_error: float = 1.0,
+    speed_error: Optional[float] = None,
     settings: Optional[Settings] = None,
     pipeline_lag_s: float = MEASURED_PIPELINE_LAG_S,
 ) -> ApproachOutcome:
-    """Drive the real control law with readings that are ``lag`` seconds old.
+    """Drive public :func:`approach` with readings that are ``lag`` seconds old.
 
     ``speed_error`` multiplies the distance actually travelled against the
     distance commanded: 1.0 is a perfectly calibrated robot, 2.0 one that moves
     twice as far as it thinks. That constant — ``cm_per_sec_at_percent`` — has
     never been measured either.
 
-    The control law is *called*, not modelled. PLAN.md §10 records a
-    hand-derived closed form of this same logic that was wrong and passed its
-    tests anyway.
+    ``None`` uses the configured maximum actual-motion multiplier, so the
+    published sweep exercises the edge of the conditional calibration
+    assumption.  Values above it may still be simulated, but are explicitly
+    outside the guarantee.
     """
     cfg = settings or default_settings
-    eyes = DelayedPerception(lag_s=transport_lag_s + pipeline_lag_s)
-
-    # The person was already standing there before the robot woke up, so the
-    # delay line has something to report on the first look. Primed forwards:
-    # observations must arrive in ascending time order or the lookup, which
-    # bisects them, silently returns nonsense.
-    t, distance = 0.0, start_cm
-    priming_frames = int((transport_lag_s + pipeline_lag_s) / WORLD_STEP_S) + 2
-    for frame in range(priming_frames, 0, -1):
-        eyes.observe(-frame * WORLD_STEP_S, start_cm)
-    eyes.observe(t, distance)
-
-    closest = distance
-    for step_index in range(cfg.max_approach_steps):
-        reported = eyes.read(t)
-        if reported is None or reported <= 0:
-            return ApproachOutcome(
-                transport_lag_s, "lost", step_index, closest, distance, cfg
-            )
-
-        decision = plan_step(float(reported), cfg)
-        if decision is step_policy.ARRIVED or decision is step_policy.INSIDE_FLOOR:
-            return ApproachOutcome(
-                transport_lag_s, "arrived", step_index, closest, distance, cfg
-            )
-
-        travelled = decision.commanded_cm * speed_error * decision.direction
-        drive_s = decision.commanded_cm / cfg.cm_per_sec_at_percent
-        t, distance = _advance(eyes, t, distance, distance - travelled, drive_s)
-        closest = min(closest, distance)
-        # The robot waits for the motion to finish and for fresh frames. This
-        # is where most of a transport lag goes to die: anything shorter than
-        # the settle has expired before the next reading is taken.
-        t, distance = _advance(eyes, t, distance, distance, cfg.post_step_settle_s)
-
-    return ApproachOutcome(
-        transport_lag_s, "timeout", cfg.max_approach_steps, closest, distance, cfg
+    actual_multiplier = (
+        cfg.max_actual_motion_multiplier if speed_error is None else speed_error
     )
-
-
-def _advance(
-    eyes: DelayedPerception,
-    t: float,
-    from_cm: float,
-    to_cm: float,
-    duration_s: float,
-) -> Tuple[float, float]:
-    """Run the world forward, letting the camera see every frame of it."""
-    frames = max(1, int(duration_s / WORLD_STEP_S))
-    for frame in range(1, frames + 1):
-        fraction = frame / frames
-        eyes.observe(
-            t + duration_s * fraction, from_cm + (to_cm - from_cm) * fraction
-        )
-    return t + duration_s, to_cm
+    world = _SimulatedWorld(
+        transport_lag_s=transport_lag_s,
+        pipeline_lag_s=pipeline_lag_s,
+        start_cm=start_cm,
+        actual_motion_multiplier=actual_multiplier,
+        config=cfg,
+    )
+    result = approach(world, world, config=cfg, clock=world)
+    return ApproachOutcome(
+        transport_lag_s=transport_lag_s,
+        outcome=result.status.value,
+        steps=result.steps,
+        closest_cm=world.closest_cm,
+        final_cm=world.distance_cm,
+        settings=cfg,
+        actual_motion_multiplier=actual_multiplier,
+    )
 
 
 #: Resolution the published sweep is run at, in seconds. Coarser grids do not
@@ -268,12 +363,20 @@ class RobustnessEnvelope:
 
     largest_converging_lag_s: Optional[float]
     first_failing_lag_s: Optional[float]
-    failure_mode: Optional[str]
+    failure_mode: Optional[
+        Literal[
+            "arrived",
+            "overshoot",
+            "safety_floor_breach",
+            "lost_user",
+            "timeout",
+            "drive_error",
+        ]
+    ]
     #: Smallest swept lag at which the robot broke the safety floor. Reported
-    #: separately from the first failure because they need not be the same
-    #: value — the controller overshoots the arrival band before it gets close
-    #: enough to be dangerous, and reporting only the collision hides a whole
-    #: band of failure.
+    #: separately from the first failure because they need not be the same.
+    #: Under M5's published 2x sweep they coincide at 0.70s; retaining both
+    #: fields prevents a future control-law change from hiding either fact.
     first_floor_breach_s: Optional[float]
     #: Spacing of the swept values. The boundary can only ever be located to
     #: within this, and a coarse grid does not merely blur it — it can skip an
@@ -297,7 +400,7 @@ class RobustnessEnvelope:
             )
             if self.first_floor_breach_s is not None:
                 head += (
-                    f", and breaches the safety floor from "
+                    f", and the first swept safety-floor breach is at "
                     f"{self.first_floor_breach_s:.2f}s"
                 )
         grid = (
@@ -344,15 +447,5 @@ def envelope(outcomes: Sequence[ApproachOutcome]) -> RobustnessEnvelope:
 
 
 def _failure_mode(outcome: ApproachOutcome) -> str:
-    """What went wrong, in the vocabulary the ticket asks about.
-
-    ``overshoot`` comes before ``collision`` as the lag grows: the controller
-    ends outside the arrival band well before it ends inside the safety floor.
-    A sweep coarse enough to skip the overshoot band reports the collision as
-    the first failure, which is what the first published table did.
-    """
-    if outcome.inside_safety_floor:
-        return "collision"
-    if outcome.outcome != "arrived":
-        return outcome.outcome
-    return "overshoot"
+    """What went wrong according to simulator truth, never raw status alone."""
+    return outcome.audited_outcome

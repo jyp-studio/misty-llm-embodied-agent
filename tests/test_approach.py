@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+import pytest
+
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import RecordingCommands
@@ -60,6 +62,56 @@ class TickReadings:
     def latest_reading(self):
         self._clock.sleep(0.001)
         return _reading(self._distance_cm, self._clock.monotonic())
+
+
+class MovingWorld(RecordingCommands):
+    """A public reading/robot seam with an explicit drive-distance error.
+
+    This models only the adapter boundary: a successful ``drive/time`` request
+    changes the observed distance by the duration-derived commanded distance
+    times ``actual_motion_multiplier``.  It deliberately does not reproduce
+    the controller's step formula.
+    """
+
+    def __init__(
+        self,
+        clock: FakeClock,
+        *,
+        start_cm: float,
+        actual_motion_multiplier: float,
+        config: Settings,
+    ) -> None:
+        super().__init__()
+        self._clock = clock
+        self._distance_cm = start_cm
+        self._actual_motion_multiplier = actual_motion_multiplier
+        self._config = config
+        self.closest_cm = start_cm
+        self.directions: list[int] = []
+
+    @property
+    def distance_cm(self) -> float:
+        return self._distance_cm
+
+    def latest_reading(self):
+        self._clock.sleep(0.001)
+        return _reading(round(self._distance_cm), self._clock.monotonic())
+
+    def drive_time(self, linearVelocity, angularVelocity, timeMs, timeout):
+        response = super().drive_time(
+            linearVelocity=linearVelocity,
+            angularVelocity=angularVelocity,
+            timeMs=timeMs,
+            timeout=timeout,
+        )
+        commanded_cm = timeMs / 1000 * self._config.cm_per_sec_at_percent
+        direction = 1 if linearVelocity > 0 else -1
+        self.directions.append(direction)
+        self._distance_cm -= (
+            direction * commanded_cm * self._actual_motion_multiplier
+        )
+        self.closest_cm = min(self.closest_cm, self._distance_cm)
+        return response
 
 
 class ExplodingRobot(RecordingCommands):
@@ -139,7 +191,7 @@ def test_a_move_is_followed_by_two_post_move_readings_before_arrival():
     assert drives[0].body_without_defaults() == {
         "linearVelocity": 20,
         "angularVelocity": 0,
-        "timeMs": 1272,
+        "timeMs": 1181,
     }
 
 
@@ -303,8 +355,8 @@ def test_synthetic_video_and_recording_robot_close_one_real_perception_loop(
 
     drives = [request for request in robot.requests if request.endpoint == "drive/time"]
     assert result.status is ApproachStatus.ARRIVED
-    assert result.steps == 1
-    assert len(drives) == 1
+    assert 1 <= result.steps <= 2
+    assert len(drives) == result.steps
 
 
 def test_robot_exception_returns_drive_error_without_assuming_a_step_happened():
@@ -394,3 +446,103 @@ def test_whole_call_deadline_includes_commanded_motion_time():
     assert result.status is ApproachStatus.TIMEOUT
     assert result.steps == 0
     assert not robot.requests
+
+
+def test_public_approach_reserves_enough_headroom_for_two_x_motion():
+    """Regression for M4's 100 -> 44 cm calibration-error counterexample."""
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = MovingWorld(
+        clock,
+        start_cm=100.0,
+        actual_motion_multiplier=2.0,
+        config=config,
+    )
+
+    result = approach(world, world, config=config, clock=clock)
+
+    assert result.status is ApproachStatus.ARRIVED
+    assert world.closest_cm >= config.min_safe_distance_cm
+    assert (
+        config.target_distance_cm - config.distance_tolerance_cm
+        <= world.distance_cm
+        <= config.target_distance_cm + config.distance_tolerance_cm
+    )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"distance_tolerance_cm": 10.0},
+        {"approach_gain": 0.5},
+        {"min_step_cm": 30.0},
+    ],
+)
+@pytest.mark.parametrize("expected_direction", [1, -1])
+def test_non_default_controls_do_not_reverse_under_partial_motion(
+    override,
+    expected_direction,
+):
+    config = Settings(post_step_settle_s=0.0, **override)
+    start_cm = config.target_distance_cm + expected_direction * 14.0
+    clock = FakeClock()
+    world = MovingWorld(
+        clock,
+        start_cm=start_cm,
+        actual_motion_multiplier=1.0,
+        config=config,
+    )
+
+    result = approach(world, world, config=config, clock=clock)
+
+    assert result.status is ApproachStatus.ARRIVED
+    assert world.directions
+    assert set(world.directions) == {expected_direction}
+    assert world.closest_cm >= config.min_safe_distance_cm
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"distance_tolerance_cm": 10.0},
+        {"approach_gain": 0.5},
+        {"min_step_cm": 30.0},
+    ],
+)
+@pytest.mark.parametrize("expected_direction", [1, -1])
+def test_non_default_controls_cannot_force_motion_across_the_arrival_band(
+    override,
+    expected_direction,
+):
+    config = Settings(
+        post_step_settle_s=0.0,
+        **override,
+    )
+    start_cm = config.target_distance_cm + expected_direction * (
+        config.distance_tolerance_cm + 1.0
+    )
+    clock = FakeClock()
+    world = MovingWorld(
+        clock,
+        start_cm=start_cm,
+        actual_motion_multiplier=2.0,
+        config=config,
+    )
+
+    result = approach(world, world, config=config, clock=clock)
+
+    drives = [
+        request for request in world.requests if request.endpoint == "drive/time"
+    ]
+    assert result.status is ApproachStatus.ARRIVED
+    assert result.steps == 1
+    assert (
+        drives[0].body_without_defaults()["linearVelocity"] * expected_direction
+        > 0
+    )
+    assert world.closest_cm >= config.min_safe_distance_cm
+    assert (
+        config.target_distance_cm - config.distance_tolerance_cm
+        <= world.distance_cm
+        <= config.target_distance_cm + config.distance_tolerance_cm
+    )

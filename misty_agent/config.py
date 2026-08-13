@@ -228,6 +228,20 @@ class Settings(BaseSettings):
         default=8, gt=0,
         description="Hard iteration cap. Guarantees every episode terminates.",
     )
+    approach_reading_timeout_s: float = Field(
+        default=2.0, gt=0.0,
+        description=(
+            "Maximum wait for enough fresh distance readings at startup or "
+            "after a movement step."
+        ),
+    )
+    approach_timeout_s: float = Field(
+        default=30.0, gt=0.0,
+        description=(
+            "Whole-call deadline for approach, including perception waits, "
+            "drive adapter responses, commanded motion time, and settling."
+        ),
+    )
     back_up_step_cm: float = Field(default=20.0, gt=0.0)
     post_step_settle_s: float = Field(
         default=0.8, ge=0.0,

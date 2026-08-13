@@ -19,6 +19,7 @@ Misty II REST API reference (https://docs.mistyrobotics.com/misty-ii/reference/r
 Modifications made in this repository:
   - Added a provenance and license header.
   - Moved from `RobotCommands.py` to `misty_agent/drivers/robot_commands.py`.
+  - Added an optional HTTP timeout to `drive_time` for bounded control calls.
 
 --------------------------------------------------------------------------------
 AutoMisty-derived components  (REMOVED — completed at PLAN.md milestone M3)

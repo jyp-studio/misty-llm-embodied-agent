@@ -29,6 +29,8 @@ def test_defaults_load():
     assert s.distance_tolerance_cm == 12.0
     assert s.min_safe_distance_cm == 45.0
     assert s.max_approach_steps == 8
+    assert s.approach_reading_timeout_s == 2.0
+    assert s.approach_timeout_s == 30.0
 
 
 def test_settings_are_frozen():
@@ -80,6 +82,8 @@ def test_fold_size_cannot_exceed_window():
         ("approach_gain", 0.0),
         ("approach_gain", 1.5),
         ("max_approach_steps", 0),
+        ("approach_reading_timeout_s", 0.0),
+        ("approach_timeout_s", 0.0),
         ("cm_per_sec_at_percent", 0.0),
         ("focal_length", -1.0),
         ("sensor_transport_lag_s", -0.1),

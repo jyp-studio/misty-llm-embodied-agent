@@ -39,7 +39,7 @@ class Utterance:
     """One stretch of speech, and when it happened.
 
     Both timestamps are ``time.monotonic()`` readings, matching
-    ``CapturedFrame.captured_at`` — the two sensor streams share a clock so
+    ``CapturedFrame.arrived_at`` — the two sensor streams share a clock so
     that "did the user speak before or after the robot moved?" is answerable.
     """
 

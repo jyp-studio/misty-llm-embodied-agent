@@ -261,9 +261,9 @@ class Settings(BaseSettings):
     distance_max_age_s: float = Field(
         default=2.0, gt=0.0,
         description=(
-            "Distance samples older than this are discarded. NOTE: until "
-            "PLAN.md defect A2 is fixed this filters on PROCESSING time, not "
-            "CAPTURE time, and therefore does not do what its name says."
+            "Maximum process-local age of a distance reading, measured from "
+            "frame ingress to decision time. This excludes the UNCALIBRATED "
+            "camera-to-process transport lag."
         ),
     )
     sensor_transport_lag_s: float = Field(

@@ -136,7 +136,7 @@ def test_a_started_camera_delivers_frames_of_the_person_it_was_given(composer):
     assert frame.image.shape == (composer.height, composer.width, 3)
 
 
-def test_frames_carry_a_capture_timestamp_on_the_drivers_clock(composer):
+def test_frames_carry_a_process_arrival_timestamp_on_the_drivers_clock(composer):
     import time
 
     camera = SyntheticCamera(composer)
@@ -148,7 +148,7 @@ def test_frames_carry_a_capture_timestamp_on_the_drivers_clock(composer):
     finally:
         camera.stop()
 
-    assert before <= frame.captured_at <= after
+    assert before <= frame.arrived_at <= after
 
 
 def test_moving_the_person_changes_what_later_frames_show(composer):
@@ -172,20 +172,33 @@ def test_moving_the_person_changes_what_later_frames_show(composer):
     assert far_cm > near_cm
 
 
-def test_an_unread_camera_accumulates_a_backlog(composer):
-    # Deliberately unbounded, exactly like the RTSP source: the backlog is a
-    # thing the harness measures, not a thing it prevents.
+def test_an_unread_camera_keeps_only_the_latest_scene(composer):
+    # A controller wants the world now, not every world it failed to process.
+    # Run long enough for several frames to arrive without a consumer: the
+    # public contract is a bounded latest value plus an observable drop count.
     import time
 
-    camera = SyntheticCamera(composer, fps=60)
+    from misty_agent.perception.face import FaceDetector
+
+    camera = SyntheticCamera(composer, fps=60, start_distance_cm=120.0)
     camera.start()
     try:
-        time.sleep(0.4)
+        time.sleep(0.2)
+        camera.place(70.0)
+        time.sleep(0.2)
         depth = camera.backlog
+        dropped = camera.dropped_frames
+        latest = camera.read(timeout=1.0)
     finally:
         camera.stop()
 
-    assert depth > 1
+    assert latest is not None
+    with FaceDetector() as detector:
+        latest_distance_cm = detector.detect(latest.image).distance_cm
+
+    assert depth == 1
+    assert dropped > 1
+    assert latest_distance_cm == pytest.approx(70.0, rel=0.05)
 
 
 def test_flush_discards_what_was_waiting(composer):

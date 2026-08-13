@@ -10,9 +10,9 @@ rest of the system already consumes, emitting frames on a background thread at
 a fixed rate. It is the harness's only injection point: it substitutes for
 ``RtspVideoStream`` and nothing above the seam changes.
 
-**The buffer is unbounded, on purpose.** It matches the RTSP source it stands
-in for, so a consumer slower than the frame rate makes the backlog grow — which
-is the behaviour being measured, not a bug to fix here.
+**The buffer has production latest-value semantics.** It matches the RTSP
+source it stands in for: a slow consumer skips old frames, the process-local
+backlog stays bounded, and replacements remain visible as a diagnostic.
 
 Both MediaPipe and OpenCV are imported inside the functions that need them, so
 this module imports on a machine without them and its tests skip rather than
@@ -185,10 +185,10 @@ class SyntheticCamera:
     * ``start()`` begins emitting frames at ``fps`` on a background thread;
       ``stop()`` ends it. Both idempotent.
     * ``place(distance_cm)`` moves the subject. Frames emitted after the call
-      show the new distance; frames already buffered still show the old one,
-      which is the point — that buffer is the lag being measured.
-    * ``read`` / ``flush`` / ``backlog`` behave as on the RTSP source, including
-      the unbounded buffer.
+      show the new distance; the one unread older frame may remain until the
+      next frame replaces it or a caller flushes explicitly.
+    * ``read`` / ``flush`` / ``backlog`` / ``dropped_frames`` behave as on the
+      RTSP source, including the one-frame latest-value buffer.
 
     Rendering happens on the producer thread, so the frame rate is a ceiling
     rather than a guarantee: if compositing takes longer than the interval, the
@@ -243,6 +243,10 @@ class SyntheticCamera:
     def backlog(self) -> int:
         return self._buffer.depth
 
+    @property
+    def dropped_frames(self) -> int:
+        return self._buffer.dropped_frames
+
     # ---------- implementation ----------
 
     def _emit_loop(self, stop: threading.Event) -> None:
@@ -252,6 +256,6 @@ class SyntheticCamera:
             # Stamped where the RTSP reader stamps it: the moment the frame
             # becomes available to this process, before anyone looks at it.
             self._buffer.put(
-                CapturedFrame(image=image, captured_at=time.monotonic())
+                CapturedFrame(image=image, arrived_at=time.monotonic())
             )
             stop.wait(max(0.0, due_at - time.monotonic()))

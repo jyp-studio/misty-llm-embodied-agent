@@ -58,7 +58,7 @@ def walking_trace(lag_s: float, *, seconds: float = 4.0, speed_cm_s: float = 10.
                 truth_cm=truth,
                 reported_cm=int(reported),
                 backlog=backlog,
-                frame_captured_at=t,
+                frame_arrived_at=t,
                 detected_at=t + 0.004,
             )
         )
@@ -229,7 +229,7 @@ def ideal_trace(lag_s: float, trajectory, *, hz: float = 40.0) -> Trace:
                 truth_cm=trajectory.distance_at(t),
                 reported_cm=int(trajectory.distance_at(max(0.0, t - lag_s))),
                 backlog=0,
-                frame_captured_at=t,
+                frame_arrived_at=t,
                 detected_at=t + 0.005,
             )
         )

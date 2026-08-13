@@ -5,18 +5,17 @@ This is the mechanism. Two numbers, both already present in a
 :class:`~harness.replay.Trace` and neither requiring any instrumentation the
 system does not already carry:
 
-**Buffer depth** is PLAN.md defect A1 made visible. The frame buffer is
-unbounded and has no backpressure of any kind, so a consumer slower than the
-camera makes it grow without limit. What matters is not how deep it got but
-*whether it was still growing* — one late frame is a spike, a rising slope is
-the defect. Both are reported.
+**Buffer depth** made PLAN.md defect A1 visible in M4: the old frame buffer was
+unbounded, so a slow consumer made it grow without limit. M5 replaced that
+behaviour with a one-frame latest-value buffer. The diagnostic still reads old
+traces faithfully and confirms new production traces remain bounded.
 
-**Frame age** is defect A2 made visible: how long a frame sat between being
-captured and being looked at. That is precisely the quantity
+**Frame age** is defect A2 made visible: how long a frame sat between entering
+this process and being looked at. That is precisely the process-local quantity
 ``get_distance(max_age_sec=...)`` was written to bound and does not, because it
 filters on when a reading was *computed* instead. Reading it here uses
-``CapturedFrame.captured_at``, which M3 put on the frame for this purpose.
-Rewiring the estimator to filter on it is M5's fix and must not happen here.
+``CapturedFrame.arrived_at`` records. It deliberately excludes unmeasurable
+camera-to-process transport lag.
 
 ## Nothing here bounds normal operation
 

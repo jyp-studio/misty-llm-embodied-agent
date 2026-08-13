@@ -25,7 +25,7 @@ import time
 import pytest
 from conftest import SKIP_REASON
 
-from harness.replay import Reading, replay
+from harness.replay import DistanceReading, replay
 from harness.trajectory import Trajectory
 
 
@@ -59,9 +59,9 @@ class EchoPipeline:
         if not self._camera.placements:
             return None
         now = time.monotonic()
-        return Reading(
+        return DistanceReading(
             distance_cm=int(self._camera.placements[-1]),
-            frame_captured_at=now,
+            frame_arrived_at=now,
             detected_at=now,
         )
 

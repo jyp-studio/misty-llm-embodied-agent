@@ -33,7 +33,7 @@ def walking_trace(lag_s: float = 0.04, *, machine: str = "test-machine") -> Trac
                 truth_cm=truth,
                 reported_cm=int(delayed),
                 backlog=0,
-                frame_captured_at=t,
+                frame_arrived_at=t,
                 detected_at=t + 0.005,
             )
         )
@@ -170,7 +170,7 @@ def test_figures_that_vary_between_runs_are_shown_as_a_range():
     busy = Trace(
         samples=tuple(
             Sample(s.t, s.truth_cm, s.reported_cm, backlog=4,
-                   frame_captured_at=s.t, detected_at=s.t + 0.02)
+                   frame_arrived_at=s.t, detected_at=s.t + 0.02)
             for s in quiet.samples
         ),
         trajectory=quiet.trajectory,

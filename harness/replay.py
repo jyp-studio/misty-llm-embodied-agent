@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional, Protocol, Tuple
 
 from harness.trajectory import APPROACH_HOLD_STEP, Trajectory
 from misty_agent.drivers.av_stream import VideoSource, WorkerThread
+from misty_agent.perception.distance import DistanceReading
 from misty_agent.perception.face import UNKNOWN_DISTANCE_CM
 
 log = logging.getLogger(__name__)
@@ -45,31 +46,6 @@ class MovableCamera(Protocol):
 
     @property
     def backlog(self) -> int: ...
-
-
-@dataclass(frozen=True)
-class Reading:
-    """What a pipeline believes, and which frame it got there from.
-
-    The two timestamps are what makes a reading measurable rather than merely
-    reportable. ``frame_captured_at`` is stamped by the video source the moment
-    the frame arrived; ``detected_at`` is when the pipeline finished with it.
-    Their difference is the frame age ticket 07 reports, and neither can be
-    reconstructed afterwards — a recorder that only saw the distance would have
-    to guess which frame produced it.
-
-    Both are ``time.monotonic()`` readings, the same clock ``CapturedFrame``
-    uses.
-    """
-
-    distance_cm: int
-    frame_captured_at: float
-    detected_at: float
-
-    @property
-    def frame_age_s(self) -> float:
-        """How old the frame was by the time the pipeline had finished with it."""
-        return self.detected_at - self.frame_captured_at
 
 
 class DistancePipeline(Protocol):
@@ -86,7 +62,7 @@ class DistancePipeline(Protocol):
     invalidated its samples, genuinely does not know.
     """
 
-    def latest_reading(self) -> Optional[Reading]: ...
+    def latest_reading(self) -> Optional[DistanceReading]: ...
 
 
 @dataclass(frozen=True)
@@ -108,7 +84,7 @@ class Sample:
     reported_cm: int
     backlog: int
     #: Of the frame the reading came from; ``None`` when there was no reading.
-    frame_captured_at: Optional[float] = None
+    frame_arrived_at: Optional[float] = None
     #: When the pipeline finished with that frame.
     detected_at: Optional[float] = None
 
@@ -119,9 +95,9 @@ class Sample:
     @property
     def frame_age_s(self) -> Optional[float]:
         """Frame age at detection — ticket 07's diagnostic."""
-        if self.frame_captured_at is None or self.detected_at is None:
+        if self.frame_arrived_at is None or self.detected_at is None:
             return None
-        return self.detected_at - self.frame_captured_at
+        return self.detected_at - self.frame_arrived_at
 
 
 @dataclass(frozen=True)
@@ -219,7 +195,7 @@ def replay(
                     reading.distance_cm if reading else UNKNOWN_DISTANCE_CM
                 ),
                 backlog=camera.backlog,
-                frame_captured_at=reading.frame_captured_at if reading else None,
+                frame_arrived_at=reading.frame_arrived_at if reading else None,
                 detected_at=reading.detected_at if reading else None,
             )
         )
@@ -249,13 +225,13 @@ def replay(
 class DirectPipeline:
     """Read a frame, detect a face, keep the answer. Nothing else.
 
-    The floor against which every later pipeline is compared: no buffering
-    policy, no median filter, no sample window, no invalidation. Whatever lag a
-    trace of this shows is the cost of frame delivery and detection alone.
+    The M4 floor against which the production pipeline was designed: no median
+    filter, no sample window, no invalidation. Whatever lag a trace of this
+    shows is the cost of frame delivery and detection alone.
 
-    It reads **one frame per pass with no draining**, which is deliberate: a
-    consumer slower than the camera falls behind, and the growing backlog is
-    the thing to be measured rather than avoided (PLAN.md §5 A1).
+    It reads one frame per pass. The source now has production latest-value
+    semantics, so a slow consumer skips replaced frames rather than traversing
+    an old queue.
 
     The detector is stateful across frames and expects a video sequence in
     order, which is exactly what it gets here.
@@ -269,10 +245,10 @@ class DirectPipeline:
         # of the two it happens to see — both are readings the pipeline really
         # produced, and which one it catches is exactly the timing this
         # measures.
-        self._latest: Optional[Reading] = None
+        self._latest: Optional[DistanceReading] = None
         self._worker = WorkerThread(self._consume_loop, name="direct-pipeline")
 
-    def latest_reading(self) -> Optional[Reading]:
+    def latest_reading(self) -> Optional[DistanceReading]:
         return self._latest
 
     def start(self) -> None:
@@ -294,32 +270,35 @@ class DirectPipeline:
                 # matching what a controller would see: a dropped detection is
                 # not news that the person left.
                 if reading.has_human:
-                    self._latest = Reading(
+                    self._latest = DistanceReading(
                         distance_cm=reading.distance_cm,
-                        frame_captured_at=frame.captured_at,
+                        frame_arrived_at=frame.arrived_at,
                         detected_at=time.monotonic(),
                     )
 
 
 def default_replay(portrait, *, trajectory: Trajectory = APPROACH_HOLD_STEP,
                    sample_hz: float = 40.0) -> Trace:
-    """Record the standard script against the reference pipeline.
+    """Record the standard script against the production distance pipeline.
 
-    The one call tickets 06, 07 and 09 need: it wires the synthetic camera to
-    :class:`DirectPipeline`, plays ``trajectory``, and hands back the trace.
-    Takes as long as the script does.
+    The one call the latency bound and report need: it wires the synthetic
+    camera to the same pipeline runtime control will use, plays ``trajectory``,
+    and hands back the trace. Takes as long as the script does.
 
     ``sample_hz`` defaults above the camera's frame rate on purpose. Sampling
     slower than the source cannot resolve a lag shorter than one frame period,
-    and the reference pipeline's lag is around that size — the first recorded
-    run at 20 Hz could say only "under 50 ms".
+    and the process-local lag is around that size — the first recorded run at
+    20 Hz could say only "under 50 ms".
     """
     from harness.synthetic_camera import FaceComposer, SyntheticCamera
+    from misty_agent.perception.distance import (
+        DistancePipeline as ProductionPipeline,
+    )
 
     camera = SyntheticCamera(
         FaceComposer(portrait), start_distance_cm=trajectory.start_cm
     )
-    pipeline = DirectPipeline(camera)
+    pipeline = ProductionPipeline(camera)
     camera.start()
     pipeline.start()
     try:

@@ -3,14 +3,9 @@
 Every trace here is built with the behaviour already known, so the diagnostics
 can be checked against an answer rather than against themselves.
 
-**Nothing in this module is a threshold, and no test here asserts a limit on
-buffer depth or frame age.** That is the ticket's rule, and it is not
-squeamishness: PLAN.md §5 rules the backlog a correctness problem rather than a
-performance one, so a numeric limit would invite tuning the detector to pass
-it. It would also be flaky by construction — an earlier attempt at exactly that
-lived in `test_latency_bound.py` and failed intermittently whenever the rest of
-the suite competed for the same cores, which is not a regression but defect A1
-happening.
+The arithmetic still accepts old unbounded traces so the M4 evidence remains
+readable. The production test below now verifies the M5 behaviour: a slow
+consumer causes observable replacement, not an ever-growing process queue.
 """
 
 from __future__ import annotations
@@ -36,7 +31,7 @@ def trace_with(backlogs, *, frame_ages=None) -> Trace:
                 truth_cm=100.0 - i,
                 reported_cm=100 - i,
                 backlog=depth,
-                frame_captured_at=None if age is None else t,
+                frame_arrived_at=None if age is None else t,
                 detected_at=None if age is None else t + age,
             )
         )
@@ -162,19 +157,13 @@ def test_an_empty_trace_does_not_crash_the_diagnostics():
 # The defect, on purpose
 # ---------------------------------------------------------------------------
 
-def test_a_slow_consumer_really_does_make_the_buffer_grow(portrait):
-    """Defect A1, produced deliberately, through the real pipeline.
+def test_a_slow_consumer_drops_old_frames_instead_of_building_a_queue(portrait):
+    """M5's latest-value policy under the load that exposed defect A1.
 
     Everything above tests the arithmetic against traces built by hand. This
     tests the thing the arithmetic is about: that when detection costs more
-    than a frame period, the unbounded buffer fills and keeps filling.
-
-    It matters because the reference pipeline never shows it. On this machine
-    detection costs 5 ms against a 33 ms frame period, so the buffer stays
-    empty and `backlog_is_growing` has nothing to report — a diagnostic that
-    has never been seen to fire is not a diagnostic. PLAN.md §5 assumed 30–50 ms
-    per frame, which is what the delay below imitates; at that cost the defect
-    is not conditional at all.
+    than a frame period. The old unbounded buffer grew without limit here; the
+    same scenario must now remain bounded and make its dropped frames visible.
     """
     pytest.importorskip("cv2", reason="needs the media stack")
     pytest.importorskip("mediapipe", reason="needs the media stack")
@@ -182,7 +171,7 @@ def test_a_slow_consumer_really_does_make_the_buffer_grow(portrait):
     import threading
     import time
 
-    from harness.replay import Reading, replay
+    from harness.replay import DistanceReading, replay
     from harness.synthetic_camera import FaceComposer, SyntheticCamera
     from harness.trajectory import Trajectory
     from misty_agent.drivers.av_stream import WorkerThread
@@ -222,9 +211,9 @@ def test_a_slow_consumer_really_does_make_the_buffer_grow(portrait):
                     time.sleep(self._cost_s)
                     reading = detector.detect(frame.image)
                     if reading.has_human:
-                        self._latest = Reading(
+                        self._latest = DistanceReading(
                             distance_cm=reading.distance_cm,
-                            frame_captured_at=frame.captured_at,
+                            frame_arrived_at=frame.arrived_at,
                             detected_at=time.monotonic(),
                         )
 
@@ -245,14 +234,12 @@ def test_a_slow_consumer_really_does_make_the_buffer_grow(portrait):
 
     report = diagnose(trace)
 
-    assert report.backlog_max > 5, report.summary()
-    assert report.backlog_is_growing, (
-        f"the buffer did not accumulate under a deliberately slow consumer: "
-        f"{report.summary()}"
-    )
-    # And the frames it did get through were correspondingly stale — defect A2
-    # is what defect A1 turns into once the queue is deep.
-    assert report.frame_age_max_s > 0.2, report.summary()
+    assert report.backlog_max <= 1, report.summary()
+    assert not report.backlog_is_growing, report.summary()
+    assert camera.dropped_frames > 0
+    # With no process queue to traverse, even this deliberately slow consumer
+    # never sees the hundreds-of-milliseconds-old frames defect A1 produced.
+    assert report.frame_age_max_s < 0.2, report.summary()
 
 
 # ---------------------------------------------------------------------------

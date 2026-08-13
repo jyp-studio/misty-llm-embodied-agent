@@ -77,34 +77,31 @@ def test_the_two_estimators_do_not_contradict_each_other(baseline_trace):
     # They measure the same thing by different routes, and both are bimodal
     # on this script — readings land one sampling interval apart depending on
     # whether the recorder polled before or after the pipeline updated. Over
-    # five runs inversion's p95 held at 42.5ms while correlation ranged
-    # 25–49ms, so the tolerance cannot be tighter than that spread without
-    # becoming flaky. It exists to catch a disagreement of kind rather than
-    # degree: if one said 40ms and the other 400ms, neither should be published.
+    # five M4 runs inversion's p95 held at 42.5ms while correlation ranged
+    # 25–49ms. M5's latest-value source adds one legitimate alignment choice:
+    # the producer may replace a frame between the recorder's samples, putting
+    # the estimators one camera frame plus one sample slot apart. That physical
+    # resolution is the tolerance; a disagreement of kind (40ms vs 400ms) still
+    # fails.
     report = estimate_lag(baseline_trace)
+    alignment_resolution_s = (1.0 / CAMERA_FPS) + (1.0 / baseline_trace.sample_hz)
 
-    assert report.correlation_s == pytest.approx(report.p95_s, abs=0.03), (
+    assert report.correlation_s == pytest.approx(
+        report.p95_s, abs=alignment_resolution_s
+    ), (
         f"inversion says {report.p95_s * 1000:.0f}ms, correlation says "
         f"{report.correlation_s * 1000:.0f}ms — they disagree about what "
-        f"was measured"
+        f"was measured beyond the {alignment_resolution_s * 1000:.0f}ms "
+        f"camera-plus-sampler resolution"
     )
 
 
 def test_the_consumer_outruns_the_producer_on_this_machine(baseline_trace):
-    """The ratio PLAN.md §5's defect A1 turns on.
+    """The host-specific saturation ratio remains a useful diagnostic.
 
-    The buffer is unbounded and has no backpressure at all; it stays empty only
-    because detection is cheaper than frame delivery. This asserts that ratio,
-    which is a cost and reasonably stable.
-
-    It deliberately does **not** assert that the buffer stayed empty. An
-    earlier version did, and it failed intermittently — under the full suite,
-    with other tests running MediaPipe on the same cores, the consumer slows
-    and frames genuinely queue up. That is not a regression to catch; it is
-    defect A1 happening, and it is the clearest demonstration yet that whether
-    the queue grows is a property of the host rather than of the code. Ticket
-    07 reports buffer depth as a diagnostic with no threshold, for this exact
-    reason.
+    Detection is normally cheaper than frame delivery on this host. If that
+    flips under load, M5 now replaces old frames instead of accumulating them;
+    the ratio still identifies where replacement begins.
     """
     rates = throughput(baseline_trace, producer_fps=CAMERA_FPS)
 

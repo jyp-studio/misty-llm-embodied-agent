@@ -12,12 +12,10 @@ Callers see ``start / stop / read / flush / backlog`` and nothing else. They do
 not start threads, do not know the URL, and do not touch a queue — all three
 were things the previous code (``CUBS_Misty.Robot``) required of them.
 
-**Frames are timestamped at capture**, which is the whole point of doing this
-before the replay harness: ``CapturedFrame.captured_at`` is read immediately
-after ``VideoCapture.read()`` returns, so downstream age filters can ask "how
-old is this picture?" rather than "how long ago did I finish thinking about
-it?". See PLAN.md §5 defect A2. Nothing consumes the field yet — M5 rewires
-the consumer, and until it does M4's harness must stay red.
+**Frames are timestamped at process ingress.** ``CapturedFrame.arrived_at`` is
+read immediately after ``VideoCapture.read()`` returns, before rotation or face
+detection. It does not claim to be camera exposure time: encoding, Wi-Fi and
+RTSP transport happened earlier and remain unmeasurable without hardware.
 
 ``opencv`` is imported inside ``start()`` rather than at module scope so that
 this module — and the contract tests over ``AvSession`` — import on a machine
@@ -43,20 +41,20 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CapturedFrame:
-    """One camera frame and the instant it was pulled off the wire.
+    """One camera frame and the instant it became observable to this process.
 
-    ``captured_at`` is a ``time.monotonic()`` reading. Compare it only against
+    ``arrived_at`` is a ``time.monotonic()`` reading. Compare it only against
     other monotonic readings — it is not a wall-clock time, deliberately, so
     that the lag measurements the harness makes cannot be corrupted by an NTP
-    step mid-episode.
+    step mid-episode. It excludes camera exposure, encoding and transport lag.
     """
 
     image: np.ndarray
-    captured_at: float
+    arrived_at: float
 
     def age_s(self, now: Optional[float] = None) -> float:
-        """Seconds since this frame left the camera pipeline."""
-        return (time.monotonic() if now is None else now) - self.captured_at
+        """Seconds since this frame became observable to this process."""
+        return (time.monotonic() if now is None else now) - self.arrived_at
 
 
 class WorkerThread:
@@ -120,17 +118,34 @@ class FrameBuffer:
     kept passing, which is the failure PLAN.md §10 records against the control
     law.
 
-    **Unbounded, deliberately.** Producing faster than the consumer reads makes
-    it grow without limit, and nothing here stops that: the growth is PLAN.md
-    defect A1, and the harness exists to measure it. Bounding it is a decision
-    for the pipeline rewrite (§12.3), not a property of the container.
+    This is a latest-value buffer, not a playback queue. If a producer publishes
+    while one frame is still waiting, the waiting frame is replaced and the
+    replacement is counted. A controller needs the newest observable world;
+    replaying every world it failed to process would turn load into stale input.
+
+    This bounds only the queue owned by this process. OpenCV and RTSP may buffer
+    before a frame reaches this seam, which cannot be measured without hardware.
     """
 
     def __init__(self) -> None:
-        self._frames: "queue.Queue[CapturedFrame]" = queue.Queue()
+        self._frames: "queue.Queue[CapturedFrame]" = queue.Queue(maxsize=1)
+        self._dropped_frames = 0
 
     def put(self, frame: CapturedFrame) -> None:
-        self._frames.put(frame)
+        try:
+            self._frames.put_nowait(frame)
+            return
+        except queue.Full:
+            pass
+
+        try:
+            self._frames.get_nowait()
+        except queue.Empty:
+            # The consumer won the race after put_nowait observed a full slot.
+            pass
+        else:
+            self._dropped_frames += 1
+        self._frames.put_nowait(frame)
 
     def read(self, timeout: float) -> Optional[CapturedFrame]:
         """Next frame, or ``None`` if none arrived within ``timeout``."""
@@ -150,6 +165,11 @@ class FrameBuffer:
     def depth(self) -> int:
         return self._frames.qsize()
 
+    @property
+    def dropped_frames(self) -> int:
+        """Frames replaced before a consumer could observe them."""
+        return self._dropped_frames
+
 
 @runtime_checkable
 class VideoSource(Protocol):
@@ -161,13 +181,13 @@ class VideoSource(Protocol):
       idempotent; ``stop()`` is safe even if ``start()` failed.
     * ``read(timeout)`` blocks up to ``timeout`` seconds and returns ``None``
       if no frame arrived. It never raises on an empty buffer.
-    * Frames are delivered in capture order.
+    * At most the latest unread frame is retained. A slow consumer skips old
+      frames rather than replaying them in order.
     * ``flush()`` discards everything buffered. Call it after any action that
       invalidates the robot's viewpoint.
-    * ``backlog`` counts frames waiting to be read. It is a diagnostic, not a
-      guarantee: the production adapter's buffer is currently unbounded and
-      grows without limit whenever the consumer is slower than the camera
-      (PLAN.md §5 defect A1).
+    * ``backlog`` counts frames waiting to be read and is always zero or one.
+      ``dropped_frames`` counts frames replaced before they were read. Both are
+      process-local diagnostics; neither describes RTSP's internal buffers.
 
     Two adapters satisfy this: ``RtspVideoStream`` against a real Misty, and
     the replay harness's synthetic source in M4.
@@ -183,6 +203,9 @@ class VideoSource(Protocol):
 
     @property
     def backlog(self) -> int: ...
+
+    @property
+    def dropped_frames(self) -> int: ...
 
 
 class AvSession:
@@ -322,6 +345,10 @@ class RtspVideoStream:
     def backlog(self) -> int:
         return self._buffer.depth
 
+    @property
+    def dropped_frames(self) -> int:
+        return self._buffer.dropped_frames
+
     # ---------- implementation ----------
 
     def _read_loop(self, stop: threading.Event) -> None:
@@ -348,18 +375,18 @@ class RtspVideoStream:
                 ok, image = capture.read()
                 # Stamp the instant the frame arrived, before any work is done
                 # on it. Everything after this point is measurable lag.
-                captured_at = time.monotonic()
+                arrived_at = time.monotonic()
                 if not ok:
                     log.warning("RTSP video read failed; reader exiting")
                     break
                 if rotation is not None:
                     image = cv2.rotate(image, rotation)
                 self._buffer.put(
-                    CapturedFrame(image=image, captured_at=captured_at)
+                    CapturedFrame(image=image, arrived_at=arrived_at)
                 )
                 # Producer throttle carried over from the original reader. It
-                # does not prevent the backlog in defect A1 — the consumer is
-                # slower than 100 fps — it only slows the growth.
+                # reduces replacement frequency but is not relied on for
+                # correctness; the latest-value buffer supplies the bound.
                 if self._producer_pause_s:
                     time.sleep(self._producer_pause_s)
         finally:

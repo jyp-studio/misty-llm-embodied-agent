@@ -21,10 +21,10 @@ nothing to work with. Its job is to disagree: if the two methods diverge on a
 trace where both are defined, one of them is wrong and the number should not be
 published.
 
-:func:`throughput` answers the separate question PLAN.md §12.2 raised. The
-pipeline has no backpressure, so nothing stops the buffer growing except the
-consumer happening to be faster than the producer. This reports both costs and
-the frame rate at which they cross.
+:func:`throughput` answers the separate question PLAN.md §12.2 raised. It
+reports producer and consumer costs and the frame rate at which they cross. In
+the M5 latest-value buffer, crossing means old frames begin to be replaced; it
+no longer means the process queue can grow without limit.
 """
 
 from __future__ import annotations
@@ -153,7 +153,7 @@ class ThroughputReport:
 
     @property
     def ratio(self) -> float:
-        """Consumer cost over producer interval. Above 1.0 the buffer grows."""
+        """Consumer cost over producer interval. Above 1.0 frames are replaced."""
         return self.consumer_cost_s / self.producer_interval_s
 
     @property
@@ -178,7 +178,7 @@ class ThroughputReport:
         return (
             f"consumer {self.consumer_cost_s * 1000:.1f}ms vs producer "
             f"{self.producer_interval_s * 1000:.1f}ms (ratio {self.ratio:.2f}); "
-            f"buffer grows above {self.inversion_fps:.0f} fps; "
+            f"frames may be replaced above {self.inversion_fps:.0f} fps; "
             f"lag floor {self.lag_floor_s * 1000:.0f}ms"
         )
 

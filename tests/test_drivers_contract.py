@@ -187,8 +187,8 @@ def test_the_supported_rotations_are_accepted(degrees):
     RtspVideoStream(_session(RecordingCommands()), rotate_degrees=degrees)
 
 
-def test_frame_age_is_measured_from_capture():
-    frame = CapturedFrame(image=np.zeros((2, 2, 3), dtype=np.uint8), captured_at=100.0)
+def test_frame_age_is_measured_from_process_arrival():
+    frame = CapturedFrame(image=np.zeros((2, 2, 3), dtype=np.uint8), arrived_at=100.0)
 
     assert frame.age_s(now=100.75) == pytest.approx(0.75)
 

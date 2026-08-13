@@ -215,12 +215,12 @@ def _claims(
             f"with the real detector in the loop.",
         ),
         Claim(
-            "The frame buffer has no backpressure",
+            "The process-local frame buffer keeps only the latest value",
             "simulated",
             (
-                "It stayed shallow here, but nothing bounds it: a consumer "
-                "slower than the camera fills it without limit, which "
-                "tests/test_diagnostics.py demonstrates on purpose."
+                "Its backlog is bounded at one frame; a slower consumer "
+                "replaces old frames and exposes the replacement count. "
+                "This says nothing about OpenCV or RTSP internal buffers."
                 if rates is not None
                 else "Depth could not be characterised because no frame ever "
                 "arrived to an empty buffer — which is itself the symptom, not "

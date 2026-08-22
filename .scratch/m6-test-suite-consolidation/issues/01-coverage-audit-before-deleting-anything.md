@@ -10,13 +10,35 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 盤點文件納入版控，檔頭明確標示為手寫、非產生物、不可重跑
-- [ ] 舊 runner 的每一個 scenario 都被逐項處理，沒有遺漏，沒有整批帶過
-- [ ] 每一條「已涵蓋」都寫出對應的測試名稱，且該測試在盤點寫成當下存在並通過
-- [ ] 每一條「屬於 M7」都寫明為什麼不在 M6 重建
-- [ ] 每一條「缺口」都寫明缺什麼，以及由哪張 ticket 補
-- [ ] 28 vs 24 的數字矛盾有明確結論，並指出錯的是哪一份文件
-- [ ] 盤點寫成到本 ticket 結束期間，`pytest tests/ -q -rs` 全綠且零 skip
-- [ ] 盤點沒有主張任何未經執行確認的覆蓋
+- [x] 盤點文件納入版控，檔頭明確標示為手寫、非產生物、不可重跑
+- [x] 舊 runner 的每一個 scenario 都被逐項處理，沒有遺漏，沒有整批帶過
+- [x] 每一條「已涵蓋」都寫出對應的測試名稱，且該測試在盤點寫成當下存在並通過
+- [x] 每一條「屬於 M7」都寫明為什麼不在 M6 重建
+- [x] 每一條「缺口」都寫明缺什麼，以及由哪張 ticket 補
+- [x] 28 vs 24 的數字矛盾有明確結論，並指出錯的是哪一份文件
+- [x] 盤點寫成到本 ticket 結束期間，`pytest tests/ -q -rs` 全綠且零 skip
+- [x] 盤點沒有主張任何未經執行確認的覆蓋
+
+## Comments
+
+完成於 2026-08-20。產出 `docs/measurements/m6-coverage-audit.md`，逐項處理 24 個 check。
+
+**28 vs 24 的答案：** 差的四個是 `T10 AutoMisty termination semantics`，一整個 scenario，
+在 M1（`8a8dee8`）隨 AutoMisty 一起被移除。`b753b42` 是 28 檢查 / 10 scenario，
+`8a8dee8` 之後就是 24 / 9，此後未變。**錯的是文件不是 runner**：`README.md` 三處與
+`PLAN.md` 的「遷移到 pytest」那句都在描述 M1 之前的樹。兩者由 ticket 02 修正。
+
+**盤點結果：** 13 covered（其中 5 條的新斷言比舊的更嚴）、3 條 T8 屬 M7 且不以原形式重建、
+5 條 T9 屬 M7 且欠一次重建、2 條 T4 缺口由 03/05 填、1 條 T5 缺口由**新增的 ticket 06** 填。
+
+**意外發現（缺口 2）：** 套件裡每一個 `lost_user` 測試都是**還沒動就失去使用者**
+（`steps == 0`）。T5 真正買到的性質是「移動之後失去目標就不再發驅動命令」，走的是設過
+invalidation epoch 的另一條路徑，目前**零覆蓋**。開了 ticket 06。
+
+**一處是推論而非指認，已在文件中標明：** T1 的「safety floor respected」是 1× 行走倍率，
+而套件只在 2× 直接斷言底線。2× 是嚴格更壞的情況，1× 落在其內 —— 論證成立，但它是論證。
+
+驗證：文件中具名的 11 個測試逐一執行 → **11 passed**；`.venv/bin/python -m pytest tests/ -q -rs`
+→ **272 passed、零 skip**。本 ticket 未新增或修改任何測試與產品程式碼。

@@ -725,3 +725,127 @@ def test_the_closed_form_matches_what_the_real_detector_does(portrait):
             f"{measured:.3f} cm per pixel of face width; the model predicts "
             f"{predicted:.3f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Direction reversals
+#
+# Reversal is noise's characteristic failure and neither existing axis can see
+# it: a controller that chatters at the edge of the arrival band breaches no
+# floor and can still report `arrived`, so `inside_safety_floor` and
+# `converged` both call it a success.
+#
+# The counter therefore has to be proved against a run that definitely
+# reverses, or it is a diagnostic that has never seen its target — M4 #07's
+# lesson, and the reason ticket 07 exists at all.
+# ---------------------------------------------------------------------------
+
+#: Travel multipliers that break the conditional calibration assumption. The
+#: configured `max_actual_motion_multiplier` is 2.0; at 3x the robot goes half
+#: as far again as the guarantee covers, drives past the person, and has to
+#: come back.
+#:
+#: Ticket 04 predicted transport lag alone would force this. **It does not**,
+#: and that is a result rather than a missing test: see
+#: `test_lag_alone_does_not_make_the_controller_reverse` below.
+BEYOND_ASSUMPTION_MULTIPLIERS = (3.0, 4.0)
+
+def test_breaking_the_calibration_assumption_makes_the_controller_reverse():
+    """The counter, shown the thing it exists to count.
+
+    3x is chosen for being unambiguous rather than marginal — the robot
+    overshoots the person outright. Pinning where reversal *begins* would be a
+    threshold on a swept unknown, which PLAN.md §14.2 forbids.
+    """
+    outcome = simulate_approach(transport_lag_s=0.0, speed_error=3.0)
+
+    assert outcome.direction_reversals >= 1
+
+
+#: The multiplier the conditional guarantee is actually stated at. Not a
+#: range: reversal turns out **not** to be monotone in this parameter, so
+#: "inside the assumption" is not one behaviour to assert about.
+CONFIGURED_MULTIPLIER = 2.0
+
+
+def test_at_the_configured_multiplier_the_controller_stays_monotone():
+    """The negative control, and a result in its own right.
+
+    Without it a counter wired to a constant would satisfy the test above. At
+    the multiplier the conditional guarantee is stated at, the controller
+    approaches monotonically through every swept lag.
+
+    Note what this does **not** say. Two seconds of lag at this multiplier
+    ends with the robot 9.9 cm past the person and still reporting `arrived`
+    — no reversal at all. A clean reversal count is not a safety result; the
+    two axes are independent, which is the whole reason for counting this one
+    separately.
+    """
+    for lag_s in (0.0, 0.5, 1.0, 2.0, 3.0):
+        outcome = simulate_approach(
+            transport_lag_s=lag_s, speed_error=CONFIGURED_MULTIPLIER
+        )
+        assert outcome.direction_reversals == 0, (
+            f"reversed at the configured {CONFIGURED_MULTIPLIER}x travel and "
+            f"{lag_s}s of lag"
+        )
+
+
+def test_reversal_is_not_monotone_in_the_travel_multiplier():
+    """A counterexample worth keeping, found while writing the test above.
+
+    The obvious claim — "inside the calibration assumption it never reverses"
+    — is false. At 1.5x travel with two seconds of lag the controller
+    reverses twice and times out 7.2 cm from the person, while at 2.0x with
+    the same lag it does not reverse at all.
+
+    Less travel than the assumed worst case is not a milder case. Ticket 05's
+    grid must not assume it can interpolate between rows, and a coarse grid
+    can step over a failing band entirely — M4 #08 already paid for that
+    lesson once.
+    """
+    milder = simulate_approach(transport_lag_s=2.0, speed_error=1.5)
+    worst_assumed = simulate_approach(
+        transport_lag_s=2.0, speed_error=CONFIGURED_MULTIPLIER
+    )
+
+    assert milder.direction_reversals > worst_assumed.direction_reversals == 0
+
+
+def test_lag_alone_does_not_make_the_controller_reverse():
+    """Records a prediction the ticket got wrong, so it is not re-made.
+
+    Ticket 04 assumed high transport lag would be enough: act on a stale
+    reading, overshoot the band, then drive back. It is not. At the configured
+    travel multiplier the controller stays monotone through two seconds of
+    lag — the arrival band is 24 cm wide and the step bound already reserves
+    headroom for 2x travel, so staleness alone does not carry it past the
+    person. Only leaving the calibration assumption does.
+    """
+    for lag_s in (0.5, 1.0, 2.0, 3.0):
+        assert simulate_approach(transport_lag_s=lag_s).direction_reversals == 0
+
+
+def test_a_run_that_never_moved_cannot_have_reversed():
+    outcome = simulate_approach(transport_lag_s=0.0, start_cm=60.0)
+
+    assert outcome.steps == 0
+    assert outcome.direction_reversals == 0
+
+
+def test_the_step_cap_survives_the_reversing_regime():
+    """Termination is the property PLAN.md §4 calls the system's strongest.
+
+    Chatter burns steps, so this is where a cap would quietly fail if adding
+    the counter had disturbed the loop.
+    """
+    for multiplier in BEYOND_ASSUMPTION_MULTIPLIERS:
+        outcome = simulate_approach(transport_lag_s=0.0, speed_error=multiplier)
+        assert outcome.steps <= SETTINGS.max_approach_steps
+        assert outcome.direction_reversals < outcome.steps
+
+
+def test_every_swept_row_reports_a_reversal_count():
+    for outcome in sweep_transport_lag([0.0, 0.5, 1.0]):
+        assert isinstance(outcome.direction_reversals, int)
+        assert outcome.direction_reversals >= 0

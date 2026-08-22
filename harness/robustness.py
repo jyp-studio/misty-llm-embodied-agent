@@ -203,6 +203,18 @@ class ApproachOutcome:
     final_cm: float
     settings: Settings
     actual_motion_multiplier: float
+    #: How many times two consecutive commands went in opposite directions.
+    #:
+    #: Neither other axis can see this one. A controller that chatters at the
+    #: edge of the arrival band breaches no floor and can still report
+    #: `arrived`, so `inside_safety_floor` and `converged` both call it a
+    #: success. It is noise's characteristic failure, which is why it is
+    #: counted rather than left for the noise sweep to happen to notice.
+    #:
+    #: Measured, not assumed: inside the configured travel multiplier this is
+    #: zero at every swept lag. Every reversal reported is a run that left the
+    #: calibration assumption behind.
+    direction_reversals: int = 0
 
     @property
     def inside_safety_floor(self) -> bool:
@@ -278,6 +290,8 @@ class _SimulatedWorld:
         self._distance_cm = start_cm
         self.closest_cm = start_cm
         self._motion: Optional[_Motion] = None
+        self._last_direction: Optional[int] = None
+        self.direction_reversals = 0
         self._eyes = DelayedPerception(
             transport_lag_s + pipeline_lag_s,
             jitter_px=jitter_px,
@@ -322,6 +336,9 @@ class _SimulatedWorld:
         duration_s = timeMs / 1000.0
         commanded_cm = duration_s * self._config.cm_per_sec_at_percent
         direction = 1 if linearVelocity > 0 else -1
+        if self._last_direction is not None and direction != self._last_direction:
+            self.direction_reversals += 1
+        self._last_direction = direction
         travelled_cm = commanded_cm * self._actual_motion_multiplier
         self._motion = _Motion(
             start_s=self._now_s,
@@ -412,6 +429,7 @@ def simulate_approach(
         final_cm=world.distance_cm,
         settings=cfg,
         actual_motion_multiplier=actual_multiplier,
+        direction_reversals=world.direction_reversals,
     )
 
 

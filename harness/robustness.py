@@ -49,6 +49,7 @@ nobody has measured.
 
 from __future__ import annotations
 
+import random
 from bisect import bisect_right
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -81,12 +82,45 @@ class DelayedPerception:
     ``read`` returns ``None`` when the delayed instant predates anything
     observed — the state a pipeline is in before its first frame has been
     through, which the controller sees as having no distance at all.
+
+    ## Reading noise, and why it is measured in pixels
+
+    ``jitter_px`` perturbs the *apparent face width* of each frame, not its
+    distance. That is where detector error actually lives: ``FaceDetector``
+    divides a calibration constant by the pixel width between the cheeks, so a
+    wobble of a fixed number of pixels costs centimetres in proportion to the
+    **square** of distance. Under the default constants one pixel is 0.21 cm
+    at the 45 cm safety floor and 4.10 cm at 200 cm.
+
+    The deleted simulation runner injected a flat ±N centimetres instead,
+    which demanded physically impossible wobble close up — 17 % of the face at
+    the floor — while under-supplying it far away. It was wrong in both
+    directions at once, and wrong hardest exactly where the safety conclusion
+    is decided.
+
+    ``jitter_px`` is **UNCALIBRATED**, in the same sense
+    ``sensor_transport_lag_s`` is: it has never been measured, and it cannot
+    be without a robot and a real scene. Sweeping it says how much wobble the
+    controller could absorb. It says nothing about how much there is.
     """
 
-    def __init__(self, lag_s: float) -> None:
+    def __init__(
+        self,
+        lag_s: float,
+        *,
+        jitter_px: float = 0.0,
+        focal_length: float = default_settings.focal_length,
+        real_face_width_cm: float = default_settings.real_face_width_cm,
+        seed: int = 0,
+    ) -> None:
         if lag_s < 0:
             raise ValueError(f"lag cannot be negative, got {lag_s}")
+        if jitter_px < 0:
+            raise ValueError(f"jitter cannot be negative, got {jitter_px}")
         self._lag_s = lag_s
+        self._jitter_px = jitter_px
+        self._px_cm = focal_length * real_face_width_cm
+        self._noise = random.Random(seed)
         self._times: List[float] = []
         self._distances: List[float] = []
 
@@ -97,14 +131,39 @@ class DelayedPerception:
         them, so an out-of-order one does not raise — it makes every later
         lookup wrong, which is how the first version of the priming loop
         turned a 0.1 s lag into "the pipeline never reported anything".
+
+        Jitter is applied **here**, once per frame, rather than at read time.
+        A frame is detected once; if the same frame reported differently on
+        each poll, ``approach``'s median would average away noise that no real
+        pipeline can average away, and the sweep would describe a steadier
+        controller than the one that exists.
         """
         if self._times and t < self._times[-1]:
             raise ValueError(
                 f"observations must arrive in time order: {t} after "
                 f"{self._times[-1]}"
             )
+        measured_cm = self._measure(distance_cm)
+        if measured_cm is None:
+            # No usable face in this frame. `DistancePipeline` skips such a
+            # frame rather than storing an unknown distance, so the previous
+            # reading stays on offer until it ages out; recording nothing here
+            # is what reproduces that.
+            return
         self._times.append(t)
-        self._distances.append(distance_cm)
+        self._distances.append(measured_cm)
+
+    def _measure(self, distance_cm: float) -> Optional[float]:
+        """One detection of a person at ``distance_cm``, wobble included."""
+        if self._jitter_px == 0.0:
+            return distance_cm
+        true_width_px = self._px_cm / distance_cm
+        measured_width_px = true_width_px + self._noise.uniform(
+            -self._jitter_px, self._jitter_px
+        )
+        if measured_width_px <= 0.0:
+            return None
+        return self._px_cm / measured_width_px
 
     def read(self, t: float) -> Optional[int]:
         """What the pipeline would report at ``t``, or ``None`` if nothing yet."""
@@ -191,6 +250,8 @@ class _SimulatedWorld:
         start_cm: float,
         actual_motion_multiplier: float,
         config: Settings,
+        jitter_px: float = 0.0,
+        seed: int = 0,
     ) -> None:
         if transport_lag_s < 0 or pipeline_lag_s < 0:
             raise ValueError("perception lags cannot be negative")
@@ -205,7 +266,13 @@ class _SimulatedWorld:
         self._distance_cm = start_cm
         self.closest_cm = start_cm
         self._motion: Optional[_Motion] = None
-        self._eyes = DelayedPerception(transport_lag_s + pipeline_lag_s)
+        self._eyes = DelayedPerception(
+            transport_lag_s + pipeline_lag_s,
+            jitter_px=jitter_px,
+            focal_length=config.focal_length,
+            real_face_width_cm=config.real_face_width_cm,
+            seed=seed,
+        )
 
         total_lag_s = transport_lag_s + pipeline_lag_s
         priming_frames = int(total_lag_s / WORLD_STEP_S) + 2
@@ -289,6 +356,8 @@ def simulate_approach(
     speed_error: Optional[float] = None,
     settings: Optional[Settings] = None,
     pipeline_lag_s: float = MEASURED_PIPELINE_LAG_S,
+    jitter_px: float = 0.0,
+    seed: int = 0,
 ) -> ApproachOutcome:
     """Drive public :func:`approach` with readings that are ``lag`` seconds old.
 
@@ -301,6 +370,12 @@ def simulate_approach(
     published sweep exercises the edge of the conditional calibration
     assumption.  Values above it may still be simulated, but are explicitly
     outside the guarantee.
+
+    ``jitter_px`` is detector wobble in pixels of apparent face width — see
+    :class:`DelayedPerception` for why the parameter is pixels and not
+    centimetres. It is UNCALIBRATED. ``seed`` selects which draw of that
+    wobble is simulated; one draw is one sample, and `report.PUBLISHED_RUNS`
+    records what happened last time a single sample was published as a result.
     """
     cfg = settings or default_settings
     actual_multiplier = (
@@ -312,6 +387,8 @@ def simulate_approach(
         start_cm=start_cm,
         actual_motion_multiplier=actual_multiplier,
         config=cfg,
+        jitter_px=jitter_px,
+        seed=seed,
     )
     result = approach(world, world, config=cfg, clock=world)
     return ApproachOutcome(

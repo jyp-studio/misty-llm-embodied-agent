@@ -44,7 +44,7 @@ A verbatim short-term window (last 10 turns), a rolling summary that old turns g
 Common reactions (expression, gestures, speech, approach) run on a deterministic *fast path* — sub-second, no code generation. Only elaborate performances (dance, storytelling) route to the AutoMisty *slow path*, whose agent loops are round-capped, timeout-guarded, and terminate immediately on successful code execution (`exitcode: 0`). Every episode provably returns to IDLE.
 
 **4. Simulation-tested control logic.**
-A 28-case test suite runs the *real* control code against a simulated 1-D world with configurable true speed, measurement noise, and target loss — no hardware, no API key, no heavy dependencies required.
+A pytest suite runs the *real* control code through its public interface against synthetic frames, a simulated 1-D world and a recording robot adapter — convergence under calibration error, target loss, step caps — with no hardware and no API key required. Reading noise is **not** covered yet; see `docs/measurements/m6-coverage-audit.md`.
 
 ---
 
@@ -106,11 +106,13 @@ Look at Misty or start talking — the loop takes it from there. Press Misty's f
 **Simulation suite (free, offline, no dependencies beyond the stdlib):**
 
 ```bash
-python test_sim.py
-# Result: 28 passed, 0 failed
+.venv/bin/python -m pytest tests/ -q -rs
+# Result: 272 passed
 ```
 
-It exercises the real `approach_user()` logic against a simulated world — convergence under calibration error and sensor noise, safety-floor behavior, target loss, step caps — plus brain output sanitization, memory folding/persistence, and AutoMisty termination semantics.
+It exercises the real closed-loop `approach()` through its public interface — convergence under calibration error, safety-floor behaviour inside an explicitly uncalibrated motion assumption, target loss at startup, step caps — plus the driver contract tests and the perception pipeline against real pixels.
+
+Two things it does **not** cover, both recorded rather than hidden: reading noise, and losing the user *after* the robot has already moved. `docs/measurements/m6-coverage-audit.md` itemises every check the previous simulation runner carried and where it went.
 
 **Live pipeline test (real GPT-4o, fake robot, ~a few cents):**
 
@@ -142,7 +144,6 @@ Four scripted scenarios (the crying demo, a self-introduction, a memory-recall p
 ├── RobotCommands.py          # Low-level Misty REST commands
 ├── code/mistyPy/             # AutoMisty's sandbox: generated scripts run here
 │                             #   (contains its own driver copies — keep in sync)
-├── test_sim.py               # 28-case hardware-free simulation suite
 ├── test_llm_live.py          # Real-LLM pipeline test on a fake robot
 ├── Mistydemo/                # Example task scripts
 └── assets/                   # Architecture figure & demo photos

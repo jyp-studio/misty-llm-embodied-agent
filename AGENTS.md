@@ -17,7 +17,6 @@ verified in simulation must say so.
 
 ```bash
 .venv/bin/python -m pytest tests/ -q
-.venv/bin/python test_sim.py
 ```
 
 `python3` on this machine resolves to a miniforge 3.10 install that has no

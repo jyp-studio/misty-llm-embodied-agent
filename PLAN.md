@@ -251,7 +251,7 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 不會因 GPT-4o 換句話說而變紅。
 
 ### 其他
-- `test_sim.py`（現為自寫的 28 案例 runner，非 pytest）→ **遷移到 pytest**
+- ~~`test_sim.py` → **遷移到 pytest**~~ —— **已撤回。** 實際盤點後改為整個刪除，不遷移；理由與逐項下落見 §14.3 與 `docs/measurements/m6-coverage-audit.md`。（順帶更正：那個 runner 是 24 個檢查不是 28 —— 28 是 M1 移除 AutoMisty 之前的數字。）
 - 驅動層 → **契約測試**：對照官方 REST/WebSocket 文件驗證送出的 HTTP 請求格式。**證明請求格式正確，不證明機器人會照做**——這條線寫進 README
 - `FakeRobot.__getattr__` 對未定義方法回 noop，等於假設所有 API 呼叫成功 → `drive_error` 路徑從未被執行，需補錯誤注入
 
@@ -643,3 +643,16 @@ M6 因此以 **δ_px 為掃描參數**（明列 UNCALIBRATED），二維掃 tran
 PERCEIVE/THINK/ACT 會在 ReAct 化之後變成 Turn 迴圈，寫進定義等於預先綁死 M7。e-stop 記成
 `episode_aborted`：它是唯一會讓「保證回到 IDLE」被外力打斷的路徑，不記它，Journal 就無法
 用來證明那個性質。
+
+### 14.6 M7 的重建清單（M6 刪除舊 runner 所帶走的覆蓋）
+
+M6 刪掉舊 simulation runner 時，有兩項覆蓋沒有留在 M6 的樹裡。**它們不是被放棄，是
+被排進 M7**；記在這裡而不是只寫在盤點裡，是因為盤點是一份時點文件，而這是一份待辦。
+
+| 帶走的覆蓋 | 為什麼不在 M6 重建 | M7 要交付什麼 |
+|---|---|---|
+| **Memory 折疊與持久化**（舊 T9 五條檢查：視窗上限、事實抽取、檔案寫出、重載後仍在、prompt block 含近期輪次） | 測試伸手進舊主腳本的內部，而 M7 正要重寫那些內部。先搬會搬到即將消失的形狀上 | memory 搬出舊主腳本時，同等或更強的覆蓋要一起長出來 |
+| **工具參數的合法性檢查**（舊 T8 三條檢查倖存的那半） | 舊 T8 測的是「消毒 model 回傳的 malformed JSON」。M7 改用 function calling，結構由模型端保證，這個需求會消失 | 但「超出範圍或未知的工具參數要被拒絕，而不是送到機器人」這件事仍然成立，且應與 tool registry 一起交付 |
+
+**這兩條在 M7 完成前，專案沒有對應的可執行覆蓋。** 這是刻意接受的空窗，不是疏漏；
+`docs/measurements/m6-coverage-audit.md` 的 T8 與 T9 段落有完整推理。

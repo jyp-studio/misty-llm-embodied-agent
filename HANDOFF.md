@@ -18,7 +18,6 @@ M6/M7 已於 2026-08-20 重整，見 `PLAN.md` §14。詞彙表在 `CONTEXT.md`�
 cd /Users/jyp/dev/misty-embodied-agent
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
 .venv/bin/python -m harness              # 產出 M5 approach 證據報告
-.venv/bin/python test_sim.py             # 24 passed
 ```
 
 ⚠️ **一律用 `.venv`，不要用裸的 `python3`**（`AGENTS.md` 有完整說明）。這台機器的 `python3` 是另一套 miniforge 3.10，沒有 mediapipe 也沒有 opencv，而感知測試在那個環境是 **skip 而不是 fail**——直譯器挑錯了會看起來一片綠。判斷方法是看 skip 數：加 `-rs` 跑，`.venv` 底下 `tests/` 不該有任何一項 skip。
@@ -112,7 +111,6 @@ harness/                       # M4：量測台
 docs/measurements/             # M4 歷史基準 + M5 正式證據，產物納入版控
 tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
-test_sim.py                    # M6 刪除（PLAN.md §14.3）
 test_llm_live.py               # M7 加 marker 與斷言，改斷言 Journal 不變量
 legacy/                        # 舊素材，已從版控移除（.gitignore）
 ```
@@ -129,9 +127,12 @@ M5 已把 ReAct 最需要的 deterministic backend 做完：未來 LLM 只需呼
 
 M6 的範圍是三件事，spec 在 `.scratch/m6-test-suite-consolidation/spec.md`：
 
-1. 覆蓋盤點 —— 逐項寫明 `test_sim.py` 每個 scenario 的下落，手寫文件，放 `docs/measurements/`
-2. **刪掉整個 `test_sim.py`**（不遷移；T8/T9 測的是 M7 會用 function calling 取代的東西）
+1. ~~覆蓋盤點~~ ✅ `a5c0ca4` + `ac22bbb` → `docs/measurements/m6-coverage-audit.md`
+2. ~~刪掉整個舊 runner~~ ✅ 本次提交（不遷移；T8/T9 測的是 M7 會用 function calling 取代的東西）
 3. 距離相依的噪音 Sweep —— 參數是 δ_px 不是公分，二維掃 lag × δ_px，只報告邊界曲線
+
+盤點過程另外挖出兩張票：**06**（移動之後才失去使用者，零覆蓋）與 **07**（把盤點裡兩處
+論證換成直接斷言）。**frontier 現在是 03、04、06、07 四張，可平行。**
 
 **M6 不開始 Journal、tool registry、LLM orchestration、Audio 或 Docker。**
 
@@ -144,7 +145,6 @@ folding 等 M7 搬出後再刪。
 ```bash
 .venv/bin/python -m harness              # 重產 docs/measurements/m5-approach-report.md
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
-.venv/bin/python test_sim.py             # M6 會刪掉這個入口；刪除前仍是 24 passed
 ```
 
 ---
@@ -185,7 +185,8 @@ folding 等 M7 搬出後再刪。
 
 - **mock mode 現在要顯式開**：`MISTY_MOCK=1`。以前是「import 失敗就靜靜變假機器人」，設定打錯會被吃掉。
 - **`cv2` / `av` / `websocket` / `openai` / `mediapipe` 現在都在 `.venv` 裡**（mediapipe 0.10.21、opencv 4.11、av 18、openai 2.53、numpy 1.26）——M3 當時的事實是反過來的，M4 #01 之後才變成這樣。但**當初推導出來的規矩仍然成立**：驅動層刻意把這些 import 移進 adapter 內部，模組本身與契約測試在裸環境下 import 得起來。**寫新驅動碼時保持這個性質。**
-- `test_sim.py` 不再 stub `requests`——`robot_commands.py` 在 import 時就從它取名字。
+- **`requests` 不能被 stub 掉**——`robot_commands.py` 在 import 時就從它取名字。舊 runner 曾經
+  stub 它，M3 之後不行了；寫任何會 stub 第三方模組的測試前先確認這件事。
 
 ---
 

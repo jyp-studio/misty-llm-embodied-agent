@@ -188,8 +188,9 @@ M7. Deleting these checks now leaves that logic with no executable coverage
 between M6 and the point in M7 where it is re-homed.
 
 This is accepted rather than avoided: the tests reach into the legacy script's
-internals, and M7 rewrites those internals. Ticket 02 registers it in `PLAN.md` as
-an M7 rebuild item so it cannot be lost by silence.
+internals, and M7 rewrites those internals. `PLAN.md` §14.6 carries it as an M7
+rebuild item, alongside the surviving half of T8, so it cannot be lost by
+silence — a dated audit is a snapshot, and that list is a to-do.
 
 ## Tally
 

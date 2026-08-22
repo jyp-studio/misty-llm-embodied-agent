@@ -96,8 +96,8 @@ def load_api_key() -> str:
 
 # Every tunable lives in misty_agent.config — one source of truth, validated
 # at load time. The names below are kept as module-level aliases so the rest of
-# this file (and test_sim.py) reads unchanged; they disappear as the code moves
-# into the misty_agent package.
+# this file reads unchanged; they disappear as the code moves into the
+# misty_agent package.
 from misty_agent.config import settings
 from misty_agent.control import step_policy
 from misty_agent.control.step_policy import plan_step

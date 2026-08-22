@@ -278,7 +278,7 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 | **M4** | harness | 合成影格 + 真值軌跡 + 延遲量測。**任務已改**，見 §12 ✅ |
 | **M5** | 重寫感知→控制管線 | latest-value 距離管線 + fresh post-move readings + bounded public `approach()` + 條件式安全與 M5 證據，見 §13 ✅ |
 | **M6** | 測試套件收斂 | 覆蓋盤點 + 刪除 `test_sim.py` + 距離相依噪音 Sweep，見 §14 |
-| **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗） |
+| **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗）**＋ §14.6 的重建清單** |
 | **M8** | 部署 | Docker multi-stage + CI workflows |
 | **M9** | 文件 | README 與架構圖重寫 |
 | **M10** | 收尾 | 開新 repo，乾淨歷史匯入 |
@@ -607,7 +607,7 @@ Journal 是 M7 測試的斷言標的；如果它與 `react.py` 在同一批工�
   這些是「確認後刪除」，不是遷移。
 - **T8 / T9 測的是舊主腳本的 brain 與 memory。** M7 改用 function calling 之後，「消毒
   malformed JSON」這個需求根本不存在。搬進 `tests/` 等於把即將消失的需求正式化。
-  **Memory 折疊與持久化的覆蓋因此是一個有意識的缺口，登記為 M7 的重建項目。**
+  **Memory 折疊與持久化的覆蓋因此是一個有意識的缺口，登記為 M7 的重建項目——清單見 §14.6。**
 - **T4（量測噪音）完全沒有對應**，而且它的模型是錯的，見 §14.4。
 
 ### 14.4 噪音模型：參數是像素，不是公分

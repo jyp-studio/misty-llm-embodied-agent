@@ -103,12 +103,16 @@ Look at Misty or start talking — the loop takes it from there. Press Misty's f
 
 ## Testing without a robot
 
-**Simulation suite (free, offline, no dependencies beyond the stdlib):**
+**Simulation suite (free, offline, no robot and no API key):**
 
 ```bash
 .venv/bin/python -m pytest tests/ -q -rs
-# Result: 272 passed
 ```
+
+It runs in the project virtualenv, not a bare `python3` — see `AGENTS.md` for
+how to build it and why the wrong interpreter reports green while silently
+skipping every perception test. The count is deliberately not pinned here; the
+suite is the source of truth for its own size.
 
 It exercises the real closed-loop `approach()` through its public interface — convergence under calibration error, safety-floor behaviour inside an explicitly uncalibrated motion assumption, target loss at startup, step caps — plus the driver contract tests and the perception pipeline against real pixels.
 

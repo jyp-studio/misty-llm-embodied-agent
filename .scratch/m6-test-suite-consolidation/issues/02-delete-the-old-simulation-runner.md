@@ -24,7 +24,7 @@
 完成於 2026-08-20。`git rm test_sim.py`，並逐一處理全部指涉。
 
 **改掉的（可執行指令或現況描述）：** `AGENTS.md` 的執行區塊、`HANDOFF.md` §0 與 §3 的驗收
-區塊與樹狀圖、`README.md` 的執行段落與檔案清單、`PLAN.md:254`「遷移到 pytest」那句（改成
+區塊、§2 的樹狀圖、§4 的 `requests` 那條、`README.md` 的執行段落與檔案清單、`PLAN.md:254`「遷移到 pytest」那句（改成
 劃線撤回並指向 §14.3）、`full_robot_v3.py:99` 註解裡的懸空檔名。
 
 **保留不動的（紀錄）：** `PLAN.md` §5 與 §12 描述舊 runner 為什麼抓不到缺陷 A 的分析、
@@ -43,3 +43,33 @@ M1／M3 就刪了；「System 1 / System 2」那節也還在講 AutoMisty slow p
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **272 passed、零 skip**（與刪除前相同，
 舊 runner 本來就不被 pytest 收集）；`full_robot_v3.py` 仍可編譯。未新增任何測試。
+
+---
+
+**Review 後的更正（2026-08-20，同日）。** 兩軸 `/code-review` 找出 Standards 4 項、
+Spec 5 項，兩軸的頭號發現是同一條，而且是本 ticket **改出來的**：
+
+1. **README 的「no dependencies beyond the stdlib」變成假的。** 那句話對舊 runner 是真的
+   （它只 import stdlib），但我把它底下的指令換成 `pytest tests/` 之後就不成立了 ——
+   那需要 mediapipe、opencv、numpy、pydantic。這與本 ticket 修掉的「28-case」「measurement
+   noise」是**同一類錯誤**，出現在修它們的同一次提交裡。已改寫整段。
+2. **`# Result: 272 passed` 是把會過期的數字釘進 README。** 而本 ticket 存在的理由之一，
+   正是盤點花了一整節去解決「28 passed」這個釘死的數字。03、04、06、07 都會加測試，這個
+   數字在 M6 結束前就會錯。已移除，改成一句「suite 自己才是它大小的真相來源」。
+3. **README 引入了 `.venv` 卻沒說怎麼來。** Quick start 只講 `pip install -r requirements.txt`。
+   已補一句指向 `AGENTS.md`，並帶出「挑錯直譯器會一片綠」那個坑。
+4. **§14.6 登記了但不好找。** §14.3 只說「登記為 M7 的重建項目」沒給指標，§7 的 M7 列也沒提。
+   兩處都補了指向 §14.6。
+5. **本段原本把 HANDOFF 的樹狀圖寫成 §3、`requests` 那條寫成 §3**，實際是 §2 與 §4。已更正。
+   `3a2ea09` 的 commit message 帶著同樣的口誤，不改寫歷史，在此註記。
+
+**兩項判定為不修，理由記在這裡以免被當成漏掉：**
+
+- **`.scratch/m4-replay-harness/spec.md:212`**（「harness 上線後應在該檔註明其侷限」）與
+  **`.scratch/m5-approach-backend/spec.md:106`**（把「舊 runner 遷移到 pytest」列為 out of
+  scope）。review 認為前者是活的待辦而非紀錄。判定：**不改**。`PLAN.md` 是**活的**決策
+  紀錄，必須與現況一致，所以 `:254` 那句要劃線撤回；而 `.scratch/m*/spec.md` 是**已完成
+  里程碑的產物**，必須忠於當時寫了什麼。編輯它等於竄改考卷。何況那條指令指向一個不存在的
+  檔案，本身已經自我取消。
+- **`.claude/settings.local.json`** 仍授權 `Bash(python3 test_sim.py)`。該檔被全域
+  gitignore、不在版控、是使用者的機器本機設定，不由 agent 代改。

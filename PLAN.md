@@ -277,8 +277,8 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 | **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 ✅ 見 §11 |
 | **M4** | harness | 合成影格 + 真值軌跡 + 延遲量測。**任務已改**，見 §12 ✅ |
 | **M5** | 重寫感知→控制管線 | latest-value 距離管線 + fresh post-move readings + bounded public `approach()` + 條件式安全與 M5 證據，見 §13 ✅ |
-| **M6** | 事件流 | `agent/events.py`；`test_sim.py` 遷 pytest |
-| **M7** | ReAct | `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗） |
+| **M6** | 測試套件收斂 | 覆蓋盤點 + 刪除 `test_sim.py` + 距離相依噪音 Sweep，見 §14 |
+| **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗） |
 | **M8** | 部署 | Docker multi-stage + CI workflows |
 | **M9** | 文件 | README 與架構圖重寫 |
 | **M10** | 收尾 | 開新 repo，乾淨歷史匯入 |
@@ -556,3 +556,90 @@ deadband、RTSP lag 與真機 API 行為全部仍是 UNVERIFIED。`approach_user
    風險大於 locality 收益。
 3. **M5 產物另寫新檔。** `python -m harness` 現在寫
    `docs/measurements/m5-approach-report.md`，不覆蓋 M4 的歷史 before-state。
+
+---
+
+## 14. M6/M7 重整與 gate/report 原則
+
+> 定案於 2026-08-20 的 grilling。與 §12 同性質（里程碑重整），因此記在這裡而不是新開
+> `docs/adr/`：同一類決定分散在兩個地方，比沒有紀錄更糟。
+
+### 14.1 Journal 從 M6 移到 M7
+
+原 M6 綁著兩件不相干的事：事件流，以及 `test_sim.py` 遷 pytest。只有前者依賴 ReAct。
+
+**事件流唯一真實的生產者是 `react.py`。** 曾考慮在 `approach()` 注入 optional emitter，
+讓 M6 有一個真實生產者來驗證 schema —— 但 `approach()` 是**控制層**的生產者，而 schema
+要服務的是 **ReAct 層**（`llm_call` / `tool_call` / `observation` / `turn`）。用控制層事件
+驗 ReAct schema，就是 §12.1 與 §12.5 那條「量測設定必須等於生產設定」的第三次現身。
+
+於是：**M6 = 測試套件收斂**（`.scratch/m6-test-suite-consolidation/spec.md`），
+**M7 = ReAct + Journal**。
+
+**M7 的 ticket 順序是硬的**：spec → journal schema + golden files（先 commit）→ tools / react。
+Journal 是 M7 測試的斷言標的；如果它與 `react.py` 在同一批工作裡長出來，斷言的詞彙就會被
+實作反向塑形。保住這個性質的不是里程碑邊界，是里程碑**內部**的 ticket 順序 —— 而這個 repo
+的 commit 粒度本來就是 per-ticket，所以 git 歷史看得到順序。**這句話必須留在 M7 的 spec 裡**，
+否則下一個 session 會直覺先寫 `react.py`。
+
+### 14.2 Measurement 設門檻，Sweep 只報告
+
+這條原則一直存在，只是隱含在兩個模組的行為差異裡，沒有被寫下來：
+
+| | 例子 | 處置 |
+|---|---|---|
+| **Measurement** —— 觀察本 process 跑真實程式碼得到的數字 | 讀數延遲 p95 | 有硬 gate（2× floor bound） |
+| **Sweep** —— 對從未量過、沒有硬體就量不到的參數做確定性探索 | `sensor_transport_lag_s`、噪音 δ_px | 只報告 Envelope，零斷言 |
+
+`harness/robustness.py` 已明文寫著「Nothing here is a threshold」。M6 新增的噪音 Envelope
+與 transport lag 同級 —— **只報告**。但「封閉式噪音模型與真實偵測器一致」是 Measurement，
+**要有斷言**。
+
+「先量再定」在噪音這件事上的落點因此是：**定的是模型對不對，不是噪音容忍度該多少。**
+
+### 14.3 `test_sim.py` 整個刪除，不遷移
+
+`HANDOFF.md` 原本寫「`test_sim.py` 遷 pytest」。實際盤點後這個描述會導致做白工：
+
+- **T1–T3、T5–T7 已有更強的 public-seam 版本**（`test_with_no_lag_and_perfect_calibration_the_robot_arrives`、
+  `test_the_two_x_counterexample_stays_outside_the_safety_floor`、`test_a_slow_robot_undershoots_rather_than_overshoots`、
+  `test_too_close_commands_one_bounded_backward_step_then_arrives`、`test_step_limit_returns_timeout_and_stops_issuing_commands`）。
+  這些是「確認後刪除」，不是遷移。
+- **T8 / T9 測的是舊主腳本的 brain 與 memory。** M7 改用 function calling 之後，「消毒
+  malformed JSON」這個需求根本不存在。搬進 `tests/` 等於把即將消失的需求正式化。
+  **Memory 折疊與持久化的覆蓋因此是一個有意識的缺口，登記為 M7 的重建項目。**
+- **T4（量測噪音）完全沒有對應**，而且它的模型是錯的，見 §14.4。
+
+### 14.4 噪音模型：參數是像素，不是公分
+
+`distance_cm = focal_length × real_face_width_cm / pixel_width`。距離與像素寬成反比，所以
+固定的像素抖動造成的公分誤差隨 **d²** 放大。預設常數（650 × 15 = 9750 px·cm）下：
+
+| 真實距離 | 臉寬 | 1px 抖動 |
+|---|---|---|
+| 45cm（safety floor） | 217px | **0.21cm** |
+| 60cm（target） | 163px | 0.37cm |
+| 100cm | 98px | 1.03cm |
+| 200cm | 49px | **4.10cm** |
+
+舊 T4 的均勻 ±8cm 因此在 45cm 處相當於約 38px —— 臉寬的 17%，物理上不可能；在 200cm 處
+只有約 2px。**近處過嚴、遠處過鬆，而近處正是安全結論被決定的地方。**
+
+M6 因此以 **δ_px 為掃描參數**（明列 UNCALIBRATED），二維掃 transport lag × δ_px，但
+**報告只寫邊界曲線**：二維是實驗的形狀，不是報告的形狀。失敗模式除了 safety floor 越線
+與未收斂之外，另加**方向反轉次數** —— 那是噪音的特徵失敗模式，它不越線也可能照樣回報
+`arrived`，兩個既有軸對它都是瞎的（M4 #08 的教訓）。
+
+### 14.5 `CONTEXT.md` 建立
+
+同一次 grilling 產出 repo 的第一份 `CONTEXT.md`。它只是詞彙表，不含實作細節，`PLAN.md`
+繼續持有決策與證據。收錄的詞裡有三組是**因為互相碰撞才需要定案**的：
+
+- `Journal`（agent 自己的紀錄）vs `Event`（Misty 推來的硬體訊號，維持廠商用字）
+- `Turn`（ReAct 一回合）vs `Step`（控制層一次驅動命令）
+- `Measurement` vs `Sweep` vs `Envelope`（§14.2 的區分）
+
+`Episode` 定義為「從外部觸發到回到閒置，保證有界終止」，**內部階段不入定義** —— 舊 FSM 的
+PERCEIVE/THINK/ACT 會在 ReAct 化之後變成 Turn 迴圈，寫進定義等於預先綁死 M7。e-stop 記成
+`episode_aborted`：它是唯一會讓「保證回到 IDLE」被外力打斷的路徑，不記它，Journal 就無法
+用來證明那個性質。

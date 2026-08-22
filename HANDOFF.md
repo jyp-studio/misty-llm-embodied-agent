@@ -1,7 +1,7 @@
 # HANDOFF — 交接給下一個對話
 
 > 讀完這份就能接手，不需要前文脈絡。
-> 最後更新：2026-08-13 · 分支 `refactor/react-agent` · **M5 完成，下一站 M6**
+> 最後更新：2026-08-20 · 分支 `refactor/react-agent` · **M5 完成，M6 已定案待實作**
 
 ---
 
@@ -11,7 +11,8 @@
 
 **先讀 [`PLAN.md`](PLAN.md)** —— 那是完整規格與決策紀錄，本文件只補「現在走到哪、接下來做什麼、有哪些坑」。
 
-進度：**M0–M5 完成。下一站 M6：事件流。** M0–M10 的定義在 `PLAN.md` §7。
+進度：**M0–M5 完成。下一站 M6：測試套件收斂。** M0–M10 的定義在 `PLAN.md` §7；
+M6/M7 已於 2026-08-20 重整，見 `PLAN.md` §14。詞彙表在 `CONTEXT.md`。
 
 ```bash
 cd /Users/jyp/dev/misty-embodied-agent
@@ -111,32 +112,39 @@ harness/                       # M4：量測台
 docs/measurements/             # M4 歷史基準 + M5 正式證據，產物納入版控
 tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
-test_sim.py / test_llm_live.py # 待 M6 遷 pytest
+test_sim.py                    # M6 刪除（PLAN.md §14.3）
+test_llm_live.py               # M7 加 marker 與斷言，改斷言 Journal 不變量
 legacy/                        # 舊素材，已從版控移除（.gitignore）
 ```
 
 ---
 
-## 3. 下一步：M6 事件流
+## 3. 下一步：M6 測試套件收斂
 
 M5 已把 ReAct 最需要的 deterministic backend 做完：未來 LLM 只需呼叫 public
 `approach()`，取得結構化結果，不碰 velocity、`timeMs`、freshness epoch 或控制參數。
 
-M6 的範圍是 `agent/events.py` 與把 `test_sim.py` 的 24 個 scenario 遷入 pytest。事件流至少要
-能記錄 episode lifecycle、tool call、observation、latency 與 step count，供 M7 的 ReAct
-不變量測試和未來 UI 共用。**M6 不開始 tool registry、LLM orchestration、Audio 或 Docker**；
-那些仍依 PLAN 的 M7/M8 順序。
+⚠️ **M6 的內容在 2026-08-20 換掉了。** 事件流（現稱 **Journal**）已移入 M7，因為它唯一
+真實的生產者是 `react.py`。完整理由在 `PLAN.md` §14.1。
 
-建議下一個流程：先用 `/grill-with-docs` 對照 `PLAN.md` §4、§7、§13 與現在的 simulation
-runner，釐清 event schema 與遷移邊界；若沒有新的產品歧義，再 `/to-spec` → `/to-tickets`。
+M6 的範圍是三件事，spec 在 `.scratch/m6-test-suite-consolidation/spec.md`：
 
-`full_robot_v3.py` 繼續是**唯讀參考**。LLM prompt 與 memory folding 等 M7 搬出後再刪，M6
-不要順手維護舊 approach。
+1. 覆蓋盤點 —— 逐項寫明 `test_sim.py` 每個 scenario 的下落，手寫文件，放 `docs/measurements/`
+2. **刪掉整個 `test_sim.py`**（不遷移；T8/T9 測的是 M7 會用 function calling 取代的東西）
+3. 距離相依的噪音 Sweep —— 參數是 δ_px 不是公分，二維掃 lag × δ_px，只報告邊界曲線
+
+**M6 不開始 Journal、tool registry、LLM orchestration、Audio 或 Docker。**
+
+順序是 spec 的一部分：**盤點先於刪除，刪除先於新測試**，這樣 git 歷史本身就證明覆蓋主張
+不是事後補的。下一步是 `/to-tickets`。
+
+`full_robot_v3.py` 繼續是**唯讀參考**，M6 只刪它的測試不刪它本身。LLM prompt 與 memory
+folding 等 M7 搬出後再刪。
 
 ```bash
 .venv/bin/python -m harness              # 重產 docs/measurements/m5-approach-report.md
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
-.venv/bin/python test_sim.py             # M6 遷移前仍是 24 passed
+.venv/bin/python test_sim.py             # M6 會刪掉這個入口；刪除前仍是 24 passed
 ```
 
 ---

@@ -63,3 +63,50 @@
 07 紅測試，以及 `approach.py` 裡一個 mutation check 用的人為缺陷）。本 ticket 從
 `25ae831` 的乾淨樹重做，被丟棄的 diff 存在 session scratchpad 的
 `discarded-parallel-work.diff`。
+
+---
+
+**Review 後的更正（2026-08-23，同日）。** 兩軸 `/code-review` 都做了 mutation testing，找出
+**三個硬缺陷，其中兩個是我的測試根本不會失敗**：
+
+1. **Sweep 接線沒有被測到。** reviewer 把 `_SimulatedWorld` 的 `jitter_px=jitter_px` 改成
+   `0.0`，**285 個測試全數照樣通過**。追下去發現接線其實是對的（30px 抖動下讀數從 130 散到
+   94–206），問題在於**斷言下在錯的層級**：`approach()` 的中位數真的吸收掉對稱雜訊，所以在
+   預設起始距離下 0–80px 的 outcome 完全一樣。新增
+   `test_jitter_reaches_the_controller_through_the_sweep`，斷言 seed 之間的分歧 —— 那是
+   中位數殺不掉的觀察量。另加
+   `test_enough_jitter_makes_the_controller_report_a_success_it_did_not_have`，證明模型**產得出**
+   ticket 05 要找的失敗模式（120px 下有 seed 回報 `arrived` 卻走了 0 步停在 130cm，
+   truth audit 判 `converged=False`）。這不是門檻：120px 遠大於任何真實抖動，選它是為了明確
+   而非臨界。
+2. **吞掉臉的那條測試不可能失敗。** 原斷言是 `reading is None or reading > 0`，但 `read()`
+   會保留最後一筆值，所以一旦有幀落地就永遠不回 None。改成斷言「較晚的時刻仍解析到較早的
+   擷取時間」——那才是「該幀沒留下痕跡」的可觀察證據。
+3. **亂數與被掃參數互相污染。** 原本用 instance RNG 依呼叫順序抽，而 `_SimulatedWorld` 的
+   priming 幀數隨 lag 增加，於是**同一個 seed 在不同 lag 給出不同的雜訊實現**，二維掃描的
+   row 之間不可比。改成以**幀的時間戳**為鍵（`random.Random(f"{seed}:{t!r}")`，字串走
+   SHA-512，跨 process 決定性）。新增 `test_priming_the_delay_line_does_not_change_a_frames_wobble`
+   釘住它。
+
+**我自己重跑了四個 mutation 確認新測試有牙齒**：丟棄 jitter → 2 紅；不跳過被吞的幀 → 1 紅；
+抖動改回依呼叫順序 → 2 紅；抖動改成公分而非像素 → 3 紅。（第一輪我寫的「依呼叫順序」mutation
+引用了不存在的屬性，全是 AttributeError 不算數，已重做。）
+
+**三處過度宣稱已改：**
+
+- **「完全吻合」是量化巧合。** 偵測器在 60/120cm 回報 59/119、90/180cm 回報 89/179，差值剛好
+  是 60 與 90，相除後與預測逐位相同。真正證明的是「落在 10% 容差內」。`PLAN.md` §14.7 已加警語。
+- **容差來源說成「已記載」不精確。** `rel=0.02` 記載的範圍是 72–130cm，而探測點有三個在範圍外。
+  改寫成「已記載數字的**外推**」，並說明為什麼不縮小範圍（縮了就看不到 d² 的形狀）。
+- **`closed_form` 比想像中弱。** 兩邊都除以同一個 `PX_CM`，所以模型與偵測器**共同**錯的校正
+  常數會相消。reviewer 量出它在偵測器尺度誤差 ≥13% 時才紅，且對 0.003×width 以下的形狀漂移
+  是瞎的；`linearly` 則在 0.0008×width 就紅。兩者的 docstring 都寫明各自抓得到什麼，並註明
+  「不要把 linearly 當成多餘的刪掉」。
+
+**一項判定不改：** reviewer 指出 `focal_length` 與 `real_face_width_cm` 一起傳進
+`DelayedPerception` 卻只是相乘成 `_px_cm`（Data Clump），建議直接收乘積。不改的理由是這兩個
+是 `config.py` 與 `CONTEXT.md` 的既有詞彙，`_SimulatedWorld` 本來就從 `Settings` 逐欄拿；
+收乘積會把「focal length」與「face width」這兩個有物理意義的量塞進一個沒有名字的常數，讀者
+反而要回推。這是可讀性與局部簡潔的取捨，選了前者。
+
+驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **288 passed、零 skip**（285 → 288）。

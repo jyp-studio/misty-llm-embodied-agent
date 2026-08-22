@@ -426,24 +426,58 @@ def test_one_frame_reports_one_distance_however_often_it_is_read():
     assert len({eyes.read(0.0 + offset) for offset in (0.0, 0.01, 0.02)}) == 1
 
 
-def test_a_frame_whose_jitter_swallows_the_face_yields_no_reading():
-    """Mirrors what the production pipeline does, which is to skip the frame.
+def test_a_frame_whose_jitter_swallows_the_face_is_skipped_entirely():
+    """Mirrors what the production pipeline does, which is to drop the frame.
 
-    `DistancePipeline` drops a frame with no usable face (`has_human` false)
-    rather than storing an unknown distance, so the previous reading stays on
-    offer until it ages out. Jitter larger than the whole face is absurd, but
-    the model must not invent a behaviour the pipeline does not have.
+    `DistancePipeline._consume_loop` skips a frame with no usable face
+    (`has_human` false) rather than storing an unknown distance, so the
+    previous reading stays on offer until it ages out. The model has to do the
+    same, and the observable proof is that a later instant still resolves to
+    an *earlier* capture time — the frame in between left no trace.
+
+    An earlier version of this test asserted `reading is None or reading > 0`,
+    which cannot fail: `read` holds the last stored value, so it never returns
+    None once one frame has landed. Both a model that never skipped and one
+    that stored a nonsense distance passed it.
     """
     eyes = DelayedPerception(lag_s=0.0, jitter_px=400.0, seed=1)
-    eyes.observe(0.0, 200.0)  # a face only ~49 px wide
+    skipped = 0
+    for frame in range(40):
+        t = frame * 0.01
+        eyes.observe(t, 200.0)  # a face only ~49 px wide
+        captured_at, distance_cm = eyes.sample(t)
+        if captured_at < t:
+            skipped += 1
+        assert distance_cm > 0, "a stored reading must never be a non-distance"
 
-    # Some frames survive and some are swallowed; none report a negative
-    # distance, and a swallowed one leaves the previous reading in place.
-    for frame in range(1, 40):
-        eyes.observe(frame * 0.01, 200.0)
-    readings = [eyes.read(frame * 0.01) for frame in range(40)]
+    assert skipped > 0, (
+        "no frame was skipped, so the swallowed-face path never ran and this "
+        "test proves nothing about it"
+    )
 
-    assert all(reading is None or reading > 0 for reading in readings)
+
+def test_priming_the_delay_line_does_not_change_a_frames_wobble():
+    """The two swept parameters must not contaminate each other.
+
+    The simulated world primes the delay line with one frame per lag-second
+    before a run starts, so a longer transport lag means more priming frames.
+    If wobble came from a stream advanced per call, a longer lag would hand
+    the controller a different noise realisation, and a row-to-row difference
+    in the two-dimensional sweep would mix lag with a fresh draw. Keying the
+    wobble on the frame's own timestamp is what makes rows comparable.
+    """
+    def reading_after_priming(frames):
+        eyes = DelayedPerception(lag_s=0.0, jitter_px=6.0, seed=7)
+        for frame in range(frames, 0, -1):
+            eyes.observe(-frame / 30.0, 130.0)
+        eyes.observe(1.0, 130.0)
+        return eyes.read(1.0)
+
+    assert (
+        reading_after_priming(2)
+        == reading_after_priming(20)
+        == reading_after_priming(60)
+    )
 
 
 def test_the_same_seed_reports_the_same_readings():
@@ -473,6 +507,67 @@ def test_the_sweep_accepts_jitter_and_still_terminates():
     assert outcome.outcome in ("arrived", "lost_user", "timeout", "drive_error")
 
 
+def test_jitter_reaches_the_controller_through_the_sweep():
+    """The wiring, asserted where the effect actually exists.
+
+    An outcome-level assertion cannot do this job, and that is a fact about
+    the controller rather than about the test: `approach` takes a median of
+    fresh readings, so at the default start distance the outcome is identical
+    from 0 to 80 px of jitter. Replacing `jitter_px=jitter_px` with `0.0` in
+    the simulated world passed the entire suite once for exactly that reason.
+
+    Seed-to-seed divergence is the observable that survives the median. It is
+    also the property ticket 05 depends on: if one draw were the whole story
+    there would be nothing to average over. `report.PUBLISHED_RUNS` exists
+    because a single run was once published as a result and did not
+    reproduce.
+    """
+    quiet = {
+        simulate_approach(transport_lag_s=0.0, jitter_px=0.0, seed=seed).final_cm
+        for seed in range(3)
+    }
+    noisy = {
+        simulate_approach(transport_lag_s=0.0, jitter_px=120.0, seed=seed).final_cm
+        for seed in range(3)
+    }
+
+    assert len(quiet) == 1, "without jitter the seed must not matter"
+    assert len(noisy) > 1, (
+        "the seed changed nothing under jitter, so the jitter never reached "
+        "the readings the controller sees"
+    )
+
+
+def test_enough_jitter_makes_the_controller_report_a_success_it_did_not_have():
+    """The model has to be able to produce the failure the sweep looks for.
+
+    Not a threshold: PLAN.md §14.2 forbids asserting where the envelope lands,
+    and nothing here says 120 px is a limit — that number is far larger than
+    any real detector wobble, and it is chosen for being unambiguous rather
+    than marginal. What is asserted is that the failure mode *exists* in the
+    model, so ticket 05's sweep has something to find. A sweep whose model
+    cannot fail would report a clean envelope and mean nothing by it, which is
+    M4 #07's lesson: a diagnostic that has never seen its target is not one.
+    """
+    outcomes = [
+        simulate_approach(transport_lag_s=0.0, jitter_px=120.0, seed=seed)
+        for seed in range(4)
+    ]
+
+    unearned = [
+        outcome
+        for outcome in outcomes
+        if outcome.outcome == "arrived" and not outcome.converged
+    ]
+    assert unearned, (
+        "no swept row reported `arrived` while truth disagreed, so the "
+        "public status and the simulator truth never parted company"
+    )
+    assert all(
+        outcome.steps <= SETTINGS.max_approach_steps for outcome in outcomes
+    ), "termination must survive any amount of noise"
+
+
 # ---------------------------------------------------------------------------
 # The cross-check
 #
@@ -496,10 +591,16 @@ LINEARITY_DISTANCES_CM = (60.0, 90.0, 120.0, 150.0, 180.0)
 #: test was measuring its own conditioning rather than the model.
 SENSITIVITY_PAIRS = ((60.0, 120.0), (90.0, 180.0))
 
-#: Tolerances derived from the detector's documented accuracy — `rel=0.02` in
-#: `test_the_detector_recovers_the_distance_the_composer_was_given` — carried
-#: through the arithmetic each test does, plus a margin for truncation to whole
+#: Tolerances derived from the detector's accuracy carried through the
+#: arithmetic each test does, plus a margin for truncation to whole
 #: centimetres. They are not fitted to observed output.
+#:
+#: The 2 % starting point comes from
+#: `test_the_detector_recovers_the_distance_the_composer_was_given`, which
+#: documents it over 72-130 cm. Three of the probes below sit outside that
+#: range, so this is an **extrapolation** of a documented figure rather than
+#: the figure itself — narrower probes would need less faith, but would also
+#: stop spanning enough distance to see the d-squared shape at all.
 LINEARITY_TOLERANCE = 0.06
 SENSITIVITY_TOLERANCE = 0.10
 
@@ -579,6 +680,10 @@ def test_the_real_detector_measures_face_width_linearly(portrait):
     ratios tests exactly that. A constant ratio away from 1 is focal-length
     calibration error — already UNCALIBRATED, and it does not touch the shape.
     A ratio that *varies with distance* is the model breaking.
+
+    **This is the test carrying the load.** Injecting a scale drift of
+    0.0008 x width fails it, while the sensitivity test below tolerates
+    0.003 x. Do not delete this one as redundant with that one.
     """
     reported = _readings_along_a_walk(portrait, LINEARITY_DISTANCES_CM)
     ratios = {
@@ -597,8 +702,15 @@ def test_the_closed_form_matches_what_the_real_detector_does(portrait):
     """The number itself, at two widely separated pairs.
 
     This is a Measurement, not a Sweep — real pixels, real MediaPipe — so
-    unlike the envelope it carries a threshold (PLAN.md §14.2). It is the only
-    lamp that lights if the closed form and the detector ever disagree.
+    unlike the envelope it carries a threshold (PLAN.md §14.2).
+
+    **What it can and cannot catch.** Both sides of the comparison divide by
+    the same `PX_CM`, so a calibration constant that is wrong in *both* the
+    model and the detector cancels and this test stays green — which is the
+    honest situation, since the two genuinely share one configuration. It
+    fails on a detector scale error of 13 % or more, and it is blind to shape
+    drift below 0.003 x width. The linearity test above is the sensitive one;
+    this one pins the number.
     """
     probes = sorted({d for pair in SENSITIVITY_PAIRS for d in pair})
     reported = _readings_along_a_walk(portrait, probes)

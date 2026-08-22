@@ -98,6 +98,14 @@ class DelayedPerception:
     directions at once, and wrong hardest exactly where the safety conclusion
     is decided.
 
+    The wobble of a given frame is keyed on **when that frame was taken**,
+    not on how many frames came before it. Keying it on call order would
+    confound the two swept parameters: the world primes the delay line with
+    one frame per lag-second before the run starts, so a longer lag would
+    consume more draws and hand the controller a different noise realisation.
+    A row-to-row difference would then mix transport lag with a fresh draw,
+    and the two-dimensional sweep would be reading its own bookkeeping.
+
     ``jitter_px`` is **UNCALIBRATED**, in the same sense
     ``sensor_transport_lag_s`` is: it has never been measured, and it cannot
     be without a robot and a real scene. Sweeping it says how much wobble the
@@ -120,7 +128,7 @@ class DelayedPerception:
         self._lag_s = lag_s
         self._jitter_px = jitter_px
         self._px_cm = focal_length * real_face_width_cm
-        self._noise = random.Random(seed)
+        self._seed = seed
         self._times: List[float] = []
         self._distances: List[float] = []
 
@@ -143,27 +151,31 @@ class DelayedPerception:
                 f"observations must arrive in time order: {t} after "
                 f"{self._times[-1]}"
             )
-        measured_cm = self._measure(distance_cm)
-        if measured_cm is None:
+        detected_cm = self._detect(t, distance_cm)
+        if detected_cm is None:
             # No usable face in this frame. `DistancePipeline` skips such a
             # frame rather than storing an unknown distance, so the previous
             # reading stays on offer until it ages out; recording nothing here
             # is what reproduces that.
             return
         self._times.append(t)
-        self._distances.append(measured_cm)
+        self._distances.append(detected_cm)
 
-    def _measure(self, distance_cm: float) -> Optional[float]:
+    def _detect(self, t: float, distance_cm: float) -> Optional[float]:
         """One detection of a person at ``distance_cm``, wobble included."""
         if self._jitter_px == 0.0:
             return distance_cm
         true_width_px = self._px_cm / distance_cm
-        measured_width_px = true_width_px + self._noise.uniform(
+        # Seeded with a string rather than a tuple: `random` hashes str with
+        # SHA-512, so the draw is identical across processes and unaffected by
+        # PYTHONHASHSEED. Python 3.11 refuses tuples outright.
+        wobble_px = random.Random(f"{self._seed}:{t!r}").uniform(
             -self._jitter_px, self._jitter_px
         )
-        if measured_width_px <= 0.0:
+        detected_width_px = true_width_px + wobble_px
+        if detected_width_px <= 0.0:
             return None
-        return self._px_cm / measured_width_px
+        return self._px_cm / detected_width_px
 
     def read(self, t: float) -> Optional[int]:
         """What the pipeline would report at ``t``, or ``None`` if nothing yet."""
@@ -373,9 +385,10 @@ def simulate_approach(
 
     ``jitter_px`` is detector wobble in pixels of apparent face width — see
     :class:`DelayedPerception` for why the parameter is pixels and not
-    centimetres. It is UNCALIBRATED. ``seed`` selects which draw of that
-    wobble is simulated; one draw is one sample, and `report.PUBLISHED_RUNS`
-    records what happened last time a single sample was published as a result.
+    centimetres. It is UNCALIBRATED. ``seed`` selects which realisation of
+    that wobble is simulated: one seed is one draw, and a single draw is not a
+    result. `report.PUBLISHED_RUNS` exists because a single run was published
+    as one once already.
     """
     cfg = settings or default_settings
     actual_multiplier = (

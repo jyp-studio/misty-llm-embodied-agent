@@ -762,10 +762,12 @@ def test_breaking_the_calibration_assumption_makes_the_controller_reverse():
     assert outcome.direction_reversals >= 1
 
 
-#: The multiplier the conditional guarantee is actually stated at. Not a
-#: range: reversal turns out **not** to be monotone in this parameter, so
+#: The multiplier the conditional guarantee is actually stated at. Read from
+#: the settings rather than written out: this one has to track the config, or
+#: the tests below would keep asserting about a multiplier the code no longer
+#: uses. Not a range — reversal is **not** monotone in this parameter, so
 #: "inside the assumption" is not one behaviour to assert about.
-CONFIGURED_MULTIPLIER = 2.0
+CONFIGURED_MULTIPLIER = SETTINGS.max_actual_motion_multiplier
 
 
 def test_at_the_configured_multiplier_the_controller_stays_monotone():
@@ -775,11 +777,19 @@ def test_at_the_configured_multiplier_the_controller_stays_monotone():
     the multiplier the conditional guarantee is stated at, the controller
     approaches monotonically through every swept lag.
 
+    It also records a prediction ticket 04 got wrong, so it is not re-made:
+    the ticket assumed high transport lag alone would force a reversal — act
+    on a stale reading, overshoot the band, drive back. It does not. The
+    arrival band is 24 cm wide and the step bound already reserves headroom
+    for the configured travel, so staleness alone does not carry the robot
+    past the person.
+
     Note what this does **not** say. Two seconds of lag at this multiplier
     ends with the robot 9.9 cm past the person and still reporting `arrived`
     — no reversal at all. A clean reversal count is not a safety result; the
     two axes are independent, which is the whole reason for counting this one
-    separately.
+    separately. Nor does it say anything about neighbouring multipliers: see
+    the two tests below.
     """
     for lag_s in (0.0, 0.5, 1.0, 2.0, 3.0):
         outcome = simulate_approach(
@@ -812,40 +822,106 @@ def test_reversal_is_not_monotone_in_the_travel_multiplier():
     assert milder.direction_reversals > worst_assumed.direction_reversals == 0
 
 
-def test_lag_alone_does_not_make_the_controller_reverse():
-    """Records a prediction the ticket got wrong, so it is not re-made.
+def test_reversals_inside_the_calibration_assumption_do_happen():
+    """The sharpest form of the non-monotonicity, and the one worth pinning.
 
-    Ticket 04 assumed high transport lag would be enough: act on a stale
-    reading, overshoot the band, then drive back. It is not. At the configured
-    travel multiplier the controller stays monotone through two seconds of
-    lag — the arrival band is 24 cm wide and the step bound already reserves
-    headroom for 2x travel, so staleness alone does not carry it past the
-    person. Only leaving the calibration assumption does.
+    "Inside the assumption it never reverses" is false, and not marginally:
+    at 1.5x travel — well within the 2.0x the guarantee is stated at — 12 of
+    the 61 published sweep lags reverse, in one contiguous band from 1.85 s to
+    2.40 s. At the configured multiplier, none of the 61 do.
+
+    A band that narrow is also a warning about grid resolution: ticket 05's
+    two-dimensional sweep steps in 0.05 s, and a coarser grid would step over
+    this one entirely.
     """
-    for lag_s in (0.5, 1.0, 2.0, 3.0):
-        assert simulate_approach(transport_lag_s=lag_s).direction_reversals == 0
+    lags = [round(step * 0.05, 2) for step in range(61)]
+    reversing_at_one_and_a_half = [
+        lag
+        for lag in lags
+        if simulate_approach(transport_lag_s=lag, speed_error=1.5).direction_reversals
+    ]
+    reversing_at_configured = [
+        lag
+        for lag in lags
+        if simulate_approach(
+            transport_lag_s=lag, speed_error=CONFIGURED_MULTIPLIER
+        ).direction_reversals
+    ]
+
+    assert reversing_at_one_and_a_half, "no in-assumption reversal was found"
+    assert not reversing_at_configured
+    assert reversing_at_one_and_a_half == [
+        round(1.85 + step * 0.05, 2) for step in range(12)
+    ]
 
 
-def test_a_run_that_never_moved_cannot_have_reversed():
+def test_the_published_reversal_counts_are_what_the_code_produces():
+    """Pins the exact numbers PLAN.md §14.8 publishes as evidence.
+
+    Every other assertion in this section is `>= 1`, `== 0` or an inequality,
+    and four separate ways of miscounting survive all of them: counting only
+    forward-to-backward transitions, only backward-to-forward, never updating
+    the remembered direction, and starting it at "forward". Each rewrites the
+    published table while leaving the suite green.
+
+    A fixed lag and a fixed multiplier make a fully determined run, so these
+    are properties of the model rather than claims about where an envelope
+    lands — PLAN.md §14.2 is not in play.
+    """
+    published = {
+        (0.0, 3.0): 7,
+        (2.0, 1.5): 2,
+        (2.0, 2.5): 2,
+        (2.0, CONFIGURED_MULTIPLIER): 0,
+    }
+
+    actual = {
+        key: simulate_approach(
+            transport_lag_s=lag_s, speed_error=multiplier
+        ).direction_reversals
+        for key in published
+        for lag_s, multiplier in [key]
+    }
+
+    assert actual == published
+
+
+def test_a_run_that_backs_up_first_does_not_start_with_a_free_reversal():
+    """A subject too close is the case a forward-initialised counter breaks.
+
+    Remembering "forward" before any command has been issued would score the
+    first backward command as a reversal. Nothing else in this file starts the
+    robot inside the arrival band, so nothing else would notice.
+    """
+    outcome = simulate_approach(transport_lag_s=0.0, start_cm=20.0, speed_error=1.0)
+
+    assert outcome.steps >= 1, "the robot has to have moved for this to mean anything"
+    assert outcome.final_cm > 20.0, "it should have backed away, not approached"
+    assert outcome.direction_reversals == 0
+
+
+def test_a_run_that_never_moved_reports_no_reversals():
+    # A boundary rather than a test of the counter: no command is issued, so
+    # nothing reaches it. The counter's "does not invent reversals" property
+    # is carried by the two tests above, which do issue commands.
     outcome = simulate_approach(transport_lag_s=0.0, start_cm=60.0)
 
     assert outcome.steps == 0
     assert outcome.direction_reversals == 0
 
 
-def test_the_step_cap_survives_the_reversing_regime():
-    """Termination is the property PLAN.md §4 calls the system's strongest.
+def test_the_sweep_carries_the_reversal_count_out_of_every_row():
+    """Fails if the count stops being threaded through `simulate_approach`.
 
-    Chatter burns steps, so this is where a cap would quietly fail if adding
-    the counter had disturbed the loop.
+    Its predecessor asserted only `isinstance(..., int)` and `>= 0`, which the
+    field's own default satisfies: deleting the wiring left the test green.
+    Sweeping at a multiplier that does reverse is what gives it something to
+    lose.
     """
-    for multiplier in BEYOND_ASSUMPTION_MULTIPLIERS:
-        outcome = simulate_approach(transport_lag_s=0.0, speed_error=multiplier)
-        assert outcome.steps <= SETTINGS.max_approach_steps
-        assert outcome.direction_reversals < outcome.steps
+    quiet = sweep_transport_lag([0.0, 0.5, 1.0])
+    chattering = sweep_transport_lag([0.0, 0.5, 1.0], speed_error=3.0)
 
-
-def test_every_swept_row_reports_a_reversal_count():
-    for outcome in sweep_transport_lag([0.0, 0.5, 1.0]):
-        assert isinstance(outcome.direction_reversals, int)
-        assert outcome.direction_reversals >= 0
+    assert all(row.direction_reversals == 0 for row in quiet)
+    # `any`, not `all`: at one second of lag even a 3x robot gets one step in
+    # before the deadline, and one step cannot reverse.
+    assert any(row.direction_reversals > 0 for row in chattering)

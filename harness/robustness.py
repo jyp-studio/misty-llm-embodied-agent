@@ -45,6 +45,12 @@ production DistancePipeline under the M4 latency bound.
 Where convergence stops is a fact to report. It is not a standard the code has
 to pass, and no test asserts a limit on it — the number is about a quantity
 nobody has measured.
+
+Tests do pin the *counters* in fully specified scenarios — a fixed lag and a
+fixed travel multiplier make a deterministic run, and its reversal count is a
+property of the model rather than a claim about where any envelope lands.
+Pinning those numbers is what stops the published table drifting away from the
+code that produced it.
 """
 
 from __future__ import annotations
@@ -211,9 +217,15 @@ class ApproachOutcome:
     #: success. It is noise's characteristic failure, which is why it is
     #: counted rather than left for the noise sweep to happen to notice.
     #:
-    #: Measured, not assumed: inside the configured travel multiplier this is
-    #: zero at every swept lag. Every reversal reported is a run that left the
-    #: calibration assumption behind.
+    #: What the sweep found, stated carefully. At the *configured* travel
+    #: multiplier this is zero at every swept lag — but that is a fact about
+    #: one multiplier, not about the assumption it stands for: at 1.5x, which
+    #: the same assumption covers, 12 of the 61 published lags reverse.
+    #: Reversal is not monotone in travel multiplier (PLAN.md §14.8), so no
+    #: row can be inferred from a neighbouring one.
+    #:
+    #: A clean count is also not a safety result. The worst floor breach in
+    #: that table reverses zero times and reports `arrived`.
     direction_reversals: int = 0
 
     @property
@@ -336,6 +348,9 @@ class _SimulatedWorld:
         duration_s = timeMs / 1000.0
         commanded_cm = duration_s * self._config.cm_per_sec_at_percent
         direction = 1 if linearVelocity > 0 else -1
+        # Counted per command issued. This world never refuses one, so issued
+        # and completed do not part company here; a world that could refuse
+        # would have to count after the refusal check instead.
         if self._last_direction is not None and direction != self._last_direction:
             self.direction_reversals += 1
         self._last_direction = direction

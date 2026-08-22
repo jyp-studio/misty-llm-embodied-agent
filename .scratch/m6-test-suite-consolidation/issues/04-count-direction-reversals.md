@@ -59,3 +59,56 @@
 覆蓋卻少了一條，正是 M6 #01 盤點在防的那種事。
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **295 passed、零 skip**（288 → 295）。
+
+---
+
+**Review 後的更正（2026-08-23，同日）。** 兩軸 `/code-review` 找出的問題比前一張票更重，
+其中兩類是我自己的 mutation testing 沒有覆蓋到的：
+
+**(1) 我在 shipped code 與 §14.8 裡寫了一句假話，而且它與同一段的表格自相矛盾。**
+原文說「inside the configured travel multiplier this is zero at every swept lag. Every
+reversal reported is a run that left the calibration assumption behind.」——後半是假的。
+掃 61 個 lag：**1.5×（假設範圍內）有 12 個 lag 反轉**，集中在 1.85–2.40s；2.0×（configured）
+才是 0/61。正確的說法是「在 **configured 倍率**下為零」，那是關於一個倍率的事實，不是關於
+它所代表的假設。已更正 `ApproachOutcome.direction_reversals` 的註解與 §14.8。
+
+**(2) 我宣稱 2.0× 配 2 秒 lag 是「全表最糟的安全結果」——用我自己的表就能反駁。**
+2.5× 在同樣 lag 下到 −44.9cm，比 2.0× 的 −9.9cm 糟得多。論點（乾淨的反轉數不是安全結論）
+成立，最高級不成立。已刪掉。
+
+**(3) §14.8 的結果欄用 raw status，掩蓋了越線。** 表中四列 truth-audit 之後**全部**是
+`safety_floor_breach`，而 raw 欄的 `arrived` 與 `timeout` 兩者都看不出來。§13.3 第 1 點
+另存 truth-audited outcome 的理由正是這個。已補上該欄。
+
+**(4) 四個 mutation 存活，而且是我沒試過的四個。** reviewer 試了：只算前進→後退（7→4）、
+只算後退→前進（7→3）、從不更新 `_last_direction`（2→3）、`_last_direction` 初值設為 1
+（後退優先的 run 會多算一次）。**全部 295 passed。** 原因是我所有斷言都是 `>= 1`、`== 0`
+或不等式，**沒有任何測試釘住確切數字** —— 而 §14.8 publish 出去的正是確切數字。補了
+`test_the_published_reversal_counts_are_what_the_code_produces`（釘住四組）與
+`test_a_run_that_backs_up_first_does_not_start_with_a_free_reversal`（起點 20cm，先後退）。
+重跑六個 mutation，全部被抓到。
+
+**(5) 兩條測試不可能失敗。** `test_every_swept_row_reports_a_reversal_count` 只斷言
+`isinstance(int)` 與 `>= 0`，而欄位的 `= 0` 預設值本身就滿足 —— 拿掉接線它照樣綠。
+`test_a_run_that_never_moved_cannot_have_reversed` 斷言 `steps == 0`，根本沒有命令到達
+計數器。前者改成掃一個會反轉的倍率並比對，後者改名為
+`test_a_run_that_never_moved_reports_no_reversals` 並註明它是邊界不是計數器測試。
+
+**(6) `test_lag_alone_does_not_make_the_controller_reverse` 與陰性對照逐字重複** ——
+`speed_error=None` 解析成 `max_actual_motion_multiplier` 就是 2.0，lag 清單也是子集，
+兩者跑的是同一批模擬。已併除，被推翻的預測改記在陰性對照的 docstring 裡。
+**順帶一提：我當初用來發現「誤刪測試」的 mutation 訊號，有一部分正是這兩條一起變紅造成的。**
+
+**(7) `CONFIGURED_MULTIPLIER = 2.0` 把 config 寫死。** 改成讀
+`SETTINGS.max_actual_motion_multiplier`，否則改 config 之後這個名字會說謊。
+
+**(8) 模組 docstring 說「no test asserts a limit on it」現在不完全成立。** 已補一段說明：
+釘住的是**完全指定情境下的計數器**（固定 lag + 固定倍率 = 決定性的一次執行），那是模型的
+性質，不是對 envelope 落點的主張。
+
+**兩項判定不改：** ①計數在 `drive_time` 的 2xx 檢查之前遞增，理論上被拒絕的命令會動到
+計數器而 `steps` 不動 —— 但這個世界從不拒絕命令，已在程式碼註解寫明「會拒絕的世界必須改
+在拒絕檢查之後計數」。②`harness/report.py` 尚未輸出這個欄位 —— ticket 04 的範圍明寫
+「不負責報告怎麼呈現」，那是 ticket 05。
+
+驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **296 passed、零 skip**。

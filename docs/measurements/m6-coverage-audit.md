@@ -52,12 +52,12 @@ stronger one) · **M7** (the behaviour is being replaced, not preserved) ·
 |---|---|---|
 | reports arrived | covered | `test_with_no_lag_and_perfect_calibration_the_robot_arrives` |
 | final distance within target ± tolerance | covered | same test, asserting the arrival band directly |
-| safety floor respected | covered *a fortiori* | No test asserts the floor at exactly 1× travel. `test_the_two_x_counterexample_stays_outside_the_safety_floor` and `test_the_two_x_bound_is_not_luck_at_one_starting_distance` assert it at **2×**, and a robot that travels less than the bound cannot pass a robot that travels the bound. The 1× case is strictly inside the 2× case. |
+| safety floor respected | ~~covered *a fortiori*~~ **asserted directly, ticket 07, 2026-08-23** | `test_with_no_lag_and_perfect_calibration_the_robot_arrives` now asserts `closest_cm` against the floor at 1× travel, from four start distances. It used to be carried by an argument — 2× is the strictly worse case, so 1× is inside it — which was sound but fails silently when the code moves. |
 
-This entry **reasons rather than points**, and so does one row of T2 below.
-Both are recorded that way on purpose: the arguments are sound, but they are
-arguments, and an argument fails silently when the code moves. Ticket **07**
-replaces both with direct assertions.
+Both this entry and one row of T2 below used to **reason rather than point**.
+Ticket 07 replaced both with direct assertions on 2026-08-23, so no row of
+this audit now rests on an argument. The arguments were sound; the objection
+was that an argument fails silently when the code moves.
 
 ### T2 — calibration error +50 %
 
@@ -65,7 +65,7 @@ replaces both with direct assertions.
 |---|---|---|
 | still stops | covered | `test_the_step_cap_is_never_exceeded_however_bad_the_lag` |
 | no overshoot past the user (min > 20 cm) | covered, stronger | `test_the_two_x_counterexample_stays_outside_the_safety_floor` asserts ≥ 45 cm at 2×, not 20 cm at 1.5× |
-| min ≥ floor − 15 cm | covered, stronger — but **reasoned** | same test, with **no** 15 cm slack, plus `test_public_approach_reserves_enough_headroom_for_two_x_motion` through the public seam. The old check started at **150 cm**; `test_the_two_x_bound_is_not_luck_at_one_starting_distance` covers starts of 90–130 cm only, so reading it as covering 150 cm is an extrapolation. It is **not** a safe one: closest distance is not monotone in start distance (at 2×, 150 → 52.1, 160 → 48.1, 200 → 60.1). It holds at 150 cm, by luck rather than by argument. Ticket **07** widens the range. |
+| min ≥ floor − 15 cm | covered, stronger — ~~reasoned~~ **asserted, ticket 07, 2026-08-23** | same test, with **no** 15 cm slack, plus `test_public_approach_reserves_enough_headroom_for_two_x_motion` through the public seam. The old check started at **150 cm** and the original range covered 90–130 cm only, so reading it as covering 150 cm was an extrapolation — and not a safe one, since closest distance is not monotone in start distance. `test_the_two_x_floor_bound_holds_across_every_start_distance` now scans 75–320 cm at **one centimetre**, covering every forward start the deleted runner used. The floor is never crossed; the worst margin is 48.0 cm, which is the arrival band's near edge rather than the floor. |
 
 The old checks bought their passes with slack (`− 5`, `− 10`, `− 15` cm below
 the floor, varying by scenario). The replacements assert the floor itself.

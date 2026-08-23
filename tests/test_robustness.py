@@ -102,15 +102,24 @@ def test_the_model_reproduces_the_lag_it_was_given():
 # ---------------------------------------------------------------------------
 
 def test_with_no_lag_and_perfect_calibration_the_robot_arrives():
-    outcome = simulate_approach(
-        transport_lag_s=0.0,
-        start_cm=130.0,
-        speed_error=1.0,
-    )
+    """The perfectly calibrated case, asserted rather than inferred.
 
-    assert outcome.outcome == "arrived"
-    assert ARRIVAL_LO <= outcome.final_cm <= ARRIVAL_HI
-    assert outcome.steps <= SETTINGS.max_approach_steps
+    The floor line used to be missing here, and the coverage audit carried it
+    as an argument instead: 2x travel is the strictly worse case, so 1x must
+    be inside it. Sound, but an argument fails silently when the code moves,
+    and this is the run that already exists to assert it.
+    """
+    for start_cm in (130.0, 150.0, 200.0, 300.0):
+        outcome = simulate_approach(
+            transport_lag_s=0.0,
+            start_cm=start_cm,
+            speed_error=1.0,
+        )
+
+        assert outcome.outcome == "arrived"
+        assert ARRIVAL_LO <= outcome.final_cm <= ARRIVAL_HI
+        assert outcome.steps <= SETTINGS.max_approach_steps
+        assert outcome.closest_cm >= SETTINGS.min_safe_distance_cm
 
 
 def test_the_simulation_enters_through_public_approach(monkeypatch):
@@ -184,15 +193,81 @@ def test_the_two_x_counterexample_stays_outside_the_safety_floor():
     assert outcome.converged
 
 
-def test_the_two_x_bound_is_not_luck_at_one_starting_distance():
-    breached = [
-        simulate_approach(
-            transport_lag_s=0.0, start_cm=start, speed_error=2.0
-        ).inside_safety_floor
-        for start in (130.0, 120.0, 110.0, 100.0, 90.0)
-    ]
+#: Where the two-times floor bound is checked, and why these bounds.
+#:
+#: The deleted simulation runner approached from 150, 160, 200 and 300 cm; the
+#: first version of this test covered 90-130 only, so reading it as covering
+#: those was an extrapolation. The range now spans all of them with margin.
+#:
+#: The step is one centimetre, not ten. A ten-centimetre grid reports the same
+#: verdict here while stepping over three start distances that do not converge
+#: (see the test below) — M4 #08 paid for that lesson once already, when a
+#: coarse sweep skipped the overshoot band entirely and reported the collision
+#: after it as the first failure.
+TWO_X_START_SCAN_CM = range(75, 321)
 
-    assert not any(breached)
+
+def test_the_two_x_floor_bound_holds_across_every_start_distance():
+    closest_by_start = {
+        start_cm: simulate_approach(
+            transport_lag_s=0.0, start_cm=float(start_cm), speed_error=2.0
+        ).closest_cm
+        for start_cm in TWO_X_START_SCAN_CM
+    }
+
+    breached = {
+        start_cm: closest_cm
+        for start_cm, closest_cm in closest_by_start.items()
+        if closest_cm < SETTINGS.min_safe_distance_cm
+    }
+
+    assert not breached, f"the floor was crossed starting from {breached}"
+    # The binding constraint is the arrival band's near edge, not the floor —
+    # PLAN.md §5 records that a legal config makes the band cap the stricter
+    # of the two. If this ever loosens, the margin above is the thing to look
+    # at before the assertion above goes red.
+    assert min(closest_by_start.values()) >= ARRIVAL_LO
+
+
+
+def test_the_arrival_band_edge_is_missed_by_less_than_the_reading_quantises_to():
+    """Three start distances end just outside the band while reporting arrived.
+
+    Found by scanning at one centimetre; a ten-centimetre grid steps over all
+    three. They sit 70 cm apart — twice `max_step_cm` — so this is the bounded
+    step landing on the same phase of the approach, not noise.
+
+    **It is not a safety finding.** The robot stops *further away* than the
+    band, never nearer, and the floor is untouched. The cause is the reading
+    being truncated to whole centimetres: at 72.04 cm the controller reads 72,
+    which is inside the band, and stops. The error is therefore bounded by
+    what one centimetre of quantisation can hide, and it grows by about
+    0.04 cm per step rather than compounding.
+
+    Pinned rather than tolerated silently, because ticket 05's report must not
+    present these rows as safety failures — nor hide that public `arrived`
+    and simulator truth part company here at zero lag, with no transport
+    staleness to blame.
+    """
+    missed = {
+        start_cm: simulate_approach(
+            transport_lag_s=0.0, start_cm=float(start_cm), speed_error=2.0
+        )
+        for start_cm in (142, 212, 282)
+    }
+
+    for start_cm, outcome in missed.items():
+        assert outcome.outcome == "arrived"
+        assert outcome.audited_outcome == "overshoot", (
+            f"starting at {start_cm}cm the truth audit no longer disagrees "
+            f"with the public status"
+        )
+        assert outcome.final_cm > ARRIVAL_HI, "it should end beyond the band"
+        assert outcome.final_cm - ARRIVAL_HI < 1.0, (
+            f"starting at {start_cm}cm the miss is {outcome.final_cm - ARRIVAL_HI:.2f}cm, "
+            f"more than reading quantisation can account for"
+        )
+        assert outcome.closest_cm > SETTINGS.min_safe_distance_cm
 
 
 # ---------------------------------------------------------------------------

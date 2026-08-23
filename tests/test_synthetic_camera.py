@@ -172,7 +172,7 @@ def test_moving_the_person_changes_what_later_frames_show(composer):
     assert far_cm > near_cm
 
 
-def _wait_until(predicate, *, what, timeout_s=10.0):
+def _wait_until(predicate, *, what, state=None, timeout_s=10.0):
     """Block until `predicate()` holds, or fail saying what never happened.
 
     Tests here drive a real producer thread, which is the point: the contract
@@ -182,10 +182,17 @@ def _wait_until(predicate, *, what, timeout_s=10.0):
 
     Sleeping for a duration and assuming a frame count is a bet on the
     scheduler. It pays off when the file runs alone — twenty consecutive runs,
-    and twenty more under eight busy loops — and occasionally does not when
-    the whole suite shares the process with MediaPipe's Metal and TensorFlow
-    threads. A flaky assertion in a suite whose every ticket is signed off as
-    "green, zero skips" quietly devalues all of them.
+    and ten more under eight busy loops — and was once seen not to during a
+    full-suite run, on the assertion about which scene the buffered frame
+    showed.
+
+    **That single failure was never reproduced**, so what starved the producer
+    is conjecture, not a finding: the full suite shares the process with
+    MediaPipe's Metal and TensorFlow threads, which is a plausible cause and
+    not an established one. What is not conjecture is that the old assertion
+    could fail without the code being wrong, and that a flaky assertion in a
+    suite whose every ticket is signed off as "green, zero skips" quietly
+    devalues all of them.
 
     The timeout is deliberately far longer than the wait should ever need. It
     exists to fail with an explanation rather than to hang, not to encode an
@@ -198,7 +205,12 @@ def _wait_until(predicate, *, what, timeout_s=10.0):
         if predicate():
             return
         time.sleep(0.005)
-    raise AssertionError(f"waited {timeout_s}s for {what}, which never happened")
+    # `state` is read only here, so a timeout says what was actually observed
+    # rather than only what was hoped for.
+    observed = f" (observed {state()})" if state is not None else ""
+    raise AssertionError(
+        f"waited {timeout_s}s for {what}, which never happened{observed}"
+    )
 
 
 def test_an_unread_camera_keeps_only_the_latest_scene(composer):
@@ -215,9 +227,13 @@ def test_an_unread_camera_keeps_only_the_latest_scene(composer):
         _wait_until(
             lambda: camera.dropped_frames >= 2,
             what="the producer to outrun the absent consumer",
+            state=lambda: f"dropped={camera.dropped_frames}",
         )
 
         camera.place(70.0)
+        # Snapshotted *after* `place`, and that ordering is load-bearing: read
+        # before, and a replacement that happened while the subject was still
+        # at 120 cm would count towards the two below.
         replaced_before = camera.dropped_frames
         # Two, not one: the frame being composed when `place` landed may still
         # show the old scene, so one replacement is not yet proof. After two,
@@ -225,6 +241,8 @@ def test_an_unread_camera_keeps_only_the_latest_scene(composer):
         _wait_until(
             lambda: camera.dropped_frames >= replaced_before + 2,
             what="two frames of the new scene to replace their predecessors",
+            state=lambda: f"dropped={camera.dropped_frames}, "
+            f"wanted {replaced_before + 2}",
         )
 
         depth = camera.backlog
@@ -243,21 +261,29 @@ def test_an_unread_camera_keeps_only_the_latest_scene(composer):
 
 
 def test_flush_discards_what_was_waiting(composer):
+    """Stop the producer before flushing, or the assertion cannot fail.
+
+    `depth <= 1` is an invariant of the one-slot buffer, so the previous
+    version passed with `flush` replaced by `pass` — and with an unbounded
+    queue, and with a camera that never produced a frame at all. Waiting for a
+    frame fixed the last of those and none of the others.
+
+    With the producer stopped, nothing can land during or after the flush, so
+    `depth == 0` is a claim about `flush` and only about `flush`.
+    """
     camera = SyntheticCamera(composer, fps=60)
     camera.start()
-    try:
-        # Waiting for a frame to exist is what makes the flush mean anything:
-        # `depth <= 1` is satisfied by a camera that never produced at all, so
-        # the old `sleep(0.3)` was carrying the whole test.
-        _wait_until(
-            lambda: camera.backlog >= 1, what="a frame to be waiting unread"
-        )
-        camera.flush()
-        depth = camera.backlog
-    finally:
-        camera.stop()
+    _wait_until(
+        lambda: camera.backlog >= 1,
+        what="a frame to be waiting unread",
+        state=lambda: f"backlog={camera.backlog}",
+    )
+    camera.stop()
 
-    assert depth <= 1  # the producer may land one frame during the flush
+    assert camera.backlog == 1, "stopping should not have consumed the frame"
+    camera.flush()
+
+    assert camera.backlog == 0
 
 
 def test_stopping_a_camera_that_never_started_is_safe(composer):

@@ -54,3 +54,56 @@
 
 **這條 flaky 不是 M6 造成的**（M4 #04 就留下的），但它有後果：每張 ticket 的驗收都寫
 「全綠零 skip」，而 M6 #05 要據此產出發布用的報告。
+
+---
+
+**Review 後的更正（2026-08-23，同日）。** 兩軸序列跑、各自隔離 worktree。Spec 軸找到一個
+**比我修掉的那條更嚴重**的東西，另有四項。
+
+**(1) 我的盤點只掃了同一個檔案，而漏掉的那條會靜默假通過。**
+`tests/test_distance_pipeline.py` 的 `test_a_stale_frame_cannot_contribute_to_the_latest_distance`
+用 `time.sleep(0.15)` 當作「偵測已完成」，然後斷言 `latest_reading() is None`。reviewer 在
+隔離 worktree 證明：把新鮮度過濾拿掉，**正常情況下這條會紅**；但只要讓 `_consume_loop` 慢
+0.4 秒（就是本票在講的那種負載），同一個 mutant **就通過了** —— 因為 worker 還沒算完，
+`_latest` 本來就是 None。
+
+**這比 flaky 更糟：flaky 會吵，假通過不會。** 已改成讓 `ManualVideoSource` 數出被取走幾張
+影格，並等到**第二張**被取走 —— worker 的迴圈是 read → detect → store，所以第二次讀取
+證明第一張已經整段走完。重測：新鮮度壞掉、偵測慢 0.4 秒、以及兩者並存的那個組合，現在
+**三種都紅**。
+
+**(2) `test_flush_discards_what_was_waiting` 仍然是空洞的，兩軸都確認。** 我以為「先等到有
+影格」就修好了，但 `depth <= 1` 是 `maxsize=1` 佇列的**恆真式** —— 把 `flush` 整個換成
+`pass` 照樣過，換成無界佇列也照樣過。等待只補上了「從未產出」那個洞。已改成**先停掉
+producer 再 flush**，然後斷言 `backlog == 0`；這樣才是一句只關於 `flush` 的主張。重測：
+`flush` 改 `pass` 現在會紅。
+
+**(3) 我在 docstring 裡把自己的證據講成兩倍。** 寫的是「twenty more under eight busy loops」，
+實際只跑了 **10** 次（另外 25 次是在 10 個 busy-loop 下）。已更正為 10。
+
+**(4) docstring 把未經證實的歸因寫成事實。** 「occasionally does not when the whole suite
+shares the process with MediaPipe's Metal and TensorFlow threads」——那次失敗從未重現，
+所以原因是**推測不是發現**。誠實的說明本來只存在於 `.scratch`，而讀者看到的是程式碼。
+已在 docstring 明寫「那次失敗從未重現，成因是推測」。
+
+**(5) `replaced_before` 的快照順序是承重的但沒註記** —— 若在 `place()` 之前取值，一次發生
+在 120cm 時的取代就會被算進那兩次裡。已補註解。
+
+**另外：修的過程中我自己引入了一個新的同類問題。** 為了讓兩張過期影格不互相取代，我加了
+`time.sleep(0.02)` —— 那正是本票在消滅的東西，而且負載一高第二張會蓋掉第一張，輪詢要等
+滿 10 秒才紅。已改成等第一張被取走再發第二張，`sleep` 完全消失。
+
+**全套件盤點（原本只做了單檔）：** 其餘 `time.sleep` 全部合格 ——
+`test_replay.py:211`、`test_distance_pipeline.py:85` 與兩個 `_wait_until` 內的都是**輪詢間隔**；
+`test_diagnostics.py:211` 的 sleep **就是被模擬的消費者成本本身**；`test_approach.py` 的兩個是
+`FakeClock` 不是 wall clock。
+`test_the_replay_takes_about_as_long_as_the_script_says` 的 `elapsed < duration + 0.5` 看似
+同類但不是：**它的主題本身就是耗時**，wall-clock 斷言在那裡是正確的工具。實測裕度只用掉
+0.003–0.030 秒（上限 0.5），16 倍餘裕，不動它。
+
+**(6) 驗收條件「在人為 CPU 負載下連續執行仍穩定」其實不具鑑別力**，reviewer 指出得對：
+ticket 內文自己就記著**未修版本**在 8 個 busy-loop 下也全過。它勾起來不代表修好了；真正
+的證據是上面那些 mutation 從綠變紅。這一點記在這裡，不改驗收條件原文。
+
+驗證：8 個 busy-loop 壓著跑兩個檔 **20 次全過**；`pytest tests/ -q -rs` → **299 passed、零 skip**。
+`misty_agent/` 與 `harness/` 未修改。

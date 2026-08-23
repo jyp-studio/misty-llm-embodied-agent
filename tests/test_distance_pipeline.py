@@ -21,6 +21,7 @@ class ManualVideoSource:
 
     def __init__(self) -> None:
         self._buffer = FrameBuffer()
+        self._frames_read = 0
 
     def start(self) -> None:
         pass
@@ -32,7 +33,21 @@ class ManualVideoSource:
         self._buffer.put(frame)
 
     def read(self, timeout: float):
-        return self._buffer.read(timeout)
+        frame = self._buffer.read(timeout)
+        if frame is not None:
+            self._frames_read += 1
+        return frame
+
+    @property
+    def frames_read(self) -> int:
+        """Frames the consumer has actually taken.
+
+        The pipeline's worker loops read -> detect -> store, so this rising to
+        N proves the first N-1 frames were carried all the way through. It is
+        the only handle a test has on "detection has finished", which is
+        otherwise invisible from outside the module.
+        """
+        return self._frames_read
 
     def flush(self) -> None:
         self._buffer.flush()
@@ -44,6 +59,24 @@ class ManualVideoSource:
     @property
     def dropped_frames(self) -> int:
         return self._buffer.dropped_frames
+
+
+def _wait_until(predicate, *, what, state=None, timeout_s: float = 10.0):
+    """Block until `predicate()` holds, or fail saying what never happened.
+
+    A duration is not evidence that an event happened; it is a bet on the
+    scheduler. See `tests/test_synthetic_camera.py` for the same helper and
+    the flake that prompted both.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.005)
+    observed = f" (observed {state()})" if state is not None else ""
+    raise AssertionError(
+        f"waited {timeout_s}s for {what}, which never happened{observed}"
+    )
 
 
 def _wait_for_reading(pipeline, timeout_s: float = 2.0):
@@ -86,15 +119,41 @@ def test_a_stale_frame_cannot_contribute_to_the_latest_distance(portrait):
     pipeline = DistancePipeline(source, max_age_s=0.05, read_timeout_s=0.01)
     pipeline.start()
     try:
-        source.publish(
-            CapturedFrame(
-                image=composer.frame_at(120.0),
-                arrived_at=time.monotonic() - 1.0,
+        # Two stale frames, not one. The assertion below is that a numerically
+        # valid but stale reading stays out of the public answer — and it
+        # passes trivially if the worker has not looked yet. Sleeping for a
+        # duration and hoping detection finished inside it makes the test pass
+        # for the wrong reason on a loaded machine, which is worse than a flake
+        # because it is silent: a broken freshness check would go unnoticed.
+        #
+        # The worker loops read -> detect -> store, so waiting for the *second*
+        # frame to be taken proves the first went all the way through.
+        def publish_stale():
+            source.publish(
+                CapturedFrame(
+                    image=composer.frame_at(120.0),
+                    arrived_at=time.monotonic() - 1.0,
+                )
             )
+
+        publish_stale()
+        # Wait for the first to be taken before publishing the second, rather
+        # than spacing them by a sleep: the source keeps only the latest frame,
+        # so a slow worker would see the second replace the first and the count
+        # below would never reach two.
+        _wait_until(
+            lambda: source.frames_read >= 1,
+            what="the worker to take the first stale frame",
+            state=lambda: f"frames_read={source.frames_read}",
         )
-        # Let the worker finish detection. The value is numerically valid but
-        # already stale at decision time, so the public answer remains empty.
-        time.sleep(0.15)
+        publish_stale()
+        _wait_until(
+            lambda: source.frames_read >= 2,
+            what="the worker to take the second stale frame, which proves it "
+            "finished detecting the first",
+            state=lambda: f"frames_read={source.frames_read}",
+        )
+
         assert pipeline.latest_reading() is None
 
         source.publish(

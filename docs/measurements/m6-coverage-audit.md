@@ -52,20 +52,21 @@ stronger one) · **M7** (the behaviour is being replaced, not preserved) ·
 |---|---|---|
 | reports arrived | covered | `test_with_no_lag_and_perfect_calibration_the_robot_arrives` |
 | final distance within target ± tolerance | covered | same test, asserting the arrival band directly |
-| safety floor respected | ~~covered *a fortiori*~~ **asserted directly, ticket 07, 2026-08-23** | `test_with_no_lag_and_perfect_calibration_the_robot_arrives` now asserts `closest_cm` against the floor at 1× travel, from four start distances. It used to be carried by an argument — 2× is the strictly worse case, so 1× is inside it — which was sound but fails silently when the code moves. |
+| safety floor respected | ~~covered *a fortiori*~~ **asserted, ticket 07, 2026-08-23** | ~~No test asserts the floor at exactly 1× travel. `test_the_two_x_counterexample_stays_outside_the_safety_floor` and `test_the_two_x_bound_is_not_luck_at_one_starting_distance` assert it at **2×**, and a robot that travels less than the bound cannot pass a robot that travels the bound. The 1× case is strictly inside the 2× case.~~ → `test_with_no_lag_and_perfect_calibration_the_robot_arrives` asserts `closest_cm` against the floor at 1× travel, from four start distances. |
 
-Both this entry and one row of T2 below used to **reason rather than point**.
-Ticket 07 replaced both with direct assertions on 2026-08-23, so no row of
-this audit now rests on an argument. The arguments were sound; the objection
-was that an argument fails silently when the code moves.
+This entry and **two** rows of T2 below used to **reason rather than point**
+— the third was found by review, after ticket 07 had already claimed there
+were only two. All three now assert directly. The arguments were sound; the
+objection was that an argument fails silently when the code moves, and
+`PLAN.md` §14.8 supplied a case where one of them stopped being sound.
 
 ### T2 — calibration error +50 %
 
 | Check | Verdict | Where it lives now |
 |---|---|---|
 | still stops | covered | `test_the_step_cap_is_never_exceeded_however_bad_the_lag` |
-| no overshoot past the user (min > 20 cm) | covered, stronger | `test_the_two_x_counterexample_stays_outside_the_safety_floor` asserts ≥ 45 cm at 2×, not 20 cm at 1.5× |
-| min ≥ floor − 15 cm | covered, stronger — ~~reasoned~~ **asserted, ticket 07, 2026-08-23** | same test, with **no** 15 cm slack, plus `test_public_approach_reserves_enough_headroom_for_two_x_motion` through the public seam. The old check started at **150 cm** and the original range covered 90–130 cm only, so reading it as covering 150 cm was an extrapolation — and not a safe one, since closest distance is not monotone in start distance. `test_the_two_x_floor_bound_holds_across_every_start_distance` now scans 75–320 cm at **one centimetre**, covering every forward start the deleted runner used. The floor is never crossed; the worst margin is 48.0 cm, which is the arrival band's near edge rather than the floor. |
+| no overshoot past the user (min > 20 cm) | covered, stronger — ~~reasoned~~ **asserted, ticket 07, 2026-08-23** | ~~`test_the_two_x_counterexample_stays_outside_the_safety_floor` asserts ≥ 45 cm at 2×, not 20 cm at 1.5×~~ — which reached the old check's 1.5× by arguing downwards from 2×, and `PLAN.md` §14.8 shows that argument is not generally safe. → `test_the_floor_bound_holds_across_every_start_distance` is parametrised over **both** 1.5× and 2.0×; the worst margin at 1.5× is 58.5 cm. |
+| min ≥ floor − 15 cm | covered, stronger — ~~reasoned~~ **asserted, ticket 07, 2026-08-23** | same test, with **no** 15 cm slack, plus `test_public_approach_reserves_enough_headroom_for_two_x_motion` through the public seam. ~~The old check started at **150 cm**; `test_the_two_x_bound_is_not_luck_at_one_starting_distance` covers starts of 90–130 cm only, so reading it as covering 150 cm is an extrapolation. It is **not** a safe one: closest distance is not monotone in start distance (at 2×, 150 → 52.1, 160 → 48.1, 200 → 60.1). It holds at 150 cm, by luck rather than by argument.~~ → `test_the_floor_bound_holds_across_every_start_distance` scans 75–320 cm at **one centimetre**, covering every forward start the deleted runner used. The floor is never crossed; the worst margin is 48.0 cm — the arrival band's near edge, not the floor — at starts of 92, 103 and 114 cm. |
 
 The old checks bought their passes with slack (`− 5`, `− 10`, `− 15` cm below
 the floor, varying by scenario). The replacements assert the floor itself.
@@ -217,7 +218,7 @@ silence — a dated audit is a snapshot, and that list is a to-do.
 |---|---|
 | Covered by a named passing test | 12 |
 | Covered by a stronger assertion than the original | 5 of those 12 |
-| Covered, but by argument rather than by assertion — ticket 07 | 2 of those 12 |
+| ~~Covered, but by argument rather than by assertion — ticket 07~~ asserted directly since 2026-08-23 | ~~2~~ 0 of those 12 |
 | Belongs to M7, not rebuilt in this form | 3 |
 | Belongs to M7, rebuild owed | 5 |
 | Gap — one asserted by ticket 05, one reported-only forever | 2 |

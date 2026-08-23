@@ -195,79 +195,135 @@ def test_the_two_x_counterexample_stays_outside_the_safety_floor():
 
 #: Where the two-times floor bound is checked, and why these bounds.
 #:
-#: The deleted simulation runner approached from 150, 160, 200 and 300 cm; the
-#: first version of this test covered 90-130 only, so reading it as covering
-#: those was an extrapolation. The range now spans all of them with margin.
+#: **Lower bound 75 cm**: the first distance from which every approach is a
+#: forward one. Below roughly 72 the subject is already inside the arrival
+#: band or nearer, which is the backing-up behaviour
+#: `test_too_close_commands_one_bounded_backward_step_then_arrives` covers.
 #:
-#: The step is one centimetre, not ten. A ten-centimetre grid reports the same
-#: verdict here while stepping over three start distances that do not converge
-#: (see the test below) — M4 #08 paid for that lesson once already, when a
-#: coarse sweep skipped the overshoot band entirely and reported the collision
-#: after it as the first failure.
+#: **Upper bound 320 cm**: twenty past the furthest start the deleted
+#: simulation runner used (300 cm). It approached from 150, 160, 200 and 300;
+#: the first version of this test covered 90-130 only, so reading it as
+#: covering those was an extrapolation — and not a safe one, since closest
+#: distance is not monotone in start distance.
+#:
+#: **Step one centimetre, not ten.** A ten-centimetre grid returns the same
+#: verdict here while stepping over every start that fails to converge (see
+#: the test below). M4 #08 paid for that lesson once already, when a coarse
+#: sweep skipped the overshoot band and reported the collision after it as the
+#: first failure.
 TWO_X_START_SCAN_CM = range(75, 321)
 
 
-def test_the_two_x_floor_bound_holds_across_every_start_distance():
-    closest_by_start = {
+@pytest.mark.parametrize("multiplier", (1.5, 2.0))
+def test_the_floor_bound_holds_across_every_start_distance(multiplier):
+    """The floor, at every forward start the deleted runner used and more.
+
+    The status assertion is not decoration. `closest_cm` is bounded below by
+    `start_cm`, and every start here is already above the floor, so a
+    controller that never issued a command would satisfy the floor assertion
+    alone — checked, by making the control law command zero. Requiring each
+    run to have actually arrived is what makes this a test of the bound rather
+    than of the arithmetic of `min`.
+
+    Both 1.5x and 2.0x are run because the audit's T2 row used to reach the
+    1.5x case by arguing downwards from 2.0x, and PLAN.md §14.8 shows that
+    argument is not generally safe: reversal is not monotone in this
+    parameter, so a smaller multiplier is not automatically a milder case.
+    """
+    outcomes = {
         start_cm: simulate_approach(
-            transport_lag_s=0.0, start_cm=float(start_cm), speed_error=2.0
-        ).closest_cm
+            transport_lag_s=0.0, start_cm=float(start_cm), speed_error=multiplier
+        )
         for start_cm in TWO_X_START_SCAN_CM
     }
 
-    breached = {
-        start_cm: closest_cm
-        for start_cm, closest_cm in closest_by_start.items()
-        if closest_cm < SETTINGS.min_safe_distance_cm
+    stalled = {
+        start_cm: outcome.outcome
+        for start_cm, outcome in outcomes.items()
+        if outcome.outcome != "arrived"
     }
+    assert not stalled, f"the robot never reached the subject from {stalled}"
 
+    breached = {
+        start_cm: outcome.closest_cm
+        for start_cm, outcome in outcomes.items()
+        if outcome.closest_cm < SETTINGS.min_safe_distance_cm
+    }
     assert not breached, f"the floor was crossed starting from {breached}"
+
     # The binding constraint is the arrival band's near edge, not the floor —
     # PLAN.md §5 records that a legal config makes the band cap the stricter
-    # of the two. If this ever loosens, the margin above is the thing to look
-    # at before the assertion above goes red.
-    assert min(closest_by_start.values()) >= ARRIVAL_LO
+    # of the two, and `test_defect_B_safety_floor_branch_is_unreachable_for_
+    # EVERY_valid_config` proves the floor clamp is dead code by construction.
+    # Removing it therefore changes nothing here, which is the expected result
+    # rather than a hole. If the band cap ever loosens, this line goes first.
+    assert min(o.closest_cm for o in outcomes.values()) >= ARRIVAL_LO
 
 
 
-def test_the_arrival_band_edge_is_missed_by_less_than_the_reading_quantises_to():
-    """Three start distances end just outside the band while reporting arrived.
+def test_the_arrival_band_edge_is_missed_by_a_hair_at_a_regular_spacing():
+    """Some starts end just outside the band while reporting arrived.
 
-    Found by scanning at one centimetre; a ten-centimetre grid steps over all
-    three. They sit 70 cm apart — twice `max_step_cm` — so this is the bounded
-    step landing on the same phase of the approach, not noise.
+    Found by scanning at one centimetre; a ten-centimetre grid steps over
+    every one of them. They recur every 70 cm — twice `max_step_cm` — so this
+    is the bounded step landing on the same phase of the approach, and it does
+    not stop at the end of the scanned range.
 
-    **It is not a safety finding.** The robot stops *further away* than the
-    band, never nearer, and the floor is untouched. The cause is the reading
-    being truncated to whole centimetres: at 72.04 cm the controller reads 72,
-    which is inside the band, and stops. The error is therefore bounded by
-    what one centimetre of quantisation can hide, and it grows by about
-    0.04 cm per step rather than compounding.
+    **It is not a safety finding, and it errs the safe way.** The robot stops
+    *further* from the subject than the band, never nearer, and the floor is
+    untouched. The cause is the reading being truncated to whole centimetres:
+    at 72.04 cm the controller reads 72, which is inside the band, and stops.
+
+    The miss is proportional to the number of Steps taken — about 0.04 cm each
+    — so it is bounded by `max_approach_steps`, not by one centimetre. An
+    earlier version of this test said "less than what quantisation can hide",
+    which sounded like a bound and was not one: nothing stops the sum crossing
+    a centimetre if the step cap ever rises. The assertion below states the
+    real bound.
 
     Pinned rather than tolerated silently, because ticket 05's report must not
-    present these rows as safety failures — nor hide that public `arrived`
-    and simulator truth part company here at zero lag, with no transport
+    present these rows as safety failures — nor hide that public `arrived` and
+    simulator truth part company here at **zero** transport lag, with no
     staleness to blame.
     """
-    missed = {
-        start_cm: simulate_approach(
-            transport_lag_s=0.0, start_cm=float(start_cm), speed_error=2.0
-        )
-        for start_cm in (142, 212, 282)
+    #: How far past the band one Step's worth of truncation carries the robot.
+    #: Measured, not assumed; the assertion multiplies it by the step cap.
+    MISS_PER_STEP_CM = 0.04
+
+    missing = {
+        start_cm: outcome
+        for start_cm in TWO_X_START_SCAN_CM
+        for outcome in [
+            simulate_approach(
+                transport_lag_s=0.0, start_cm=float(start_cm), speed_error=2.0
+            )
+        ]
+        if not outcome.converged
     }
 
-    for start_cm, outcome in missed.items():
+    assert missing, "the band-edge miss has disappeared; PLAN.md §14.9 is stale"
+
+    starts = sorted(missing)
+    spacing = {later - earlier for earlier, later in zip(starts, starts[1:])}
+    assert spacing == {2 * SETTINGS.max_step_cm}, (
+        f"the misses no longer recur at twice the step cap: {starts}"
+    )
+
+    for start_cm, outcome in missing.items():
         assert outcome.outcome == "arrived"
         assert outcome.audited_outcome == "overshoot", (
             f"starting at {start_cm}cm the truth audit no longer disagrees "
             f"with the public status"
         )
         assert outcome.final_cm > ARRIVAL_HI, "it should end beyond the band"
-        assert outcome.final_cm - ARRIVAL_HI < 1.0, (
-            f"starting at {start_cm}cm the miss is {outcome.final_cm - ARRIVAL_HI:.2f}cm, "
-            f"more than reading quantisation can account for"
-        )
         assert outcome.closest_cm > SETTINGS.min_safe_distance_cm
+        assert outcome.final_cm - ARRIVAL_HI <= (
+            SETTINGS.max_approach_steps * MISS_PER_STEP_CM
+        ), (
+            f"starting at {start_cm}cm the miss is "
+            f"{outcome.final_cm - ARRIVAL_HI:.2f}cm, more than truncation can "
+            f"accumulate over {SETTINGS.max_approach_steps} steps"
+        )
 
 
 # ---------------------------------------------------------------------------

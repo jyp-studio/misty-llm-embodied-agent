@@ -114,22 +114,27 @@ class MovingWorld(RecordingCommands):
         return response
 
 
-class WorldThatLosesTheUserAfterMoving(MovingWorld):
-    """The subject walks out of frame once the robot has moved at least once.
+class WorldThatLosesTheUserAfterAStep(MovingWorld):
+    """The subject walks out of frame once at least one Step has been issued.
 
     It mirrors what the production pipeline does rather than a convenient
     simplification. `DistancePipeline.latest_reading` keeps offering the last
     reading it computed — with the timestamp that reading already had — until
     that timestamp ages past `distance_max_age_s`, and only then returns
-    nothing. So the loop is offered a stale reading first, which it must
-    reject on freshness because the move set an invalidation epoch after it,
-    and is offered nothing at all only later.
+    nothing. The loop is therefore offered a stale reading first and nothing
+    at all later.
+
+    **The two phases are for fidelity, not for discrimination.** A double that
+    simply returned nothing from the first post-Step poll makes this file pass
+    identically — checked. So nothing below tells you *which* rule rejects the
+    stale reading, and the docstring does not claim otherwise: `_fresh_median`
+    needs both a post-epoch timestamp and two samples, and either alone
+    accounts for the rejection. Tests that do discriminate the epoch already
+    exist — `test_readings_arriving_during_settle_count_after_motion` and
+    `test_two_readings_must_be_fresh_at_the_same_decision_time`.
 
     The startup counterpart is
-    `test_stale_in_band_readings_end_as_lost_user_without_motion`. This is the
-    same loss one movement later, which is a different path through
-    `_fresh_median`: there is an epoch to filter against rather than an empty
-    history.
+    `test_stale_in_band_readings_end_as_lost_user_without_motion`.
     """
 
     def __init__(self, clock: FakeClock, *, start_cm: float, config: Settings) -> None:
@@ -291,31 +296,40 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
     assert clock.monotonic() == 0.05
 
 
-def test_losing_the_user_after_a_move_stops_issuing_drive_commands():
+def test_losing_the_user_after_a_step_stops_issuing_drive_commands():
     """The property the deleted simulation runner's T5 bought.
 
     Every other `lost_user` test in this file loses the subject before the
-    robot has moved, so the whole post-move path went unasserted — see
+    robot has taken a Step, so the whole post-Step path went unasserted — see
     `docs/measurements/m6-coverage-audit.md`, gap 2. `PLAN.md` §5 defect E is
     about giving up too early on exactly this path; M5 fixed the startup half.
 
-    The assertion deliberately names no step count. T5 said
-    `drive calls == 2`, which was tied to the old control law's step sizes;
-    the behaviour worth keeping is that nothing further is commanded once the
-    subject is gone, whatever number of steps preceded it.
+    No step count is named. T5 said `drive calls == 2`, which was tied to the
+    old control law's step sizes; the behaviour worth keeping is that nothing
+    further is commanded once the subject is gone, whatever preceded it. It
+    survives `approach_gain` from 0.05 to 1.0 and `max_step_cm` from 1 to 200.
+
+    Assertion order is deliberate. The drive-count assertions come first
+    because they are the ones a blind-drive defect trips: a loop that carried
+    on using the last known distance also changes the status, and a status
+    assertion placed first would take the failure and hide which property
+    actually broke.
     """
     clock = FakeClock()
     config = Settings(approach_reading_timeout_s=0.5, post_step_settle_s=0.0)
-    world = WorldThatLosesTheUserAfterMoving(clock, start_cm=140, config=config)
+    world = WorldThatLosesTheUserAfterAStep(clock, start_cm=140, config=config)
 
     result = approach(world, world, config=config, clock=clock)
 
-    assert result.status is ApproachStatus.LOST_USER
-    assert result.steps >= 1, "the subject must be lost after moving, not before"
     assert world.drives_when_lost is not None, "the subject never went missing"
     assert len(world.directions) == world.drives_when_lost, (
         "a drive was commanded after the subject was already gone"
     )
+    assert result.steps >= 1, "the subject must be lost after a Step, not before"
+    # Not just non-zero: the count reported has to be the count issued.
+    # `steps=completed_steps * 2` passed the whole suite without this.
+    assert result.steps == len(world.directions)
+    assert result.status is ApproachStatus.LOST_USER
 
 
 def test_two_readings_must_be_fresh_at_the_same_decision_time():

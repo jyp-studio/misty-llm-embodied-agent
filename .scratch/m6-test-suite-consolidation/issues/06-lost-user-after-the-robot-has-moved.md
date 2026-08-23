@@ -53,3 +53,40 @@ invalidation epoch。前三個都紅——**但既有測試也全都紅**，所�
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **297 passed、零 skip**（296 → 297）。
 既有的兩條「啟動時失去使用者」測試未修改且仍然通過。
+
+---
+
+**Review 後的更正（2026-08-23，同日）。**
+
+**(1) reviewer 找到一個我漏掉的 mutation：`steps=completed_steps * 2` → 297 passed。**
+我只斷言 `result.steps >= 1`，從沒比對回報的步數與實際發出的命令數 —— 也就是說那個值只被
+觀察成「非零」，不是「正確」。而我在盤點裡寫的是「the value it carried was never observed」，
+語氣暗示現在被完整觀察了。補上 `assert result.steps == len(world.directions)`，兩個
+mutation 現在都只有這條測試抓得到。盤點的措辭一併改精確。
+
+**(2) 頭號斷言原本永遠執行不到。** 斷言順序是 status 在前，而任何會多發驅動命令的缺陷也會
+改變 status，於是 status 那條先失敗，drive-count 那條從來沒有機會說話。已把 drive-count
+兩條移到最前面。
+
+**(3) 測試替身的兩階段模型是惰性的，而 docstring 說了它做不到的事。** 原文寫「it must reject
+on freshness because the move set an invalidation epoch after it」。reviewer 證明：把整個老化
+分支換成直接 `return None`，28/28 照樣過；換成永不老化，也照樣過。也就是說 `_max_age_s` 與
+老化邏輯**沒有任何可觀察效果**，而且測試根本分不出是 epoch 過濾還是「至少兩筆樣本」的規則
+擋下它的（刪掉任一個都會殺死另外六條測試，但殺不死這條）。
+
+判定：**保留忠於生產管線的兩階段模型，但把 docstring 改成說實話** —— 明寫「兩階段是為了
+忠實，不是為了鑑別」，並指出真正鑑別 epoch 的是哪兩條既有測試。移除它會讓替身偏離
+`DistancePipeline`；留著卻宣稱它證明了什麼，比兩者都糟。
+
+**(4) 命名違反 glossary。** `CONTEXT.md` 的 `Step` 明列 `_Avoid_: move`，而我用了
+`WorldThatLosesTheUserAfterMoving` 與 `..._after_a_move_...`。改成 `AfterAStep` /
+`after_a_step`。既有的 `MovingWorld` 是先前就存在的，不在本票範圍。
+
+**(5) 盤點檔頭承諾「with the date」但 T5 兩列沒寫日期。** 已補。
+
+**另記一筆流程上的坑（已寫進 `HANDOFF.md` §4）：兩個 review agent 平行跑時，會在同一個工作樹上
+互相看到對方注入的 mutation。** 這次是其中一軸自己開了隔離 worktree 才拿到乾淨結果，並主動
+回報了這件事。與使用者在 #03 前撞到的「並行 ticket session 互相讀到中間狀態」是同一個形狀。
+以後兩軸 review 要嘛各自開 worktree，要嘛序列跑。
+
+驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **297 passed、零 skip**。`misty_agent/` 未修改。

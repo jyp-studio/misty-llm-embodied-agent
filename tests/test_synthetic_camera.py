@@ -172,20 +172,61 @@ def test_moving_the_person_changes_what_later_frames_show(composer):
     assert far_cm > near_cm
 
 
-def test_an_unread_camera_keeps_only_the_latest_scene(composer):
-    # A controller wants the world now, not every world it failed to process.
-    # Run long enough for several frames to arrive without a consumer: the
-    # public contract is a bounded latest value plus an observable drop count.
+def _wait_until(predicate, *, what, timeout_s=10.0):
+    """Block until `predicate()` holds, or fail saying what never happened.
+
+    Tests here drive a real producer thread, which is the point: the contract
+    under test is what happens when frames arrive faster than anyone reads
+    them. What is *not* under test is whether that thread gets scheduled
+    inside some fixed number of milliseconds.
+
+    Sleeping for a duration and assuming a frame count is a bet on the
+    scheduler. It pays off when the file runs alone — twenty consecutive runs,
+    and twenty more under eight busy loops — and occasionally does not when
+    the whole suite shares the process with MediaPipe's Metal and TensorFlow
+    threads. A flaky assertion in a suite whose every ticket is signed off as
+    "green, zero skips" quietly devalues all of them.
+
+    The timeout is deliberately far longer than the wait should ever need. It
+    exists to fail with an explanation rather than to hang, not to encode an
+    expectation about speed.
+    """
     import time
 
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.005)
+    raise AssertionError(f"waited {timeout_s}s for {what}, which never happened")
+
+
+def test_an_unread_camera_keeps_only_the_latest_scene(composer):
+    # A controller wants the world now, not every world it failed to process.
+    # The public contract is a bounded latest value plus an observable drop
+    # count, so the drop count is also what the test waits on: it rises only
+    # when an unread frame is replaced, which is direct evidence that another
+    # frame was produced. No wall-clock duration stands in for that.
     from misty_agent.perception.face import FaceDetector
 
     camera = SyntheticCamera(composer, fps=60, start_distance_cm=120.0)
     camera.start()
     try:
-        time.sleep(0.2)
+        _wait_until(
+            lambda: camera.dropped_frames >= 2,
+            what="the producer to outrun the absent consumer",
+        )
+
         camera.place(70.0)
-        time.sleep(0.2)
+        replaced_before = camera.dropped_frames
+        # Two, not one: the frame being composed when `place` landed may still
+        # show the old scene, so one replacement is not yet proof. After two,
+        # whatever is buffered was composed after the subject moved.
+        _wait_until(
+            lambda: camera.dropped_frames >= replaced_before + 2,
+            what="two frames of the new scene to replace their predecessors",
+        )
+
         depth = camera.backlog
         dropped = camera.dropped_frames
         latest = camera.read(timeout=1.0)
@@ -202,12 +243,15 @@ def test_an_unread_camera_keeps_only_the_latest_scene(composer):
 
 
 def test_flush_discards_what_was_waiting(composer):
-    import time
-
     camera = SyntheticCamera(composer, fps=60)
     camera.start()
     try:
-        time.sleep(0.3)
+        # Waiting for a frame to exist is what makes the flush mean anything:
+        # `depth <= 1` is satisfied by a camera that never produced at all, so
+        # the old `sleep(0.3)` was carrying the whole test.
+        _wait_until(
+            lambda: camera.backlog >= 1, what="a frame to be waiting unread"
+        )
         camera.flush()
         depth = camera.backlog
     finally:

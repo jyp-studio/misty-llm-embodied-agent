@@ -114,6 +114,52 @@ class MovingWorld(RecordingCommands):
         return response
 
 
+class WorldThatLosesTheUserAfterMoving(MovingWorld):
+    """The subject walks out of frame once the robot has moved at least once.
+
+    It mirrors what the production pipeline does rather than a convenient
+    simplification. `DistancePipeline.latest_reading` keeps offering the last
+    reading it computed — with the timestamp that reading already had — until
+    that timestamp ages past `distance_max_age_s`, and only then returns
+    nothing. So the loop is offered a stale reading first, which it must
+    reject on freshness because the move set an invalidation epoch after it,
+    and is offered nothing at all only later.
+
+    The startup counterpart is
+    `test_stale_in_band_readings_end_as_lost_user_without_motion`. This is the
+    same loss one movement later, which is a different path through
+    `_fresh_median`: there is an epoch to filter against rather than an empty
+    history.
+    """
+
+    def __init__(self, clock: FakeClock, *, start_cm: float, config: Settings) -> None:
+        super().__init__(
+            clock,
+            start_cm=start_cm,
+            actual_motion_multiplier=1.0,
+            config=config,
+        )
+        self._max_age_s = config.distance_max_age_s
+        self._last_seen = None
+        #: Drives issued at the moment the subject first stopped being visible.
+        #: The assertion compares against this rather than a literal count, so
+        #: the test says "nothing further was commanded" instead of pinning a
+        #: number to the control law's step sizes — which is what made the old
+        #: runner's `drive calls == 2` brittle.
+        self.drives_when_lost = None
+
+    def latest_reading(self):
+        if not self.directions:
+            self._last_seen = super().latest_reading()
+            return self._last_seen
+        if self.drives_when_lost is None:
+            self.drives_when_lost = len(self.directions)
+        if self._last_seen is None:
+            return None
+        aged_s = self._clock.monotonic() - self._last_seen.frame_arrived_at
+        return None if aged_s > self._max_age_s else self._last_seen
+
+
 class ExplodingRobot(RecordingCommands):
     def drive_time(self, linearVelocity, angularVelocity, timeMs, timeout):
         raise OSError("connection closed")
@@ -243,6 +289,33 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
     assert result.steps == 0
     assert robot.requests == []
     assert clock.monotonic() == 0.05
+
+
+def test_losing_the_user_after_a_move_stops_issuing_drive_commands():
+    """The property the deleted simulation runner's T5 bought.
+
+    Every other `lost_user` test in this file loses the subject before the
+    robot has moved, so the whole post-move path went unasserted — see
+    `docs/measurements/m6-coverage-audit.md`, gap 2. `PLAN.md` §5 defect E is
+    about giving up too early on exactly this path; M5 fixed the startup half.
+
+    The assertion deliberately names no step count. T5 said
+    `drive calls == 2`, which was tied to the old control law's step sizes;
+    the behaviour worth keeping is that nothing further is commanded once the
+    subject is gone, whatever number of steps preceded it.
+    """
+    clock = FakeClock()
+    config = Settings(approach_reading_timeout_s=0.5, post_step_settle_s=0.0)
+    world = WorldThatLosesTheUserAfterMoving(clock, start_cm=140, config=config)
+
+    result = approach(world, world, config=config, clock=clock)
+
+    assert result.status is ApproachStatus.LOST_USER
+    assert result.steps >= 1, "the subject must be lost after moving, not before"
+    assert world.drives_when_lost is not None, "the subject never went missing"
+    assert len(world.directions) == world.drives_when_lost, (
+        "a drive was commanded after the subject was already gone"
+    )
 
 
 def test_two_readings_must_be_fresh_at_the_same_decision_time():

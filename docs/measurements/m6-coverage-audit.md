@@ -4,6 +4,10 @@
 > else in this directory falls out of `python -m harness`; this does not. It is
 > a reading of the test suite as it stood on 2026-08-20, and it goes stale the
 > moment either suite changes.
+>
+> Gaps it recorded are struck through as the tickets close them, with the date,
+> rather than rewritten — the original reading is the evidence for the deletion
+> it justified, and editing that away would leave the deletion unexplained.
 
 ## Why this exists
 
@@ -117,8 +121,8 @@ real detector — that is a Measurement, and it does carry a threshold.
 
 | Check | Verdict | Where it lives now |
 |---|---|---|
-| reports `lost_user` | **gap** | `test_stale_in_band_readings_end_as_lost_user_without_motion` and `test_two_readings_must_be_fresh_at_the_same_decision_time` assert the status, but both from **startup**, both with `steps == 0`. The status being reachable on one path is not the same property as it being reached on the other. |
-| stops immediately after loss (drive calls == 2) | **gap** | nothing exercises loss *after* the robot has already moved |
+| reports `lost_user` | ~~gap~~ **closed by ticket 06** | `test_losing_the_user_after_a_move_stops_issuing_drive_commands`. The two startup tests — `test_stale_in_band_readings_end_as_lost_user_without_motion` and `test_two_readings_must_be_fresh_at_the_same_decision_time` — remain, and still assert the status from the other path. |
+| stops immediately after loss (drive calls == 2) | ~~gap~~ **closed by ticket 06** | same test, asserting that no drive follows the loss rather than pinning a count |
 
 **Gap 2 — found by this audit, not previously known. Both of T5's checks, not
 just the second.** An earlier draft called the first one covered; that was
@@ -133,6 +137,14 @@ path, and the property T5 actually bought — **the loop stops issuing drive
 commands once the user is gone** — is asserted nowhere.
 
 Filled by ticket **06**, added as a consequence of this audit.
+
+**Closed on 2026-08-23, and the gap was demonstrably real.** Mutating the
+`lost_user` return to report `steps=0` instead of the steps actually taken is
+caught by the new test and by **nothing else in the suite** — before it, that
+return had only ever executed with `completed_steps == 0`, so the value it
+carried was never observed. The new test's assertion that no drive follows the
+loss deliberately names no step count, unlike T5's `drive calls == 2`, which
+was tied to the old control law's step sizes.
 
 ### T6 — user too close (40 cm), backs up
 
@@ -202,7 +214,7 @@ silence — a dated audit is a snapshot, and that list is a to-do.
 | Belongs to M7, not rebuilt in this form | 3 |
 | Belongs to M7, rebuild owed | 5 |
 | Gap — one asserted by ticket 05, one reported-only forever | 2 |
-| Gap, filled by ticket 06 | 2 |
+| ~~Gap~~, closed by ticket 06 on 2026-08-23 | 2 |
 | **Total** | **24** |
 
 ## What this audit does not claim

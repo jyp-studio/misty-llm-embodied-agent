@@ -204,7 +204,7 @@ def build_report(
         pipeline=pipeline,
         trajectory=first.trajectory,
         environment=dict(first.environment),
-        claims=_claims(lag, rates, envelope(sweep)),
+        claims=_claims(lag, rates, envelope(sweep), runs),
         runs=tuple(runs),
     )
 
@@ -217,12 +217,18 @@ def _claims(
     lag: LagReport,
     rates: Optional[ThroughputReport],
     limits: RobustnessEnvelope,
+    runs: Sequence["RunFigures"] = (),
 ) -> Tuple[Claim, ...]:
-    lag_figure = (
-        "no measurable lag in this trace"
-        if lag.p95_s is None
-        else f"p95 {lag.p95_s * 1000:.0f}ms"
-    )
+    # The same figure the headline table shows, spread and all. Quoting the
+    # first run's p95 here while the table showed the range across runs left
+    # the document contradicting itself — "43-44 ms" above, "p95 43ms" below.
+    spread = [run.lag_p95_s for run in runs if run.lag_p95_s is not None]
+    if lag.p95_s is None:
+        lag_figure = "no measurable lag in this trace"
+    elif spread:
+        lag_figure = f"p95 {_range([value * 1000 for value in spread], 'ms', 0)}"
+    else:
+        lag_figure = f"p95 {lag.p95_s * 1000:.0f}ms"
     multiplier = (
         limits.outcomes[0].actual_motion_multiplier if limits.outcomes else None
     )
@@ -570,6 +576,12 @@ class NoiseReport:
 
     curve: BoundaryCurve
     seeds: Tuple[int, ...]
+    #: The limits the curve table cannot show by itself. Carried rather than
+    #: inferred, so the document cannot quietly describe a different sweep
+    #: from the one that ran.
+    start_cm: float
+    multiplier: float
+    lag_span: str
 
     def to_text(self) -> str:
         return (
@@ -592,12 +604,20 @@ class NoiseReport:
 
 
 def build_noise_report(
-    curve: BoundaryCurve, *, seeds: Sequence[int] = ()
+    curve: BoundaryCurve,
+    *,
+    start_cm: float = 130.0,
+    multiplier: float = 2.0,
+    lag_span: str = "0.00 to 3.00 in steps of 0.05",
 ) -> NoiseReport:
     """Assemble the document. Pure: a curve in, text out."""
-    if not seeds:
-        seeds = tuple(sorted({seed for row in curve.rows for seed in row.seeds}))
-    return NoiseReport(curve=curve, seeds=tuple(seeds))
+    return NoiseReport(
+        curve=curve,
+        seeds=tuple(sorted({seed for row in curve.rows for seed in row.seeds})),
+        start_cm=start_cm,
+        multiplier=multiplier,
+        lag_span=lag_span,
+    )
 
 
 def _noise_preamble(report: NoiseReport) -> str:
@@ -616,10 +636,16 @@ def _noise_preamble(report: NoiseReport) -> str:
         f"| | |\n"
         f"|---|---|\n"
         f"| Jitter levels swept, px | {jitters} |\n"
+        f"| Transport lag swept, s | {report.lag_span} |\n"
         f"| Noise realisations per point | {len(report.seeds)} "
         f"(seeds {', '.join(str(seed) for seed in report.seeds)}) |\n"
-        f"| Travel multiplier | configured "
-        f"`max_actual_motion_multiplier`, itself UNCALIBRATED |\n"
+        f"| Start distance | {report.start_cm:g} cm — **one**, not a range |\n"
+        f"| Travel multiplier | **{report.multiplier:g}x only** — the "
+        f"configured `max_actual_motion_multiplier`, itself UNCALIBRATED |\n"
+        f"\n"
+        f"The last two rows are limits, not settings. Everything below "
+        f"describes one start distance at one travel multiplier; nothing here "
+        f"licenses reading it as the controller's behaviour in general.\n"
         f"\n"
         f"**This is a parameter sweep, not a measurement.** Every figure below "
         f"answers \"what would happen if the delay and the wobble were X?\" — "
@@ -663,6 +689,23 @@ def _noise_curve_table(report: NoiseReport) -> str:
             f"{'yes' if row.seeds_disagree else 'no'} | {failure} |"
         )
     rows.append("")
+    ragged = [row for row in report.curve.rows if row.convergence_is_not_monotone]
+    if ragged:
+        rows.append(
+            f"⚠️ At {', '.join(f'{row.jitter_px:g}px' for row in ragged)} the "
+            f"sweep converged again at a larger lag than one it had already "
+            f"failed at. The envelope column stops at the first failure "
+            f"regardless, which is the safe reading — but the surface is not a "
+            f"staircase, and no row of it may be inferred from its neighbours."
+        )
+    else:
+        rows.append(
+            "Convergence was monotone in lag at every jitter level: each "
+            "column failed once and stayed failed. That is worth stating "
+            "rather than assuming, because `PLAN.md` §14.8 found the "
+            "neighbouring parameter behaving otherwise."
+        )
+    rows.append("")
     rows.append(f"**Envelope.** {report.curve.summary()}")
     rows.append("")
     return "\n".join(rows)
@@ -687,8 +730,11 @@ def _noise_failure_modes(report: NoiseReport) -> str:
         reversal = (
             f"{reversing} row(s) reversed direction, and **every one of them "
             f"was already failing** on another axis. Reversal is therefore a "
-            f"symptom here rather than a mode of its own. If a converging run "
-            f"ever reverses, this line changes and the finding is new."
+            f"symptom *at this travel multiplier* rather than a mode of its "
+            f"own — and that qualifier is load-bearing: `PLAN.md` §14.8 "
+            f"measured twelve reversing lags at 1.5x travel and none at all "
+            f"at the 2.0x swept here. If a converging run ever reverses, this "
+            f"line changes and the finding is new."
         )
     else:
         reversal = (
@@ -745,10 +791,12 @@ def _noise_limits() -> str:
         "\n"
         "### Two things the grid could hide\n"
         "\n"
-        "**Rows cannot be interpolated.** `PLAN.md` §14.8 measured reversal "
-        "as non-monotone in the travel multiplier: 1.5x reverses where 2.0x, "
-        "the worse case, does not. Nothing licenses reading between two rows "
-        "of this table.\n"
+        "**Rows cannot be interpolated, and neither can the axis this sweep "
+        "holds fixed.** `PLAN.md` §14.8 measured reversal as non-monotone in "
+        "the travel multiplier: 1.5x reverses where 2.0x does not. A smaller "
+        "multiplier is *not* a milder case, so the single multiplier swept "
+        "here cannot stand in for the ones either side of it, and nothing "
+        "licenses reading between two rows of this table.\n"
         "\n"
         "**Failure bands can be narrower than they look.** The same section "
         "found one 0.55s wide. This sweep steps the lag axis at 0.05s, which "

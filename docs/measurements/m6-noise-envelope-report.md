@@ -7,8 +7,12 @@ Both axes swept here are **UNCALIBRATED**. `sensor_transport_lag_s` has never be
 | | |
 |---|---|
 | Jitter levels swept, px | 0, 1, 2, 4, 8, 16 |
+| Transport lag swept, s | 0.00 to 3.00 in steps of 0.05 |
 | Noise realisations per point | 5 (seeds 0, 1, 2, 3, 4) |
-| Travel multiplier | configured `max_actual_motion_multiplier`, itself UNCALIBRATED |
+| Start distance | 130 cm — **one**, not a range |
+| Travel multiplier | **2x only** — the configured `max_actual_motion_multiplier`, itself UNCALIBRATED |
+
+The last two rows are limits, not settings. Everything below describes one start distance at one travel multiplier; nothing here licenses reading it as the controller's behaviour in general.
 
 **This is a parameter sweep, not a measurement.** Every figure below answers "what would happen if the delay and the wobble were X?" — and neither X has ever been observed.
 
@@ -27,6 +31,8 @@ One line per jitter level, not one per grid point. Two dimensions is the shape o
 | 8 px | **0.65s** | 0.70s | yes | 0.70s (safety_floor_breach) |
 | 16 px | **0.60s** | 0.70s | yes | 0.65s (safety_floor_breach) |
 
+Convergence was monotone in lag at every jitter level: each column failed once and stayed failed. That is worth stating rather than assuming, because `PLAN.md` §14.8 found the neighbouring parameter behaving otherwise.
+
 **Envelope.** across 16px of detector wobble the transport-lag envelope moves between 0.60s and 0.65s, against 0.65s with no wobble at all — a spread of 1 grid step (located to ±0.05s by the lag grid, the jitter grid's widest step being 8px) [parameter sweep, NOT a measurement — both sensor_transport_lag_s and detector jitter are UNCALIBRATED and neither can be measured without hardware]
 
 ## The three failure modes, counted apart
@@ -41,7 +47,7 @@ They are not the same event and each can hide the others. M6 #04 found the worst
 | Did not converge | 1401 of 1830 | — |
 | Reversed direction | 62 of 1830 | **0** |
 
-62 row(s) reversed direction, and **every one of them was already failing** on another axis. Reversal is therefore a symptom here rather than a mode of its own. If a converging run ever reverses, this line changes and the finding is new.
+62 row(s) reversed direction, and **every one of them was already failing** on another axis. Reversal is therefore a symptom *at this travel multiplier* rather than a mode of its own — and that qualifier is load-bearing: `PLAN.md` §14.8 measured twelve reversing lags at 1.5x travel and none at all at the 2.0x swept here. If a converging run ever reverses, this line changes and the finding is new.
 
 ## What this does and does not establish
 
@@ -53,7 +59,7 @@ They are not the same event and each can hide the others. M6 #04 found the worst
 
 ### Two things the grid could hide
 
-**Rows cannot be interpolated.** `PLAN.md` §14.8 measured reversal as non-monotone in the travel multiplier: 1.5x reverses where 2.0x, the worse case, does not. Nothing licenses reading between two rows of this table.
+**Rows cannot be interpolated, and neither can the axis this sweep holds fixed.** `PLAN.md` §14.8 measured reversal as non-monotone in the travel multiplier: 1.5x reverses where 2.0x does not. A smaller multiplier is *not* a milder case, so the single multiplier swept here cannot stand in for the ones either side of it, and nothing licenses reading between two rows of this table.
 
 **Failure bands can be narrower than they look.** The same section found one 0.55s wide. This sweep steps the lag axis at 0.05s, which resolves that; a coarser grid would step over it and report the next failure as the first, which is exactly what M4 #08 did once.
 

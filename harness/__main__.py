@@ -115,10 +115,14 @@ def main(argv: list[str] | None = None) -> int:
     from harness.replay import default_replay
     from harness.report import build_noise_report, build_report
     from harness.robustness import (
+        DEFAULT_SWEEP_START_CM,
         boundary_curve,
+        default_sweep_lags,
+        describe_lags,
         sweep_lag_and_jitter,
         sweep_transport_lag,
     )
+    from misty_agent.config import settings as live_settings
 
     portrait = cv2.imread(str(args.portrait))
     if portrait is None:
@@ -136,7 +140,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print("sweeping transport lag against detector jitter...", file=sys.stderr)
-    noise = build_noise_report(boundary_curve(sweep_lag_and_jitter()))
+    noise = build_noise_report(
+        boundary_curve(sweep_lag_and_jitter()),
+        start_cm=DEFAULT_SWEEP_START_CM,
+        multiplier=live_settings.max_actual_motion_multiplier,
+        lag_span=describe_lags(default_sweep_lags()),
+    )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report.to_markdown())

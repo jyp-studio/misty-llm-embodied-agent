@@ -176,3 +176,65 @@ def test_the_report_does_not_print_a_measured_looking_zero_for_the_impossible():
 
     assert "none possible" in markdown
     assert "by definition" in markdown
+
+
+def test_the_report_shows_the_limits_the_curve_table_cannot():
+    """One start distance and one travel multiplier are limits, not settings.
+
+    A reader of the curve alone could take the envelope for the controller's
+    behaviour in general. `PLAN.md` §14.8 makes that reading unsafe in the
+    multiplier axis specifically.
+    """
+    markdown = build_noise_report(a_curve()).to_markdown()
+
+    assert "Start distance" in markdown
+    assert "one**, not a range" in markdown
+    assert "x only" in markdown
+    assert "limits, not settings" in markdown
+
+
+def test_the_report_does_not_call_the_swept_multiplier_the_worse_case():
+    """`PLAN.md` §14.8 measured the opposite, and the report used to say it.
+
+    1.5x reverses where 2.0x does not, so a smaller multiplier is not a
+    milder case and the swept one cannot stand in for its neighbours.
+    """
+    markdown = build_noise_report(a_curve()).to_markdown()
+
+    assert "the worse case" not in markdown
+    assert "not* a milder case" in markdown
+
+
+def test_the_report_states_whether_convergence_was_monotone():
+    markdown = build_noise_report(a_curve()).to_markdown()
+
+    assert "monotone" in markdown
+
+
+def test_the_report_flags_a_ragged_column_rather_than_smoothing_it():
+    curve = boundary_curve(
+        [
+            _row(lag_s=0.10, jitter_px=2.0),
+            _row(lag_s=0.20, jitter_px=2.0, converged=False),
+            _row(lag_s=0.30, jitter_px=2.0),
+        ]
+    )
+
+    markdown = build_noise_report(curve).to_markdown()
+
+    assert "not a staircase" in markdown
+    assert "⚠️" in markdown
+
+
+def test_one_invocation_writes_both_documents_to_distinct_paths():
+    """M4 #09's lesson: nobody should hold half of one run and half of another.
+
+    The two reports are separate files — PLAN.md §13.3's reasoning, that a
+    report replacing its predecessor destroys the before-state its successor
+    is measured against — but they are produced together.
+    """
+    from harness.__main__ import DEFAULT_NOISE_OUTPUT, DEFAULT_OUTPUT
+
+    assert DEFAULT_NOISE_OUTPUT != DEFAULT_OUTPUT
+    assert DEFAULT_NOISE_OUTPUT.parent == DEFAULT_OUTPUT.parent
+    assert DEFAULT_NOISE_OUTPUT.suffix == ".md"

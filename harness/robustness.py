@@ -613,19 +613,37 @@ DEFAULT_SWEEP_JITTERS_PX = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
 #: published as one.
 DEFAULT_SWEEP_SEEDS = (0, 1, 2, 3, 4)
 
+#: The one start distance the published sweep runs from. Named rather than
+#: left as a default argument so the report can state it as a limit instead of
+#: restating a number that could drift away from the sweep.
+DEFAULT_SWEEP_START_CM = 130.0
+
+
+def describe_lags(lags_s: Sequence[float]) -> str:
+    """How the lag axis was covered, for a reader of the report."""
+    ordered = sorted(lags_s)
+    step = _step(ordered)
+    span = f"{ordered[0]:.2f} to {ordered[-1]:.2f}"
+    return span if step is None else f"{span} in steps of {step:.2f}"
+
 
 def sweep_lag_and_jitter(
     *,
     jitters_px: Sequence[float] = DEFAULT_SWEEP_JITTERS_PX,
     lags_s: Optional[Sequence[float]] = None,
     seeds: Sequence[int] = DEFAULT_SWEEP_SEEDS,
+    start_cm: float = DEFAULT_SWEEP_START_CM,
     **kwargs,
 ) -> Tuple[ApproachOutcome, ...]:
     """One approach per (lag, jitter, seed). Every row carries its coordinates."""
     lags = default_sweep_lags() if lags_s is None else lags_s
     return tuple(
         simulate_approach(
-            transport_lag_s=lag_s, jitter_px=jitter_px, seed=seed, **kwargs
+            transport_lag_s=lag_s,
+            jitter_px=jitter_px,
+            seed=seed,
+            start_cm=start_cm,
+            **kwargs,
         )
         for jitter_px in jitters_px
         for seed in seeds
@@ -644,9 +662,15 @@ class JitterRow:
     #: swept far past the boundary, so most rows failing is the shape of the
     #: experiment rather than a finding.
     rows_swept: int
-    #: The largest lag at which **every** seed still converged. The pessimistic
-    #: reading is the honest one for an envelope: a controller is only as
-    #: robust as its unlucky draw.
+    #: The largest lag such that **no seed failed at it or at any smaller
+    #: swept lag**. The pessimistic reading is the honest one for an envelope:
+    #: a controller is only as robust as its unlucky draw.
+    #:
+    #: Defined as a prefix rather than as "the largest lag some seed reached",
+    #: because convergence is not guaranteed monotone in lag — PLAN.md §14.8
+    #: measured non-monotonicity in the neighbouring parameter. Taking each
+    #: seed's furthest success would report an envelope containing lags that
+    #: seed failed at.
     largest_converging_lag_s: Optional[float]
     #: The luckiest seed's answer, kept so the spread is visible rather than
     #: averaged away.
@@ -660,6 +684,10 @@ class JitterRow:
     floor_breaching_rows: int
     non_converging_rows: int
     reversing_rows: int
+    #: True when some seed failed at one lag and converged again at a larger
+    #: one. The envelope above stops at the first failure regardless, but a
+    #: reader deserves to know the surface is not a simple staircase.
+    convergence_is_not_monotone: bool
     #: Reversals among runs that still converged. So far always zero, which is
     #: what makes reversal a symptom of an already-failing run rather than a
     #: mode of its own. If it ever stops being zero the report has to say so.
@@ -693,15 +721,29 @@ class BoundaryCurve:
         if not known:
             head = "no swept jitter level converged at any lag"
         else:
-            baseline = known[0]
             lo = min(row.largest_converging_lag_s for row in known)
             hi = max(row.largest_converging_lag_s for row in known)
             head = (
                 f"across {self.rows[-1].jitter_px:.0f}px of detector wobble the "
-                f"transport-lag envelope moves between {lo:.2f}s and {hi:.2f}s, "
-                f"against {baseline.largest_converging_lag_s:.2f}s with no "
-                f"wobble at all"
+                f"transport-lag envelope moves between {lo:.2f}s and {hi:.2f}s"
             )
+            # The comparison is only worth making against the row that
+            # actually had no wobble. Taking the first converging row instead
+            # silently compares against 4px when 0px converged nowhere, or
+            # against whatever the smallest swept level happened to be.
+            quiet_rows = [
+                row
+                for row in self.rows
+                if row.jitter_px == 0.0
+                and row.largest_converging_lag_s is not None
+            ]
+            if quiet_rows:
+                head += (
+                    f", against {quiet_rows[0].largest_converging_lag_s:.2f}s "
+                    f"with no wobble at all"
+                )
+            else:
+                head += " (no zero-jitter row converged, so there is nothing to compare against)"
             if self.lag_resolution_s is not None:
                 steps = round((hi - lo) / self.lag_resolution_s)
                 head += (
@@ -744,14 +786,39 @@ def boundary_curve(outcomes: Sequence[ApproachOutcome]) -> BoundaryCurve:
         at_jitter = by_jitter[jitter_px]
         seeds = tuple(sorted({outcome.seed for outcome in at_jitter}))
 
+        lags = sorted({outcome.transport_lag_s for outcome in at_jitter})
+        failed_at = {
+            outcome.transport_lag_s
+            for outcome in at_jitter
+            if not outcome.converged
+        }
+
+        # The envelope is a prefix: walk out from the smallest swept lag and
+        # stop at the first one any seed failed at.
+        prefix: Optional[float] = None
+        for lag_s in lags:
+            if lag_s in failed_at:
+                break
+            prefix = lag_s
+        non_monotone = any(
+            lag_s not in failed_at
+            for lag_s in lags
+            if failed_at and lag_s > min(failed_at)
+        )
+
         per_seed = []
         for seed in seeds:
-            converging = [
+            seed_failures = {
                 outcome.transport_lag_s
                 for outcome in at_jitter
-                if outcome.seed == seed and outcome.converged
-            ]
-            per_seed.append(max(converging) if converging else None)
+                if outcome.seed == seed and not outcome.converged
+            }
+            best: Optional[float] = None
+            for lag_s in lags:
+                if lag_s in seed_failures:
+                    break
+                best = lag_s
+            per_seed.append(best)
 
         failing = sorted(
             (outcome for outcome in at_jitter if not outcome.converged),
@@ -763,9 +830,8 @@ def boundary_curve(outcomes: Sequence[ApproachOutcome]) -> BoundaryCurve:
                 jitter_px=jitter_px,
                 seeds=seeds,
                 rows_swept=len(at_jitter),
-                largest_converging_lag_s=(
-                    min(per_seed) if per_seed and None not in per_seed else None
-                ),
+                largest_converging_lag_s=prefix,
+                convergence_is_not_monotone=non_monotone,
                 best_case_lag_s=max(known) if known else None,
                 first_failing_lag_s=(
                     failing[0].transport_lag_s if failing else None

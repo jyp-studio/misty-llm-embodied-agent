@@ -27,6 +27,7 @@ from harness.robustness import (
     boundary_curve,
     envelope,
     simulate_approach,
+    sweep_lag_and_jitter,
     sweep_transport_lag,
 )
 from misty_agent.config import Settings
@@ -1217,3 +1218,102 @@ def test_the_curve_says_it_is_a_sweep_and_not_a_measurement():
 def test_the_curve_refuses_to_be_built_from_nothing():
     with pytest.raises(ValueError):
         boundary_curve([])
+
+
+def test_the_resolution_reported_is_the_coarsest_gap_not_the_finest():
+    """The published jitter grid is not uniform, and this is what says so.
+
+    Levels step 0, 1, 2, 4, 8, 16 — gaps of 1, 1, 2, 4, 8. A curve that
+    reported the *finest* gap would claim the boundary was located to ±1px
+    when the widest hole in the grid is eight times that. Every other test
+    here uses a uniform grid and so cannot tell the two apart; without this
+    one, swapping `max` for `min` passes the whole suite.
+    """
+    rows = [
+        _row(lag_s=lag, jitter_px=jitter)
+        for jitter in (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
+        for lag in (0.0, 0.05, 0.20)
+    ]
+
+    curve = boundary_curve(rows)
+
+    assert curve.jitter_resolution_px == pytest.approx(8.0)
+    assert curve.lag_resolution_s == pytest.approx(0.15)
+
+
+def test_the_envelope_stops_at_the_first_failure_not_the_furthest_success():
+    """Convergence is not promised to be monotone in lag.
+
+    PLAN.md §14.8 measured non-monotonicity in the neighbouring parameter, and
+    the report says in as many words that rows cannot be interpolated. A curve
+    that took each seed's furthest success would publish an envelope
+    containing a lag that seed failed at.
+    """
+    rows = [
+        _row(lag_s=0.10, jitter_px=2.0),
+        _row(lag_s=0.20, jitter_px=2.0, converged=False),
+        _row(lag_s=0.30, jitter_px=2.0),
+    ]
+
+    row = boundary_curve(rows).rows[0]
+
+    assert row.largest_converging_lag_s == 0.10
+    assert row.convergence_is_not_monotone
+
+
+def test_a_plain_staircase_is_not_reported_as_non_monotone():
+    rows = [
+        _row(lag_s=0.10, jitter_px=2.0),
+        _row(lag_s=0.20, jitter_px=2.0, converged=False),
+        _row(lag_s=0.30, jitter_px=2.0, converged=False),
+    ]
+
+    assert not boundary_curve(rows).rows[0].convergence_is_not_monotone
+
+
+def test_the_summary_compares_against_the_row_that_had_no_wobble():
+    """Not against whichever row converged first.
+
+    With the zero-jitter row failing everywhere, an earlier version printed
+    the 4px figure and labelled it "with no wobble at all".
+    """
+    rows = [
+        _row(lag_s=lag, jitter_px=0.0, converged=False)
+        for lag in (0.0, 0.05)
+    ] + [_row(lag_s=lag, jitter_px=4.0) for lag in (0.0, 0.05)]
+
+    summary = boundary_curve(rows).summary()
+
+    assert "with no wobble at all" not in summary
+    assert "nothing to compare against" in summary
+
+
+def test_the_two_dimensional_sweep_visits_every_grid_point():
+    jitters = (0.0, 3.0)
+    lags = (0.0, 0.1)
+    seeds = (0, 1)
+
+    outcomes = sweep_lag_and_jitter(
+        jitters_px=jitters, lags_s=lags, seeds=seeds
+    )
+
+    assert len(outcomes) == len(jitters) * len(lags) * len(seeds)
+    assert {
+        (o.jitter_px, o.transport_lag_s, o.seed) for o in outcomes
+    } == {(j, l, s) for j in jitters for l in lags for s in seeds}
+
+
+def test_the_step_cap_holds_at_every_swept_jitter():
+    """The termination guarantee, across the second dimension.
+
+    PLAN.md §4 calls bounded termination the system's strongest property. The
+    acceptance criterion for this sweep names it, and single-point checks at
+    one jitter level do not cover a grid.
+    """
+    for outcome in sweep_lag_and_jitter(
+        jitters_px=(0.0, 4.0, 16.0), lags_s=(0.0, 0.5, 1.5), seeds=(0, 1)
+    ):
+        assert outcome.steps <= SETTINGS.max_approach_steps, (
+            f"step cap exceeded at {outcome.jitter_px}px, "
+            f"{outcome.transport_lag_s}s"
+        )

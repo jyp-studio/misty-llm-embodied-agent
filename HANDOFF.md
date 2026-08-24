@@ -1,7 +1,7 @@
 # HANDOFF — 交接給下一個對話
 
 > 讀完這份就能接手，不需要前文脈絡。
-> 最後更新：2026-08-20 · 分支 `refactor/react-agent` · **M5 完成，M6 已定案待實作**
+> 最後更新：2026-08-24 · 分支 `refactor/react-agent` · **M6 完成，下一站 M7**
 
 ---
 
@@ -11,8 +11,8 @@
 
 **先讀 [`PLAN.md`](PLAN.md)** —— 那是完整規格與決策紀錄，本文件只補「現在走到哪、接下來做什麼、有哪些坑」。
 
-進度：**M0–M5 完成。下一站 M6：測試套件收斂。** M0–M10 的定義在 `PLAN.md` §7；
-M6/M7 已於 2026-08-20 重整，見 `PLAN.md` §14。詞彙表在 `CONTEXT.md`。
+進度：**M0–M6 完成。下一站 M7：ReAct + Journal。** M0–M10 的定義在 `PLAN.md` §7；
+M6/M7 已於 2026-08-20 重整（事件流移入 M7），見 `PLAN.md` §14。詞彙表在 `CONTEXT.md`。
 
 ```bash
 cd /Users/jyp/dev/misty-embodied-agent
@@ -57,7 +57,20 @@ cd /Users/jyp/dev/misty-embodied-agent
 | M4 #10 | `5005462` | 凝視判斷的陰性對照 fixture |
 | M5 #01 | `dc785ca` | latest-value production distance pipeline + 可判定 freshness 的讀數 |
 | M5 #02 | `e773f73` | public bounded `approach()` + post-move fresh readings |
-| M5 #03 | 本次提交 | 2× 條件式安全、對稱 bounded step、public-approach sweep、M5 證據 |
+| M5 #03 | `c03005e` | 2× 條件式安全、對稱 bounded step、public-approach sweep、M5 證據 |
+| — | `39a68ff` | **M6/M7 重整**：事件流移入 M7；建 `CONTEXT.md`（`PLAN.md` §14.1） |
+| M6 #01 | `a5c0ca4` `ac22bbb` | 覆蓋盤點：舊 runner 24 個 check 逐項定位；解開 28 vs 24 之謎 |
+| M6 #02 | `3a2ea09` `25ae831` | 刪除 `test_sim.py` 與其全部指涉；§14.6 記 M7 重建清單 |
+| M6 #03 | `777a603` `ae22b96` | 距離相依噪音模型（參數是 δ_px 不是公分）+ 對真實偵測器的交叉檢查 |
+| M6 #04 | `f1a89f5` `50b7a23` | 方向反轉計數，並先證明數得到 |
+| M6 #06 | `54d3002` `96a11f8` | 移動之後才失去使用者（盤點挖出的缺口） |
+| M6 #07 | `685f2c3` `d107f56` | 把盤點的推論換成斷言；起點掃描改 1cm 步進 |
+| M6 #08 | `e47706a` `d2fa498` | 相機測試不再賭排程器；順手修掉一條靜默假通過 |
+| M6 #05 | `26d877b` `d9c2d37` | 二維掃描（lag × δ_px × seed）與邊界曲線報告 |
+
+**每張票兩支 commit**：實作一支、依兩軸 `/code-review` 修正一支。第二支不是形式 ——
+review 在 #04 找到四個存活的 mutation、在 #05 找到一個完全沒有測試守著的函式、
+在 #08 找到一條比原本要修的更嚴重的靜默假通過。
 
 **M4 歷史基準**（pre-rewrite，不要當成 M5 現況）：
 
@@ -66,6 +79,15 @@ cd /Users/jyp/dev/misty-embodied-agent
 | 讀數延遲 p95 | **43ms**，物理下限 38ms（影格週期 33 + 偵測 5），比值 1.11 |
 | 佇列翻轉點 | 約 270fps——消費者慢 6 倍以上才會開始積 |
 | 舊控制律魯棒邊界 | 1× 完美驅動下收斂到 **1.55s**；1.60s 超衝；1.75s 撞線 |
+
+**M6 正式證據**（`docs/measurements/m6-noise-envelope-report.md`，**逐字元決定性**）：
+
+| | |
+|---|---|
+| 主結果 | **16px 偵測抖動只把 transport-lag envelope 從 0.65s 推到 0.60s——一個網格步** |
+| 掃描規模 | 61 lag × 6 抖動 × 5 seed ＝ 1830 個網格點；報告只有六行曲線 |
+| 反轉 | 1830 列裡 62 列有反轉，**沒有一列同時是收斂的**——此範圍內是症狀不是獨立模式 |
+| 證據邊界 | 單一起點（130cm）、單一倍率（2.0×）；δ_px 與 lag 皆 UNCALIBRATED；從未跑真機 |
 
 **M5 正式證據**（`docs/measurements/m5-approach-report.md`）：
 
@@ -105,11 +127,11 @@ harness/                       # M4：量測台
 ├── replay.py                  # 錄製 + DistancePipeline（被測物是參數）
 ├── latency.py                 # 延遲估計（反演 + 互相關）與上界
 ├── diagnostics.py             # 緩衝深度、幀齡（診斷，不掛門檻）
-├── robustness.py              # fake world 經 public approach() 掃 transport lag
-├── report.py                  # 組報告（純函式）
-└── __main__.py                # python -m harness
+├── robustness.py              # fake world 經 public approach() 掃 lag × δ_px × seed
+├── report.py                  # 組兩份報告（純函式：列進、文字出）
+└── __main__.py                # python -m harness —— 一次產出 M5 與 M6 兩份
 docs/measurements/             # M4 歷史基準 + M5/M6 正式證據 + M6 覆蓋盤點，產物納入版控
-tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip
+tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip（329 passed）
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
 test_llm_live.py               # M7 加 marker 與斷言，改斷言 Journal 不變量
 legacy/                        # 舊素材，已從版控移除（.gitignore）
@@ -117,35 +139,65 @@ legacy/                        # 舊素材，已從版控移除（.gitignore）
 
 ---
 
-## 3. 下一步：M6 測試套件收斂
+## 3. 下一步：M7 ReAct + Journal
 
-M5 已把 ReAct 最需要的 deterministic backend 做完：未來 LLM 只需呼叫 public
-`approach()`，取得結構化結果，不碰 velocity、`timeMs`、freshness epoch 或控制參數。
+M5 交付了可信的 `approach()` 後端，M6 把測試套件收斂到「每一項覆蓋都有出處、沒有重複、
+沒有已知缺口」。M7 是這個專案的主菜：LLM 決策迴圈本身。
 
-⚠️ **M6 的內容在 2026-08-20 換掉了。** 事件流（現稱 **Journal**）已移入 M7，因為它唯一
-真實的生產者是 `react.py`。完整理由在 `PLAN.md` §14.1。
+### 順序是硬的，不是建議
 
-M6 的範圍是三件事，spec 在 `.scratch/m6-test-suite-consolidation/spec.md`：
+`PLAN.md` §14.1 已經把 M7 的 ticket 順序寫死：
 
-1. ~~覆蓋盤點~~ ✅ `a5c0ca4` + `ac22bbb` → `docs/measurements/m6-coverage-audit.md`
-2. ~~刪掉整個舊 runner~~ ✅ 本次提交（不遷移；T8/T9 測的是 M7 會用 function calling 取代的東西）
-3. 距離相依的噪音 Sweep —— 參數是 δ_px 不是公分，二維掃 lag × δ_px，只報告邊界曲線
+```
+spec  →  journal schema + golden files（先 commit）  →  tools / react
+```
 
-盤點過程另外挖出兩張票：**06**（移動之後才失去使用者，零覆蓋）與 **07**（把盤點裡兩處
-論證換成直接斷言）。**frontier 現在是 03、04、06、07 四張，可平行。**
+**Journal 是 M7 測試的斷言標的。** 如果它跟 `react.py` 在同一批工作裡長出來，斷言的詞彙
+就會被實作反向塑形 —— 你會寫出「剛好會過」的測試。保住這個性質的不是里程碑邊界，是里程碑
+**內部**的 ticket 順序，而這個 repo 的 commit 粒度本來就是 per-ticket，所以 git 歷史看得到。
+**這句話必須進 M7 的 spec**，否則下一個 session 會直覺先寫 `react.py`。
 
-**M6 不開始 Journal、tool registry、LLM orchestration、Audio 或 Docker。**
+schema 要**從 spec 推導，不從 `react.py` 推導**。
 
-順序是 spec 的一部分：**盤點先於刪除，刪除先於新測試**，這樣 git 歷史本身就證明覆蓋主張
-不是事後補的。下一步是 `/to-tickets`。
+### M7 欠的兩筆帳
 
-`full_robot_v3.py` 繼續是**唯讀參考**，M6 只刪它的測試不刪它本身。LLM prompt 與 memory
-folding 等 M7 搬出後再刪。
+`PLAN.md` §14.6 記著 M6 刪除舊 runner 時帶走、而 M7 必須重建的覆蓋：
+
+1. **Memory 折疊與持久化**（舊 T9 五條檢查）—— memory 搬出舊主腳本時要一起長出來
+2. **工具參數的合法性檢查**（舊 T8 倖存的那半）—— function calling 讓「消毒 malformed
+   JSON」消失，但「超範圍或未知的參數要被拒絕，而不是送到機器人」仍然成立
+
+這兩條在 M7 完成前**沒有可執行覆蓋**，是刻意接受的空窗。
+
+### 建議的開場
+
+先 `/grill-with-docs` 壓 M7 的邊界（Journal 的 schema、tool 集的分層、step cap 的
+observability），再 `/to-spec` → `/to-tickets`。`PLAN.md` §4 已有 ReAct 的設計定案
+（function calling、12 個工具、註冊表、`MAX_REACT_STEPS = 5`、分層開放原則），grill 的
+重點應該是**還沒定案的部分**：Journal 的欄位、TTS 抑制窗怎麼觀測、以及 `test_llm_live.py`
+怎麼從「印出來給人看」變成「斷言 Journal 上的不變量」。
+
+`full_robot_v3.py` 繼續是**唯讀參考**。prompt 與 memory 搬出後才刪 —— 那是 M7 的最後一步，
+不是第一步。
+
+### M6 留給 M7 的五條實測約束
+
+做 Journal 與 ReAct 時這些仍然成立（全部在 `PLAN.md` §14.8–§14.10）：
+
+- **反轉對行走倍率非單調** —— 1.5× 會反轉而 2.0× 不會。不能假設「更溫和的參數 = 更溫和的案例」
+- **失敗帶可能只有 0.55 秒寬** —— 粗網格會整段跨過去
+- **抵達帶遠端有週期性量化假象** —— public `arrived` 與真值在零 lag 下就會分家 0.04–0.28cm，
+  方向遠離人。**不是安全失敗，但也不能藏**
+- **偵測器有記憶** —— 孤立影格與連續序列給出不同結果（§14.7）。任何新的感知測試都要餵連續輸入
+- **configured 倍率下反轉可能整片是零** —— 空欄位要讀成 silence 不是 pass
 
 ```bash
-.venv/bin/python -m harness              # 重產 m5-approach-report.md 與 m6-noise-envelope-report.md
-.venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
+.venv/bin/python -m pytest tests/ -q -rs # 必須零 skip（現為 329 passed）
+.venv/bin/python -m harness              # 重產 M5 與 M6 兩份報告
 ```
+
+⚠️ 跑 `python -m harness` 前先看一下 `uptime`。M5 那份是**即時量測**，機器忙的時候 p95 會
+從 43ms 跳到 65ms（`PLAN.md` §14.11 記過一次）。M6 那份是純模擬，逐字元決定性，不受影響。
 
 ---
 
@@ -154,9 +206,11 @@ folding 等 M7 搬出後再刪。
 ### 一定要知道的
 
 - **`git commit` 送的是整個索引**，不是你剛 `git add` 的東西。M0 第一次 commit 就因為索引裡有先前 staged 的刪除，把 34,837 行刪除混進一支「新增 PLAN.md」的 commit。**每次 commit 前先 `git diff --cached --stat` 確認。**
-- 工作樹有四筆不屬於 M5 #03 的既有修改：`.env.example`、`architecture.svg`、
-  `docs/measurements/m4-harness-report.md`、`tests/conftest.py`。全部保留，提交時用明確檔案清單
-  stage；不要用 `git add -A`。
+- 工作樹有四筆**不屬於任何里程碑**的既有修改：`.env.example`、`architecture.svg`、
+  `docs/measurements/m4-harness-report.md`、`tests/conftest.py`。它們活過了整個 M6，
+  請繼續保留。提交時用明確檔案清單 stage；不要用 `git add -A`。
+  **也不要用目錄**：M6 #05 差點用 `git add docs/measurements/` 把 `m4-harness-report.md`
+  掃進去，是靠 commit 前的 `git diff --cached --stat` 才發現。那一步不是形式。
 - **備份在 `~/dev/misty-embodied-agent.backup`**（含原始 `HANDOFF.md`）。`main` 分支未動。
 
 ### 環境
@@ -231,15 +285,27 @@ guarantee 只存在於明示的模擬前提，不能寫成「真機安全」。
 ## 7. 建議下一個對話的開場
 
 ```
-讀 PLAN.md（特別是 §4、§7、§13）與 HANDOFF.md，grill M6 event stream 的邊界
+讀 PLAN.md（特別是 §4、§7、§14）與 HANDOFF.md，grill M7 的 Journal schema 與 tool 邊界
 ```
 
-M5 各 ticket 已跑 Standards + Spec 雙軸 review。較廣的**正確性軸**（失敗情境、崩潰、
-thread/socket 邏輯）仍可在進 M7 前另做一次，不與 ticket review 混為一談。
+M6 每張票都跑過 Standards + Spec 雙軸 review，而且**兩軸要序列跑或各自開隔離 worktree**
+（見 §4：平行跑會互相看到對方注入的 mutation）。
+
+較廣的**正確性軸**（失敗情境、崩潰、thread/socket 邏輯）從 M5 起就一直沒做，進 M7 前值得
+另做一次，不與 ticket review 混為一談：
 
 ```bash
 /code-review
 ```
+
+### M6 的做法裡值得沿用的
+
+- **每張票兩支 commit**：實作一支、依 review 修正一支。第二支不是形式 —— M6 期間 review
+  在四張票上找到「測試不可能失敗」的問題。
+- **自己先做 mutation testing 再宣稱測試有效。** 而且要在**隔離 worktree** 裡做。
+  「測試全綠」不等於「測試有牙齒」，M6 #04 與 #05 各有一次是靠 mutation 才發現覆蓋是空的。
+- **推翻 ticket 自己的前提時，把被推翻的預測釘成回歸測試。** M6 #04 的
+  `test_lag_alone_does_not_make_the_controller_reverse` 就是這樣來的。
 
 ### 可用的 skills
 
@@ -247,8 +313,8 @@ thread/socket 邏輯）仍可在進 M7 前另做一次，不與 ticket review �
 
 | skill | 何時用 |
 |---|---|
-| `grill-with-docs` | 對照 PLAN/HANDOFF 壓 M6 的 schema 與 scope |
-| `to-spec` / `to-tickets` | grill 後把 M6 定案並拆票 |
-| `tdd` / `implement` | 逐 ticket 由 event-stream public behavior 開始 |
-| `codebase-design` | 決定 EventBus seam 與 subscriber 邊界 |
-| `code-review` | 每個里程碑後（Standards + Spec 兩軸） |
+| `grill-with-docs` | 對照 PLAN/HANDOFF 壓 M7 的 Journal schema 與 tool 邊界 |
+| `to-spec` / `to-tickets` | grill 後把 M7 定案並拆票（順序見 §3，是硬的） |
+| `tdd` / `implement` | 逐 ticket；Journal 由 golden files 先行 |
+| `codebase-design` | 決定 Journal 的 seam 與 subscriber 邊界 |
+| `code-review` | 每張票後（Standards + Spec 兩軸，序列跑） |

@@ -59,7 +59,7 @@ import random
 from bisect import bisect_right
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import List, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from misty_agent.config import Settings, settings as default_settings
 from misty_agent.control.approach import approach
@@ -227,6 +227,12 @@ class ApproachOutcome:
     #: A clean count is also not a safety result. The worst floor breach in
     #: that table reverses zero times and reports `arrived`.
     direction_reversals: int = 0
+    #: Which point of the two-dimensional sweep this row is. Carried on the
+    #: outcome so that everything downstream — grouping, aggregating,
+    #: rendering — is a pure function of the rows, testable in milliseconds
+    #: without running a simulation, let alone a camera.
+    jitter_px: float = 0.0
+    seed: int = 0
 
     @property
     def inside_safety_floor(self) -> bool:
@@ -445,6 +451,8 @@ def simulate_approach(
         settings=cfg,
         actual_motion_multiplier=actual_multiplier,
         direction_reversals=world.direction_reversals,
+        jitter_px=jitter_px,
+        seed=seed,
     )
 
 
@@ -572,3 +580,226 @@ def envelope(outcomes: Sequence[ApproachOutcome]) -> RobustnessEnvelope:
 def _failure_mode(outcome: ApproachOutcome) -> str:
     """What went wrong according to simulator truth, never raw status alone."""
     return outcome.audited_outcome
+
+
+# ---------------------------------------------------------------------------
+# The second dimension
+#
+# Two unknowns, not one. Transport lag makes the controller act on old data —
+# a systematic error. Jitter makes it act on wrong data — a zero-mean one the
+# median mostly absorbs. Sweeping only the second, with lag pinned at zero,
+# would miss the combination that matters: lag has already carried the robot
+# too close when a reading that reads *further* than the truth calls for one
+# more step forward.
+#
+# Two dimensions is the shape of the experiment. It is emphatically not the
+# shape of the report — see `boundary_curve`.
+# ---------------------------------------------------------------------------
+
+#: Detector wobble the published sweep covers, in pixels of apparent face
+#: width. Geometric rather than linear because the interesting question is an
+#: order of magnitude, not a decimal place: under the default calibration one
+#: pixel is 0.2 cm at the safety floor and 4.1 cm at 200 cm, so 16 px is
+#: already far past anything a working detector would produce.
+#:
+#: UNCALIBRATED, exactly as `sensor_transport_lag_s` is. Sweeping it says how
+#: much wobble the controller could absorb. It says nothing about how much
+#: there is, and there is no way to find out without a robot and a real scene.
+DEFAULT_SWEEP_JITTERS_PX = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
+
+#: How many noise realisations each grid point is run at. One draw is not a
+#: result — ticket 03 measured the outcome moving between seeds at high
+#: jitter, and `report.PUBLISHED_RUNS` exists because a single run was once
+#: published as one.
+DEFAULT_SWEEP_SEEDS = (0, 1, 2, 3, 4)
+
+
+def sweep_lag_and_jitter(
+    *,
+    jitters_px: Sequence[float] = DEFAULT_SWEEP_JITTERS_PX,
+    lags_s: Optional[Sequence[float]] = None,
+    seeds: Sequence[int] = DEFAULT_SWEEP_SEEDS,
+    **kwargs,
+) -> Tuple[ApproachOutcome, ...]:
+    """One approach per (lag, jitter, seed). Every row carries its coordinates."""
+    lags = default_sweep_lags() if lags_s is None else lags_s
+    return tuple(
+        simulate_approach(
+            transport_lag_s=lag_s, jitter_px=jitter_px, seed=seed, **kwargs
+        )
+        for jitter_px in jitters_px
+        for seed in seeds
+        for lag_s in lags
+    )
+
+
+@dataclass(frozen=True)
+class JitterRow:
+    """What one jitter level did, across every seed and lag."""
+
+    jitter_px: float
+    seeds: Tuple[int, ...]
+    #: How many grid points this row summarises. Carried because the failure
+    #: counts below are meaningless without it: the lag axis is deliberately
+    #: swept far past the boundary, so most rows failing is the shape of the
+    #: experiment rather than a finding.
+    rows_swept: int
+    #: The largest lag at which **every** seed still converged. The pessimistic
+    #: reading is the honest one for an envelope: a controller is only as
+    #: robust as its unlucky draw.
+    largest_converging_lag_s: Optional[float]
+    #: The luckiest seed's answer, kept so the spread is visible rather than
+    #: averaged away.
+    best_case_lag_s: Optional[float]
+    first_failing_lag_s: Optional[float]
+    failure_mode: Optional[str]
+    #: The three failure modes, counted apart. They are not the same event and
+    #: each can hide the others — M6 #04 found the worst floor breach in its
+    #: table reversing zero times, and reversal is invisible to both other
+    #: axes.
+    floor_breaching_rows: int
+    non_converging_rows: int
+    reversing_rows: int
+    #: Reversals among runs that still converged. So far always zero, which is
+    #: what makes reversal a symptom of an already-failing run rather than a
+    #: mode of its own. If it ever stops being zero the report has to say so.
+    reversing_rows_inside_envelope: int
+
+    @property
+    def seeds_disagree(self) -> bool:
+        return self.largest_converging_lag_s != self.best_case_lag_s
+
+
+@dataclass(frozen=True)
+class BoundaryCurve:
+    """The surface, reduced to the one line anybody can read.
+
+    A two-dimensional sweep produces a surface, and a surface printed in full
+    is a table nobody reads. The question it exists to answer is single: how
+    far does detector wobble move the transport-lag envelope? One row per
+    jitter level answers it, and if the answer is "hardly at all" that is a
+    result rather than a disappointment.
+    """
+
+    rows: Tuple[JitterRow, ...]
+    lag_resolution_s: Optional[float]
+    jitter_resolution_px: Optional[float]
+
+    def summary(self) -> str:
+        quiet = [row for row in self.rows if row.largest_converging_lag_s is None]
+        known = [
+            row for row in self.rows if row.largest_converging_lag_s is not None
+        ]
+        if not known:
+            head = "no swept jitter level converged at any lag"
+        else:
+            baseline = known[0]
+            lo = min(row.largest_converging_lag_s for row in known)
+            hi = max(row.largest_converging_lag_s for row in known)
+            head = (
+                f"across {self.rows[-1].jitter_px:.0f}px of detector wobble the "
+                f"transport-lag envelope moves between {lo:.2f}s and {hi:.2f}s, "
+                f"against {baseline.largest_converging_lag_s:.2f}s with no "
+                f"wobble at all"
+            )
+            if self.lag_resolution_s is not None:
+                steps = round((hi - lo) / self.lag_resolution_s)
+                head += (
+                    f" — a spread of {steps} grid step"
+                    f"{'' if steps == 1 else 's'}"
+                )
+        if quiet:
+            head += f"; {len(quiet)} level(s) converged nowhere"
+        grid = ""
+        if self.lag_resolution_s is not None:
+            grid = f" (located to ±{self.lag_resolution_s:.2f}s by the lag grid"
+            if self.jitter_resolution_px is not None:
+                grid += (
+                    f", the jitter grid's widest step being "
+                    f"{self.jitter_resolution_px:.0f}px"
+                )
+            grid += ")"
+        return (
+            f"{head}{grid} [parameter sweep, NOT a measurement — both "
+            f"sensor_transport_lag_s and detector jitter are UNCALIBRATED and "
+            f"neither can be measured without hardware]"
+        )
+
+
+def boundary_curve(outcomes: Sequence[ApproachOutcome]) -> BoundaryCurve:
+    """Reduce a two-dimensional sweep to one row per jitter level.
+
+    Pure: rows in, curve out. Nothing here simulates anything, so the report
+    it feeds can be tested in milliseconds against hand-built rows.
+    """
+    if not outcomes:
+        raise ValueError("a boundary curve needs at least one swept outcome")
+
+    by_jitter: Dict[float, List[ApproachOutcome]] = {}
+    for outcome in outcomes:
+        by_jitter.setdefault(outcome.jitter_px, []).append(outcome)
+
+    rows = []
+    for jitter_px in sorted(by_jitter):
+        at_jitter = by_jitter[jitter_px]
+        seeds = tuple(sorted({outcome.seed for outcome in at_jitter}))
+
+        per_seed = []
+        for seed in seeds:
+            converging = [
+                outcome.transport_lag_s
+                for outcome in at_jitter
+                if outcome.seed == seed and outcome.converged
+            ]
+            per_seed.append(max(converging) if converging else None)
+
+        failing = sorted(
+            (outcome for outcome in at_jitter if not outcome.converged),
+            key=lambda outcome: outcome.transport_lag_s,
+        )
+        known = [lag for lag in per_seed if lag is not None]
+        rows.append(
+            JitterRow(
+                jitter_px=jitter_px,
+                seeds=seeds,
+                rows_swept=len(at_jitter),
+                largest_converging_lag_s=(
+                    min(per_seed) if per_seed and None not in per_seed else None
+                ),
+                best_case_lag_s=max(known) if known else None,
+                first_failing_lag_s=(
+                    failing[0].transport_lag_s if failing else None
+                ),
+                failure_mode=_failure_mode(failing[0]) if failing else None,
+                floor_breaching_rows=sum(
+                    1 for outcome in at_jitter if outcome.inside_safety_floor
+                ),
+                non_converging_rows=len(failing),
+                reversing_rows=sum(
+                    1 for outcome in at_jitter if outcome.direction_reversals
+                ),
+                reversing_rows_inside_envelope=sum(
+                    1
+                    for outcome in at_jitter
+                    if outcome.direction_reversals and outcome.converged
+                ),
+            )
+        )
+
+    return BoundaryCurve(
+        rows=tuple(rows),
+        lag_resolution_s=_step({o.transport_lag_s for o in outcomes}),
+        jitter_resolution_px=_step(set(by_jitter)),
+    )
+
+
+def _step(values: Sequence[float]) -> Optional[float]:
+    """The widest gap between adjacent swept values, or ``None`` if only one.
+
+    The widest, not the average: the boundary can only ever be located to
+    within the coarsest part of the grid, and quoting the average would flatter
+    it.
+    """
+    ordered = sorted(values)
+    gaps = [later - earlier for earlier, later in zip(ordered, ordered[1:])]
+    return max(gaps) if gaps else None

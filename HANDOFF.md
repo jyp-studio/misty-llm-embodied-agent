@@ -17,7 +17,7 @@ M6/M7 已於 2026-08-20 重整，見 `PLAN.md` §14。詞彙表在 `CONTEXT.md`�
 ```bash
 cd /Users/jyp/dev/misty-embodied-agent
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
-.venv/bin/python -m harness              # 產出 M5 approach 證據報告
+.venv/bin/python -m harness              # 產出 M5 與 M6 兩份證據報告
 ```
 
 ⚠️ **一律用 `.venv`，不要用裸的 `python3`**（`AGENTS.md` 有完整說明）。這台機器的 `python3` 是另一套 miniforge 3.10，沒有 mediapipe 也沒有 opencv，而感知測試在那個環境是 **skip 而不是 fail**——直譯器挑錯了會看起來一片綠。判斷方法是看 skip 數：加 `-rs` 跑，`.venv` 底下 `tests/` 不該有任何一項 skip。
@@ -108,7 +108,7 @@ harness/                       # M4：量測台
 ├── robustness.py              # fake world 經 public approach() 掃 transport lag
 ├── report.py                  # 組報告（純函式）
 └── __main__.py                # python -m harness
-docs/measurements/             # M4 歷史基準 + M5 正式證據，產物納入版控
+docs/measurements/             # M4 歷史基準 + M5/M6 正式證據 + M6 覆蓋盤點，產物納入版控
 tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
 test_llm_live.py               # M7 加 marker 與斷言，改斷言 Journal 不變量
@@ -143,7 +143,7 @@ M6 的範圍是三件事，spec 在 `.scratch/m6-test-suite-consolidation/spec.m
 folding 等 M7 搬出後再刪。
 
 ```bash
-.venv/bin/python -m harness              # 重產 docs/measurements/m5-approach-report.md
+.venv/bin/python -m harness              # 重產 m5-approach-report.md 與 m6-noise-envelope-report.md
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
 ```
 

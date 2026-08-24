@@ -24,6 +24,7 @@ import harness.robustness as robustness
 from harness.robustness import (
     ApproachOutcome,
     DelayedPerception,
+    boundary_curve,
     envelope,
     simulate_approach,
     sweep_transport_lag,
@@ -1056,3 +1057,163 @@ def test_the_sweep_carries_the_reversal_count_out_of_every_row():
     # `any`, not `all`: at one second of lag even a 3x robot gets one step in
     # before the deadline, and one step cannot reverse.
     assert any(row.direction_reversals > 0 for row in chattering)
+
+
+# ---------------------------------------------------------------------------
+# The two-dimensional sweep, and the curve read out of it
+#
+# Two dimensions is the shape of the *experiment*. It is not the shape of the
+# report: a surface cannot be read, and nobody needs one to answer the only
+# question worth asking — how far does detector wobble move the transport-lag
+# envelope? `boundary_curve` is the pure function that reduces the surface to
+# that answer, so everything below runs in milliseconds on hand-built rows.
+#
+# Nothing here asserts where the envelope lands. Both axes are UNCALIBRATED
+# (PLAN.md §14.2); the tests assert that the curve is read out correctly, not
+# that it sits anywhere in particular.
+# ---------------------------------------------------------------------------
+
+def _row(*, lag_s, jitter_px, seed=0, converged=True, closest_cm=60.0,
+         reversals=0, outcome="arrived"):
+    """One sweep row, built by hand rather than simulated.
+
+    `converged` is expressed through where the robot ended, not by overriding
+    `closest_cm` — the two are independent, and a helper that tied them
+    together would make the floor-breach count untestable.
+    """
+    return ApproachOutcome(
+        transport_lag_s=lag_s,
+        outcome=outcome,
+        steps=1,
+        closest_cm=closest_cm,
+        final_cm=60.0 if converged else 100.0,
+        settings=SETTINGS,
+        actual_motion_multiplier=SETTINGS.max_actual_motion_multiplier,
+        direction_reversals=reversals,
+        jitter_px=jitter_px,
+        seed=seed,
+    )
+
+
+def test_the_curve_reports_one_row_per_jitter_level():
+    rows = [
+        _row(lag_s=lag, jitter_px=jitter)
+        for jitter in (0.0, 4.0, 8.0)
+        for lag in (0.0, 0.05)
+    ]
+
+    curve = boundary_curve(rows)
+
+    assert [row.jitter_px for row in curve.rows] == [0.0, 4.0, 8.0]
+
+
+def test_the_curve_takes_the_worst_seed_not_the_luckiest():
+    """One draw is not a result, and the pessimistic draw is the honest one.
+
+    Ticket 03 measured seed-to-seed divergence at high jitter; a curve built
+    from whichever seed happened to run first would move between runs and
+    read as signal.
+    """
+    rows = [
+        # seed 0 converges to 0.20s, seed 1 only to 0.10s.
+        _row(lag_s=0.10, jitter_px=4.0, seed=0),
+        _row(lag_s=0.20, jitter_px=4.0, seed=0),
+        _row(lag_s=0.10, jitter_px=4.0, seed=1),
+        _row(lag_s=0.20, jitter_px=4.0, seed=1, converged=False),
+    ]
+
+    row = boundary_curve(rows).rows[0]
+
+    assert row.largest_converging_lag_s == 0.10
+    assert row.best_case_lag_s == 0.20
+    assert row.seeds == (0, 1)
+
+
+def test_the_curve_says_when_the_seeds_disagree():
+    agreeing = boundary_curve(
+        [_row(lag_s=0.10, jitter_px=1.0, seed=seed) for seed in (0, 1)]
+    ).rows[0]
+    disagreeing = boundary_curve(
+        [
+            _row(lag_s=0.10, jitter_px=1.0, seed=0),
+            _row(lag_s=0.10, jitter_px=1.0, seed=1, converged=False),
+        ]
+    ).rows[0]
+
+    assert not agreeing.seeds_disagree
+    assert disagreeing.seeds_disagree
+
+
+def test_the_curve_separates_the_three_failure_modes():
+    """Floor breach, non-convergence and reversal are counted apart.
+
+    They are not the same event and one can hide the others: M6 #04 found the
+    worst floor breach in its table reversing zero times, and reversal is
+    invisible to both other axes.
+    """
+    rows = [
+        _row(lag_s=0.10, jitter_px=2.0),
+        _row(lag_s=0.20, jitter_px=2.0, converged=False, closest_cm=30.0),
+        _row(lag_s=0.30, jitter_px=2.0, converged=False, closest_cm=55.0),
+        _row(lag_s=0.40, jitter_px=2.0, reversals=3),
+    ]
+
+    row = boundary_curve(rows).rows[0]
+
+    assert row.floor_breaching_rows == 1
+    assert row.non_converging_rows == 2
+    assert row.reversing_rows == 1
+
+
+def test_the_curve_records_whether_reversal_ever_happens_inside_the_envelope():
+    """A reversal among converging runs would be a different finding.
+
+    Every reversal M6 #04 and this sweep have seen came from a run that was
+    already failing, so reversal has so far been a symptom rather than a
+    separate mode. If that ever stops being true the report has to say so
+    rather than fold it into a count.
+    """
+    outside_only = boundary_curve(
+        [
+            _row(lag_s=0.10, jitter_px=2.0),
+            _row(lag_s=0.20, jitter_px=2.0, converged=False, reversals=2),
+        ]
+    ).rows[0]
+    inside = boundary_curve(
+        [
+            _row(lag_s=0.10, jitter_px=2.0, reversals=2),
+            _row(lag_s=0.20, jitter_px=2.0, converged=False),
+        ]
+    ).rows[0]
+
+    assert outside_only.reversing_rows_inside_envelope == 0
+    assert inside.reversing_rows_inside_envelope == 1
+
+
+def test_the_curve_reports_the_grid_it_could_resolve():
+    rows = [
+        _row(lag_s=lag, jitter_px=jitter)
+        for jitter in (0.0, 4.0)
+        for lag in (0.0, 0.05, 0.10)
+    ]
+
+    curve = boundary_curve(rows)
+
+    assert curve.lag_resolution_s == pytest.approx(0.05)
+    assert curve.jitter_resolution_px == pytest.approx(4.0)
+
+
+def test_the_curve_says_it_is_a_sweep_and_not_a_measurement():
+    # Both axes are UNCALIBRATED. A reader who takes either for a measured
+    # quantity has been misled by this module, so the summary says so itself.
+    summary = boundary_curve(
+        [_row(lag_s=0.0, jitter_px=0.0), _row(lag_s=0.05, jitter_px=0.0)]
+    ).summary()
+
+    assert "sweep" in summary.lower()
+    assert "not a measurement" in summary.lower()
+
+
+def test_the_curve_refuses_to_be_built_from_nothing():
+    with pytest.raises(ValueError):
+        boundary_curve([])

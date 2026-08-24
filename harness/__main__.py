@@ -32,6 +32,17 @@ DEFAULT_OUTPUT = (
     / "measurements"
     / "m5-approach-report.md"
 )
+#: The M6 findings go in their own file rather than into the M5 one. A report
+#: that replaces its predecessor destroys the before-state its successor is
+#: measured against — the reasoning PLAN.md §13.3 recorded when M5 declined to
+#: overwrite M4's. One command still writes both, so nobody can end up holding
+#: half of one run and half of another.
+DEFAULT_NOISE_OUTPUT = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "docs"
+    / "measurements"
+    / "m6-noise-envelope-report.md"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,6 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "where to write the markdown report. It is committed so that "
             "readers without mediapipe installed can still see the numbers."
+        ),
+    )
+    parser.add_argument(
+        "--noise-out",
+        type=pathlib.Path,
+        default=DEFAULT_NOISE_OUTPUT,
+        help=(
+            "where to write the reading-noise boundary curve. Written by the "
+            "same invocation as --out so the two documents always describe "
+            "the same run."
         ),
     )
     parser.add_argument(
@@ -92,8 +113,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     from harness.replay import default_replay
-    from harness.report import build_report
-    from harness.robustness import sweep_transport_lag
+    from harness.report import build_noise_report, build_report
+    from harness.robustness import (
+        boundary_curve,
+        sweep_lag_and_jitter,
+        sweep_transport_lag,
+    )
 
     portrait = cv2.imread(str(args.portrait))
     if portrait is None:
@@ -110,10 +135,17 @@ def main(argv: list[str] | None = None) -> int:
         traces, sweep_transport_lag(), pipeline="DistancePipeline"
     )
 
+    print("sweeping transport lag against detector jitter...", file=sys.stderr)
+    noise = build_noise_report(boundary_curve(sweep_lag_and_jitter()))
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report.to_markdown())
+    args.noise_out.parent.mkdir(parents=True, exist_ok=True)
+    args.noise_out.write_text(noise.to_markdown())
+
     print(report.to_text(), end="")
-    print(f"written to {args.out}", file=sys.stderr)
+    print(noise.to_text(), end="")
+    print(f"written to {args.out} and {args.noise_out}", file=sys.stderr)
     return 0
 
 

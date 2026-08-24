@@ -9,7 +9,7 @@ Neither `approach_user()` nor public `approach()` has run on hardware.
 | Trajectory | `start 130cm, walk to 90cm over 1s, hold 1.5s, step to 69cm, hold 1.5s` |
 | Machine | arm64 macOS-26.5.2-arm64-arm-64bit |
 | Python | 3.11.3 |
-| Recorded | 2026-08-13T16:43:14+0800 |
+| Recorded | 2026-08-24T11:02:31+0800 |
 
 The machine is not decoration. `PLAN.md` §12.2 records the same code measured an order of magnitude apart on two hosts, and that single difference decided whether a defect appeared at all.
 
@@ -19,15 +19,15 @@ Figures below span **3 runs** of the same script. Where a range is shown, that q
 
 | | |
 |---|---|
-| Reading lag, p95 | **43 ms** |
-| Reading lag, p50 | 39 ms — **do not quote this**: it is bimodal and flips between runs (`m4-latency-baseline.md`) |
+| Reading lag, p95 | **43–44 ms** |
+| Reading lag, p50 | 38 ms — **do not quote this**: it is bimodal and flips between runs (`m4-latency-baseline.md`) |
 | Finest lag this trajectory could resolve | 25 ms |
 | Buffer depth, maximum | 0  |
 | Buffer still filling at the end | no |
-| Frame age at detection, p95 | 4.1–4.6 ms |
-| Consumer vs producer | 3.8 ms vs 33.3 ms (ratio 0.11) |
-| Buffer starts growing above | 264–265 fps |
-| Process-local latency bound | **PASS** — worst p95 43 ms vs tightest 2x-floor bound 74 ms |
+| Frame age at detection, p95 | 4.2–5.8 ms |
+| Consumer vs producer | 3.2 ms vs 33.3 ms (ratio 0.10) |
+| Buffer starts growing above | 311–315 fps |
+| Process-local latency bound | **PASS** — worst p95 44 ms vs tightest 2x-floor bound 73 ms |
 
 ## What was swept
 

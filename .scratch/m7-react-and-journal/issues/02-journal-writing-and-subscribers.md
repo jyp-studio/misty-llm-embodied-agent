@@ -57,3 +57,56 @@ Mutation testing（隔離 worktree）：時間改在鎖內打、完全不加鎖�
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **382 passed、零 skip**（367 → 382）。
 寫入層匯入不需要 mediapipe／opencv／openai。
+
+---
+
+**Review 後的更正（2026-08-25，同日）。** 兩軸序列跑、各自隔離 worktree。這是 M7 到目前為止
+最重的一次 review：**10 個 mutation 有 8 個存活**，另有一個死鎖、一個會卡死停止路徑的洞，
+而且**我最重要的那條測試是空的**。
+
+**(1) 「時間在鎖之前打」那條測試是虛的 —— 兩軸各自獨立驗出。** 它伸手進 `journal._lock`
+（私有），而且**丟掉了 `holding.wait()` 的回傳值** —— 所以當競爭根本沒發生時，斷言仍然成立。
+把鎖改名 `_lock` → `_mutex` 它照樣綠；把鎖**整個拿掉**也照樣綠，唯一的痕跡是執行時間從 0.05s
+變 5.07s。也就是說，整個設計賴以成立的那條性質，沒有任何東西在守。
+
+重寫：用**公開介面**製造競爭（一個會卡住的訂閱者 —— 訂閱者本來就在鎖裡跑），並**正面斷言
+競爭真的發生了**（`stopper.join(0.3)` 後 `assert stopper.is_alive()`）。不再碰任何私有屬性，
+換掉鎖的實作也仍然有效。
+
+**(2) 死鎖。** `threading.Lock` 不可重入，而訂閱者在鎖裡跑 —— 一個回頭呼叫 Journal 的訂閱者
+會永遠卡住。而 `PLAN.md` §4 說終端輸出是「眾多渲染器之一」，等於明白邀請這種訂閱者。
+改成**兩把鎖**：紀錄先在一把短鎖底下進記憶體，fan-out 走可重入鎖。
+
+**(3) 掛住的訂閱者會卡死停止路徑。** 這是原本會擋住 ticket 08 的東西。無法在 Python 裡中斷
+一個不肯返回的呼叫，所以做了兩件事：紀錄在 fan-out **之前**就進記憶體（訂閱者掛住時 Journal
+仍然知道發生了什麼，有測試），以及在 `Subscriber` 的文件裡**明寫這是已知限制**而非已解決的
+問題，並寫出要解決得付什麼代價（每個訂閱者一條執行緒＋有界佇列，代價是失去順序保證）。
+
+**(4) 訂閱者失敗只留在記憶體，檔案裡看不到** —— 而「悄悄不完整」正是這個模組宣稱要消滅的
+失敗。新增 `SubscriberFailed` 紀錄型別，fan 給**除了剛失敗的那個以外**的所有訂閱者，
+且失敗的失敗不再記錄（否則壞掉的訂閱者會無限迴圈）。
+
+**(5) 呼叫端可以偽造紀錄的身分。** `journal.record(TurnStarted, turn=1, type="episode_finished")`
+原本會被接受，寫出一行 discriminator 說謊的紀錄。`t`／`episode_id`／`type` 列為保留欄位。
+
+**(6) 「Episode 剛好結束一次」原本只是宣稱。** 現在結束之後再記會被拒絕 —— ticket 08 的
+停止是從另一條執行緒來的，本來沒有東西擋它落在它造成的結束之後。
+
+**(7) `started_at_wall_clock` 是呼叫端給的字串，沒有可注入的 wall clock** —— ticket 03 的
+golden 會因此永遠對不上。改成 Journal 自己蓋，時鐘可注入。
+
+**其餘**：renderer 的 `Snapshot(distance_cm=None)` 原本印成 `"Nonecm away"`；renderer 對
+未知種類**靜靜跳過**，而 `from_jsonl` 對未知種類是拒收的 —— 同一件事在兩個媒介上兩種立場，
+改成大聲說出來；`JsonlFile(path: Any)` 與 `TerminalRenderer(write: Any)` 補上型別。
+
+**我自己的工具也出過同一種錯，值得記下來。** 第一次重跑 mutation 時我加了 `--timeout=20`，
+但 `pytest-timeout` 沒裝 —— pytest 直接報錯、沒有任何 FAILED 行，於是我的 harness 把
+「根本沒跑」讀成「16 個 mutation 全部存活」。**這就是「診斷器沒看過它要偵測的東西」發生在
+診斷器本身。** 改成用 `subprocess` 的 timeout，並讓 harness **先自我檢查**（未變異時必須全綠，
+否則直接中止）。另外 macOS 沒有 `timeout` 指令，那是 GNU coreutils 的。
+
+**重跑 16 個 mutation：全部被抓到。** 最後一個（把可重入鎖換回普通鎖）原本會**掛住整個
+pytest**——因為死鎖的執行緒不是 daemon。改成 daemon 之後它在 3.42 秒乾淨地紅掉。
+**會拖住 CI 的測試比會失敗的測試更糟。**
+
+驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **400 passed、零 skip**（382 → 400）。

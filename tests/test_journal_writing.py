@@ -24,9 +24,11 @@ from misty_agent.agent.journal import (
     EpisodeStarted,
     Journal,
     JsonlFile,
-    Snapshot,
+    ModelCalled,
     Observation,
+    Snapshot,
     StopRequested,
+    ToolRejected,
     TerminalRenderer,
     ToolCalled,
     TurnStarted,
@@ -107,49 +109,134 @@ def test_the_first_record_of_an_episode_is_at_zero():
     assert journal.record(TurnStarted, turn=1).t == 0.0
 
 
-def test_the_time_is_taken_before_the_lock_not_after_it():
+class BlocksUntilReleased:
+    """A subscriber that hangs, so contention can be created through the seam.
+
+    Subscribers are fanned out under the Journal's lock, so one that refuses
+    to return is the only way to make another thread wait using nothing but
+    the public interface.
+    """
+
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.may_leave = threading.Event()
+
+    def receive(self, record) -> None:
+        self.entered.set()
+        self.may_leave.wait(timeout=5)
+
+
+def test_the_time_is_taken_when_the_event_happened_not_when_the_writer_got_to_it():
     """The property the whole design turns on.
 
-    A writer that stamped inside the lock would give a record blocked behind
-    another thread the time it *finished waiting*, not the time the event
-    happened. On the emergency-stop path that is the difference between
-    measuring an interrupt and measuring a mutex.
+    A writer that stamped after waiting would give a record blocked behind
+    another thread the time it *finished waiting*. On the emergency-stop path
+    that is the difference between measuring an interrupt and measuring a
+    mutex.
+
+    The first version of this test was a fiction: it reached into
+    `journal._lock`, discarded the result of its own `wait`, and stayed green
+    when the lock was renamed **or removed entirely** — because contention
+    never happened and the assertion held vacuously. This one contends through
+    the public seam and asserts that it managed to.
     """
     clock = FakeClock()
-    journal = Journal("ep-1", clock=clock)
+    blocker = BlocksUntilReleased()
+    journal = Journal("ep-1", clock=clock, subscribers=[blocker])
 
-    holding = threading.Event()
-    may_release = threading.Event()
+    holder = threading.Thread(
+        target=lambda: journal.record(TurnStarted, turn=1)
+    )
+    holder.start()
+    assert blocker.entered.wait(timeout=5), "the blocker never got called"
 
-    def hog():
-        with journal._lock:  # noqa: SLF001 — the point of the test is the lock
-            holding.set()
-            may_release.wait(timeout=5)
-
-    hogger = threading.Thread(target=hog)
-    hogger.start()
-    holding.wait(timeout=5)
-
-    # The stop happens now, while the lock is held elsewhere.
+    # The stop happens now, while the writer is stuck in a subscriber.
     clock.now = 1.0
     stamped = {}
-
-    def stop():
-        stamped["record"] = journal.record(StopRequested, source="foot_bumper")
-
-    stopper = threading.Thread(target=stop)
+    stopper = threading.Thread(
+        target=lambda: stamped.update(
+            record=journal.record(StopRequested, source="foot_bumper")
+        )
+    )
     stopper.start()
 
-    # Time passes while it waits for the lock.
+    stopper.join(timeout=0.3)
+    assert stopper.is_alive(), (
+        "no contention was created, so this test would pass with no lock at all"
+    )
+
+    # Time passes while it waits.
     clock.now = 9.0
-    may_release.set()
-    hogger.join(timeout=5)
+    blocker.may_leave.set()
+    holder.join(timeout=5)
     stopper.join(timeout=5)
 
     assert stamped["record"].t == pytest.approx(1.0), (
-        "the record was stamped after waiting for the lock, so its time "
-        "measures the lock rather than the event"
+        "the record was stamped after waiting, so its time measures the wait "
+        "rather than the event"
     )
+
+
+def test_the_journal_knows_what_happened_even_while_a_subscriber_hangs():
+    """The record lands in memory before the fan-out, not after.
+
+    A subscriber that never returns must not also stop the Journal from having
+    recorded the thing. Two locks rather than one is what buys this.
+    """
+    clock = FakeClock()
+    blocker = BlocksUntilReleased()
+    journal = Journal("ep-1", clock=clock, subscribers=[blocker])
+
+    holder = threading.Thread(
+        target=lambda: journal.record(TurnStarted, turn=1)
+    )
+    holder.start()
+    assert blocker.entered.wait(timeout=5)
+
+    assert [record.type for record in journal.records] == ["turn_started"]
+
+    blocker.may_leave.set()
+    holder.join(timeout=5)
+
+
+def test_a_subscriber_may_record_something_of_its_own_without_deadlocking():
+    """`PLAN.md` §4 invites this by calling terminal output one renderer among
+    others — a renderer that wanted to note something of its own.
+
+    An earlier version of this test had the subscriber merely *read*
+    `journal.records`, which takes a different lock and so would not deadlock
+    however the fan-out lock was declared. Reverting the reentrant lock left
+    it green. Recording is the case that actually needs re-entry.
+    """
+
+    class NotesSomething:
+        def __init__(self) -> None:
+            self.noted = False
+
+        def receive(self, record) -> None:
+            if record.type == "turn_started" and not self.noted:
+                self.noted = True
+                journal.record(
+                    ToolRejected, turn=1, tool="move_head", reason="just noting"
+                )
+
+    subscriber = NotesSomething()
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[subscriber])
+
+    # A daemon, so that if this ever *does* deadlock the assertion below fails
+    # and the suite still exits. A test that wedges CI is worse than one that
+    # goes red.
+    writer = threading.Thread(
+        target=lambda: journal.record(TurnStarted, turn=1), daemon=True
+    )
+    writer.start()
+    writer.join(timeout=3)
+
+    assert not writer.is_alive(), "recording from inside a subscriber deadlocked"
+    assert [record.type for record in journal.records] == [
+        "turn_started",
+        "tool_rejected",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +312,12 @@ def test_a_subscriber_that_falls_over_does_not_stop_the_episode():
 
     journal.record(TurnStarted, turn=1)
 
-    assert len(survivor.records) == 1
+    # The record it was called for, and then the notice that its neighbour
+    # fell over — the survivor is how that notice reaches anywhere durable.
+    assert [record.type for record in survivor.records] == [
+        "turn_started",
+        "subscriber_failed",
+    ]
 
 
 def test_a_subscriber_failure_is_observable_rather_than_swallowed():
@@ -362,3 +454,204 @@ def test_a_subscriber_is_never_called_by_two_threads_at_once():
 
     assert alone.overlaps == 0, "two threads were inside a subscriber at once"
     assert alone.seen == 8, "an update was lost to a race"
+
+
+# ---------------------------------------------------------------------------
+# What a caller may not set
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("reserved", ["t", "episode_id", "type"])
+def test_a_caller_cannot_set_the_fields_the_journal_owns(reserved):
+    """A record that could name its own type or time could disagree with reality.
+
+    `journal.record(TurnStarted, turn=1, type="episode_finished")` used to be
+    accepted, writing a line whose discriminator lied — caught, if at all,
+    much later by `from_jsonl`.
+    """
+    journal = Journal("ep-1", clock=FakeClock())
+
+    with pytest.raises(ValueError, match="belong to the Journal"):
+        journal.record(TurnStarted, turn=1, **{reserved: "anything"})
+
+
+def test_an_episode_that_has_finished_refuses_further_records():
+    """"An Episode ends exactly once" was a claim; this makes it a rule.
+
+    Ticket 08 has a stop arriving from another thread, and nothing otherwise
+    stops it landing after the ending it caused.
+    """
+    journal = Journal("ep-1", clock=FakeClock())
+    journal.record(EpisodeFinished, outcome="done", turns=1, steps=0)
+
+    with pytest.raises(ValueError, match="already finished"):
+        journal.record(StopRequested, source="foot_bumper")
+
+
+# ---------------------------------------------------------------------------
+# The wall clock
+# ---------------------------------------------------------------------------
+
+def test_the_journal_stamps_the_wall_clock_so_goldens_can_pin_it():
+    """Ticket 03 compares goldens byte for byte, so this cannot be `now()`."""
+    journal = Journal(
+        "ep-1",
+        clock=FakeClock(),
+        wall_clock=lambda: "2026-08-25T09:00:00+08:00",
+    )
+
+    opening = journal.record(EpisodeStarted, trigger="speech")
+
+    assert opening.started_at_wall_clock == "2026-08-25T09:00:00+08:00"
+
+
+def test_the_wall_clock_is_only_asked_for_the_opening_record():
+    asked = []
+    journal = Journal(
+        "ep-1",
+        clock=FakeClock(),
+        wall_clock=lambda: asked.append(1) or "2026-08-25T09:00:00+08:00",
+    )
+
+    journal.record(EpisodeStarted, trigger="speech")
+    journal.record(TurnStarted, turn=1)
+
+    assert len(asked) == 1
+
+
+# ---------------------------------------------------------------------------
+# Failures reach somewhere durable
+# ---------------------------------------------------------------------------
+
+def test_a_subscriber_failure_is_written_into_the_journal_not_only_beside_it(
+    tmp_path,
+):
+    """Keeping failures in memory left the file silently incomplete.
+
+    That is the exact failure this package claims to make impossible, so it
+    cannot be the one it commits.
+    """
+    path = tmp_path / "episode.jsonl"
+    journal = Journal(
+        "ep-1",
+        clock=FakeClock(),
+        subscribers=[Exploding(), JsonlFile(path)],
+    )
+
+    journal.record(TurnStarted, turn=1)
+
+    kinds = [record.type for record in from_jsonl(path.read_text())]
+    assert kinds == ["turn_started", "subscriber_failed"]
+
+
+def test_a_failure_notice_is_not_sent_back_to_the_subscriber_that_failed():
+    """Otherwise a subscriber that always throws loops on its own failures."""
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[Exploding()])
+
+    journal.record(TurnStarted, turn=1)
+
+    assert len(journal.subscriber_failures) == 1
+    assert [record.type for record in journal.records] == [
+        "turn_started",
+        "subscriber_failed",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The terminal renderer, kind by kind
+# ---------------------------------------------------------------------------
+
+def render(record_kind, **fields):
+    lines = []
+    journal = Journal(
+        "ep-1", clock=FakeClock(), subscribers=[TerminalRenderer(lines.append)]
+    )
+    journal.record(record_kind, **fields)
+    return lines[0]
+
+
+def test_the_renderer_says_something_about_a_model_call():
+    line = render(ModelCalled, turn=1, latency_ms=1840, tokens_in=12, tokens_out=3)
+
+    assert "1840" in line and "12" in line and "3" in line
+
+
+def test_the_renderer_says_something_about_a_refused_tool_call():
+    line = render(
+        ToolRejected, turn=1, tool="move_head", reason="pitch out of range"
+    )
+
+    assert "move_head" in line and "pitch out of range" in line
+
+
+def test_the_renderer_says_something_about_a_stop_request():
+    assert "foot_bumper" in render(StopRequested, source="foot_bumper")
+
+
+def test_the_renderer_says_something_about_a_subscriber_failure():
+    lines = []
+    journal = Journal(
+        "ep-1",
+        clock=FakeClock(),
+        subscribers=[Exploding(), TerminalRenderer(lines.append)],
+    )
+
+    journal.record(TurnStarted, turn=1)
+
+    assert any("Exploding" in line for line in lines)
+
+
+def test_the_renderer_does_not_invent_a_distance_when_none_was_measured():
+    """`Snapshot(distance_cm=None, face_present=True)` used to print "Nonecm"."""
+    line = render(
+        Observation,
+        turn=1,
+        result={"result": "arrived"},
+        snapshot=Snapshot(
+            distance_cm=None, face_present=True, new_speech=None
+        ),
+    )
+
+    assert "None" not in line
+    assert "unknown" in line
+
+
+def test_the_renderer_is_loud_about_a_kind_it_does_not_know():
+    """`from_jsonl` refuses an unknown kind because a dropped line makes a
+    truncated Journal look complete. A renderer that silently skipped one
+    would be the same lie in a different medium.
+    """
+    from misty_agent.agent import journal as module
+
+    line = module._describe(
+        module.Record(t=0.0, episode_id="ep-1", type="telepathy")
+    )
+
+    assert "telepathy" in line
+
+
+def test_the_renderer_shows_the_time_to_a_useful_precision():
+    """Whole seconds would round a Turn boundary away."""
+    clock = FakeClock()
+    lines = []
+    journal = Journal(
+        "ep-1", clock=clock, subscribers=[TerminalRenderer(lines.append)]
+    )
+
+    clock.now = 1.25
+    journal.record(TurnStarted, turn=1)
+
+    assert "1.25" in lines[0]
+
+
+# ---------------------------------------------------------------------------
+# The file
+# ---------------------------------------------------------------------------
+
+def test_the_file_is_written_as_utf8_whatever_the_platform_prefers(tmp_path):
+    """Goldens carry Chinese speech; a platform default would mangle them."""
+    path = tmp_path / "episode.jsonl"
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])
+
+    journal.record(ToolCalled, turn=1, tool="speak", args={"text": "你好"})
+
+    assert "你好" in path.read_bytes().decode("utf-8")

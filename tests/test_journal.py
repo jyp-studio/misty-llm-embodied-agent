@@ -33,6 +33,7 @@ from misty_agent.agent.journal import (
     Observation,
     Snapshot,
     StopRequested,
+    SubscriberFailed,
     ToolCalled,
     ToolRejected,
     TurnStarted,
@@ -97,6 +98,13 @@ def one_of_each():
             reason="pitch 999 is outside the permitted range",
         ),
         StopRequested(t=7.4, episode_id="ep-1", source="foot_bumper"),
+        SubscriberFailed(
+            t=7.45,
+            episode_id="ep-1",
+            subscriber="TerminalRenderer",
+            failed_on="stop_requested",
+            error="the renderer fell over",
+        ),
         EpisodeFinished(
             t=7.6,
             episode_id="ep-1",

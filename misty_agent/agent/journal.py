@@ -40,11 +40,14 @@ one.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
+from datetime import datetime
 from dataclasses import asdict, dataclass, fields
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Mapping,
@@ -53,6 +56,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    Union,
 )
 
 #: What this Journal's shape is called today. The `unstable` is load-bearing:
@@ -315,6 +319,22 @@ class EpisodeFinished(Record):
             )
 
 
+@dataclass(frozen=True, kw_only=True)
+class SubscriberFailed(Record):
+    """A subscriber threw, recorded *into* the Journal rather than beside it.
+
+    Keeping failures only in memory left an on-disk Journal silently
+    incomplete — which is the one failure this module exists to make
+    impossible. Fanned out to every subscriber except the one that just
+    failed, and a failure while recording a failure is not recorded again.
+    """
+
+    subscriber: str
+    failed_on: str
+    error: str
+    type: str = "subscriber_failed"
+
+
 #: Every kind, keyed by the string that identifies it on the wire. Closed on
 #: purpose: `from_jsonl` refuses anything not in here rather than skipping it,
 #: because a silently dropped line makes a truncated Journal look complete.
@@ -328,6 +348,7 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
         ToolRejected,
         Observation,
         StopRequested,
+        SubscriberFailed,
         EpisodeFinished,
     )
 }
@@ -417,66 +438,150 @@ class Journal:
 
     **The Journal stamps the time, not the caller.** Making `t` an argument
     would leave "when did this happen" to nine call sites, and the one that
-    got it wrong would be the emergency stop.
+    got it wrong would be the emergency stop. The same goes for `episode_id`
+    and for the record's own `type`: a caller that could set them could write
+    a line whose discriminator lies.
 
-    **The stamp is taken before the lock, not inside it.** A record blocked
-    behind another thread must keep the time of the event, not the time it
-    finished waiting. On the stop path that is the difference between
-    measuring an interrupt and measuring a mutex — and it is why writing takes
-    a lock at all rather than queueing for the main loop (`PLAN.md` §15.3).
+    **The stamp is taken before either lock.** A record blocked behind another
+    thread must keep the time it happened, not the time it finished waiting.
+    On the stop path that is the difference between measuring an interrupt and
+    measuring a mutex — and it is why writing takes a lock at all rather than
+    queueing for the main loop (`PLAN.md` §15.3).
+
+    **Two locks, not one.** The record lands in memory under a short lock of
+    its own, so a subscriber that hangs cannot stop the Journal from *knowing*
+    what happened. Fan-out then runs under a reentrant lock, so a subscriber
+    may call back into the Journal — read `records`, or record something of
+    its own — without deadlocking. `PLAN.md` §4 invites exactly such a
+    subscriber when it calls terminal output "one renderer among others".
+
+    ## What a subscriber must not do
+
+    **Block.** Fan-out is synchronous and serialised, so a subscriber that
+    waits on something slow makes every other thread wait too — including the
+    one carrying an emergency stop. Nothing here can interrupt a call that
+    refuses to return; a subscriber that may block must do its waiting
+    somewhere else. This is a stated limit, not a solved problem, and it would
+    be settled by giving each subscriber its own thread with a bounded queue —
+    at the cost of the ordering guarantee below.
+
+    A subscriber may assume it is **never called concurrently**. That is what
+    the fan-out lock buys, and it is why neither shipped subscriber has to be
+    thread-safe on its own.
     """
+
+    #: Fields the Journal fills in. A caller that passed one could write a
+    #: record whose type, time or Episode disagreed with reality.
+    RESERVED = ("t", "episode_id", "type")
 
     def __init__(
         self,
         episode_id: str,
         *,
         clock: Optional[Clock] = None,
-        subscribers: Sequence[Subscriber] = (),
+        wall_clock: Optional[Any] = None,
+        subscribers: Sequence["Subscriber"] = (),
     ) -> None:
         self._episode_id = episode_id
         self._clock = EpisodeClock(clock)
-        self._lock = threading.Lock()
+        self._wall_clock = wall_clock or _wall_clock_now
+        self._records_lock = threading.Lock()
+        self._lock = threading.RLock()
         self._subscribers = tuple(subscribers)
         self._records: List[Record] = []
         self._failures: List[SubscriberFailure] = []
+        self._finished = False
 
     def record(self, kind: Type[Record], **fields: Any) -> Record:
         """Write one record, now."""
+        reserved = [name for name in self.RESERVED if name in fields]
+        if reserved:
+            raise ValueError(
+                f"{sorted(reserved)} belong to the Journal, not the caller: a "
+                f"record that could name its own type or time could disagree "
+                f"with what happened"
+            )
         t = self._clock.elapsed_s()
-        record = kind(t=t, episode_id=self._episode_id, **fields)
-        with self._lock:
+
+        if kind is EpisodeStarted:
+            fields.setdefault("started_at_wall_clock", self._wall_clock())
+
+        with self._records_lock:
+            if self._finished:
+                raise ValueError(
+                    "this Episode has already finished; an Episode ends "
+                    "exactly once, and a record after the end would make that "
+                    "something you had to reason about rather than count"
+                )
+            record = kind(t=t, episode_id=self._episode_id, **fields)
             self._records.append(record)
+            self._finished = isinstance(record, EpisodeFinished)
+
+        self._fan_out(record, skip=None)
+        return record
+
+    def _fan_out(self, record: Record, *, skip: Optional[str]) -> None:
+        failures = []
+        with self._lock:
             for subscriber in self._subscribers:
+                name = type(subscriber).__name__
+                if name == skip:
+                    continue
                 try:
                     subscriber.receive(record)
-                except Exception as error:  # noqa: BLE001 — see the docstring
-                    self._failures.append(
-                        SubscriberFailure(
-                            t=t,
-                            subscriber=type(subscriber).__name__,
-                            record_type=record.type,
-                            error=str(error),
-                        )
-                    )
-        return record
+                except Exception as error:  # noqa: BLE001
+                    # `Exception`, not `BaseException`: a subscriber raising
+                    # KeyboardInterrupt is the operator asking to stop, and
+                    # swallowing that would make the程式 unkillable from a
+                    # renderer. It propagates on purpose.
+                    failures.append((name, str(error)))
+
+        # Recorded after the fan-out so a failure cannot recurse into itself.
+        for name, error in failures:
+            self._note_failure(record, name, error)
+
+    def _note_failure(self, on: Record, subscriber: str, error: str) -> None:
+        t = self._clock.elapsed_s()
+        failure = SubscriberFailure(
+            t=t, subscriber=subscriber, record_type=on.type, error=error
+        )
+        with self._records_lock:
+            self._failures.append(failure)
+            noted = SubscriberFailed(
+                t=t,
+                episode_id=self._episode_id,
+                subscriber=subscriber,
+                failed_on=on.type,
+                error=error,
+            )
+            self._records.append(noted)
+        # Everyone but the subscriber that just fell over, and no failure
+        # recorded for a failure — otherwise a broken subscriber loops.
+        self._fan_out(noted, skip=subscriber)
 
     @property
     def records(self) -> Tuple[Record, ...]:
-        # Taken under the lock, and **no test distinguishes that from taking it
-        # without**: `tuple(list)` is a C-level copy, so under CPython this
-        # cannot tear however hard a writer is appending. It is here for the
-        # day the store stops being a plain list, and it is recorded as
-        # untested rather than left to look proven.
-        with self._lock:
+        # Taken under the record lock, and **no test distinguishes that from
+        # taking it without**: `tuple(list)` is a C-level copy, so under
+        # CPython this cannot tear however hard a writer is appending. It is
+        # here for the day the store stops being a plain list, and it is
+        # recorded as untested rather than left to look proven. The same is
+        # true of `subscriber_failures` below.
+        with self._records_lock:
             return tuple(self._records)
 
     @property
     def subscriber_failures(self) -> Tuple[SubscriberFailure, ...]:
-        with self._lock:
+        with self._records_lock:
             return tuple(self._failures)
 
     def to_jsonl(self) -> str:
         return to_jsonl(self.records)
+
+
+def _wall_clock_now() -> str:
+    """When this Episode began, for a human. Injectable so goldens can pin it."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 class JsonlFile:
@@ -486,7 +591,7 @@ class JsonlFile:
     should still leave behind what it got through.
     """
 
-    def __init__(self, path: Any) -> None:
+    def __init__(self, path: Union[str, "os.PathLike[str]"]) -> None:
         self._path = path
 
     def receive(self, record: Record) -> None:
@@ -504,17 +609,15 @@ class TerminalRenderer:
     all.
     """
 
-    def __init__(self, write: Any = print) -> None:
+    def __init__(self, write: Callable[[str], None] = print) -> None:
         self._write = write
 
     def receive(self, record: Record) -> None:
-        line = _describe(record)
-        if line is not None:
-            self._write(f"{record.t:7.2f}s  {line}")
+        self._write(f"{record.t:7.2f}s  {_describe(record)}")
 
 
-def _describe(record: Record) -> Optional[str]:
-    """One record in a sentence, or nothing if it is not worth a line."""
+def _describe(record: Record) -> str:
+    """One record in a sentence."""
     if isinstance(record, EpisodeStarted):
         return f"episode began, woken by {record.trigger}"
     if isinstance(record, TurnStarted):
@@ -530,11 +633,12 @@ def _describe(record: Record) -> Optional[str]:
     if isinstance(record, ToolRejected):
         return f"  {record.tool} refused: {record.reason}"
     if isinstance(record, Observation):
-        seen = (
-            f"{record.snapshot.distance_cm}cm away"
-            if record.snapshot.face_present
-            else "nobody in view"
-        )
+        if not record.snapshot.face_present:
+            seen = "nobody in view"
+        elif record.snapshot.distance_cm is None:
+            seen = "someone there, distance unknown"
+        else:
+            seen = f"{record.snapshot.distance_cm}cm away"
         outcome = record.result.get("result", "")
         return f"  -> {outcome}, {seen}"
     if isinstance(record, StopRequested):
@@ -544,4 +648,10 @@ def _describe(record: Record) -> Optional[str]:
             f"episode {record.outcome} after {record.turns} turn(s), "
             f"{record.steps} step(s)"
         )
-    return None
+    if isinstance(record, SubscriberFailed):
+        return f"  ! {record.subscriber} failed on {record.failed_on}: {record.error}"
+    # Deliberately loud rather than silent. `from_jsonl` refuses a kind it does
+    # not know because a dropped line makes a truncated Journal look complete;
+    # a renderer that quietly skipped one would be the same lie in a different
+    # medium.
+    return f"?? unrendered {record.type}"

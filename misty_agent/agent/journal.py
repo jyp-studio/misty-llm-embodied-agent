@@ -40,9 +40,20 @@ one.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import asdict, dataclass, fields
-from typing import Any, Dict, Mapping, Optional, Protocol, Sequence, Tuple, Type
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Type,
+)
 
 #: What this Journal's shape is called today. The `unstable` is load-bearing:
 #: it tells a reader the schema will move before M10, and it is asserted.
@@ -371,3 +382,166 @@ def from_jsonl(text: str) -> Tuple[Record, ...]:
             )
         records.append(record_type(**raw))
     return tuple(records)
+
+
+# ---------------------------------------------------------------------------
+# Writing
+#
+# Everything above is data. This is the part that runs while an Episode does.
+# ---------------------------------------------------------------------------
+
+class Subscriber(Protocol):
+    """Anything that wants to see records as they happen."""
+
+    def receive(self, record: Record) -> None: ...
+
+
+@dataclass(frozen=True)
+class SubscriberFailure:
+    """A subscriber that threw, kept rather than swallowed.
+
+    A renderer falling over must not strand the robot mid-approach, so the
+    exception is caught. But swallowing it silently would let a Journal be
+    quietly incomplete, and "quietly incomplete" is the failure this whole
+    package exists to make impossible.
+    """
+
+    t: float
+    subscriber: str
+    record_type: str
+    error: str
+
+
+class Journal:
+    """Records what happened, and hands each record to every subscriber.
+
+    **The Journal stamps the time, not the caller.** Making `t` an argument
+    would leave "when did this happen" to nine call sites, and the one that
+    got it wrong would be the emergency stop.
+
+    **The stamp is taken before the lock, not inside it.** A record blocked
+    behind another thread must keep the time of the event, not the time it
+    finished waiting. On the stop path that is the difference between
+    measuring an interrupt and measuring a mutex — and it is why writing takes
+    a lock at all rather than queueing for the main loop (`PLAN.md` §15.3).
+    """
+
+    def __init__(
+        self,
+        episode_id: str,
+        *,
+        clock: Optional[Clock] = None,
+        subscribers: Sequence[Subscriber] = (),
+    ) -> None:
+        self._episode_id = episode_id
+        self._clock = EpisodeClock(clock)
+        self._lock = threading.Lock()
+        self._subscribers = tuple(subscribers)
+        self._records: List[Record] = []
+        self._failures: List[SubscriberFailure] = []
+
+    def record(self, kind: Type[Record], **fields: Any) -> Record:
+        """Write one record, now."""
+        t = self._clock.elapsed_s()
+        record = kind(t=t, episode_id=self._episode_id, **fields)
+        with self._lock:
+            self._records.append(record)
+            for subscriber in self._subscribers:
+                try:
+                    subscriber.receive(record)
+                except Exception as error:  # noqa: BLE001 — see the docstring
+                    self._failures.append(
+                        SubscriberFailure(
+                            t=t,
+                            subscriber=type(subscriber).__name__,
+                            record_type=record.type,
+                            error=str(error),
+                        )
+                    )
+        return record
+
+    @property
+    def records(self) -> Tuple[Record, ...]:
+        # Taken under the lock, and **no test distinguishes that from taking it
+        # without**: `tuple(list)` is a C-level copy, so under CPython this
+        # cannot tear however hard a writer is appending. It is here for the
+        # day the store stops being a plain list, and it is recorded as
+        # untested rather than left to look proven.
+        with self._lock:
+            return tuple(self._records)
+
+    @property
+    def subscriber_failures(self) -> Tuple[SubscriberFailure, ...]:
+        with self._lock:
+            return tuple(self._failures)
+
+    def to_jsonl(self) -> str:
+        return to_jsonl(self.records)
+
+
+class JsonlFile:
+    """Appends each record to a file, one line at a time.
+
+    Appending rather than writing at the end: an Episode that is interrupted
+    should still leave behind what it got through.
+    """
+
+    def __init__(self, path: Any) -> None:
+        self._path = path
+
+    def receive(self, record: Record) -> None:
+        with open(self._path, "a", encoding="utf-8") as handle:
+            handle.write(to_jsonl([record]))
+
+
+class TerminalRenderer:
+    """The same records, for a person watching.
+
+    Deliberately **not** a field dump. If it printed everything it would be
+    the JSONL with worse punctuation, and having two subscribers would prove
+    nothing. It answers a different question — *what is the robot doing* —
+    and drops what is constant across every line, the Episode's own id above
+    all.
+    """
+
+    def __init__(self, write: Any = print) -> None:
+        self._write = write
+
+    def receive(self, record: Record) -> None:
+        line = _describe(record)
+        if line is not None:
+            self._write(f"{record.t:7.2f}s  {line}")
+
+
+def _describe(record: Record) -> Optional[str]:
+    """One record in a sentence, or nothing if it is not worth a line."""
+    if isinstance(record, EpisodeStarted):
+        return f"episode began, woken by {record.trigger}"
+    if isinstance(record, TurnStarted):
+        return f"turn {record.turn}"
+    if isinstance(record, ModelCalled):
+        return (
+            f"  thought for {record.latency_ms}ms "
+            f"({record.tokens_in}+{record.tokens_out} tokens)"
+        )
+    if isinstance(record, ToolCalled):
+        arguments = ", ".join(f"{k}={v!r}" for k, v in sorted(record.args.items()))
+        return f"  {record.tool}({arguments})"
+    if isinstance(record, ToolRejected):
+        return f"  {record.tool} refused: {record.reason}"
+    if isinstance(record, Observation):
+        seen = (
+            f"{record.snapshot.distance_cm}cm away"
+            if record.snapshot.face_present
+            else "nobody in view"
+        )
+        outcome = record.result.get("result", "")
+        return f"  -> {outcome}, {seen}"
+    if isinstance(record, StopRequested):
+        return f"stop requested by {record.source}"
+    if isinstance(record, EpisodeFinished):
+        return (
+            f"episode {record.outcome} after {record.turns} turn(s), "
+            f"{record.steps} step(s)"
+        )
+    return None

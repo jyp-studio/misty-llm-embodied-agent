@@ -72,10 +72,10 @@ misty_agent/
 │   ├── face.py               # MediaPipe 臉部 / 距離估計
 │   └── asr.py                # ASR adapter（API 為預設，介面保留可切換）
 ├── agent/
-│   ├── events.py             # 事件型別 + EventBus
+│   ├── journal.py            # Journal：事件型別 + 訂閱（M7 grill 後改名，見 §15）
 │   ├── react.py              # ReAct 迴圈
-│   ├── tools.py              # 工具 schema + dispatch（註冊表模式）
-│   └── memory.py             # 三層記憶（現有邏輯搬移）
+│   ├── tools.py              # Tool 參數型別 + dispatch（註冊表模式）
+│   └── memory.py             # 三層記憶（**重新設計**，非搬移，見 §15）
 ├── control/
 │   └── approach.py           # 確定性閉環，LLM 不碰物理參數
 └── fakes/fake_robot.py
@@ -117,7 +117,7 @@ legacy/                       # 舊 AutoMisty 素材
 
 ### 機制
 - **OpenAI function calling**（模型端保證結構，天然提供 `tool` role 的 observation 回填位置）
-- 工具集 **12 個左右**，註冊表模式（decorator 註冊），加工具 = 一個函式 + 一份 schema，不動 `react.py`
+- 工具集 ~~**12 個左右**~~ → **定為 9 個**（M7 grill；`back_up` 砍掉，見 §15.2），註冊表模式，加工具 = 一個函式 + 一份參數型別，不動 `react.py`
 - `MAX_REACT_STEPS = 5` —— **初值，用事件流量測後修正**
 - **無獨立快路徑**：LLM 第一輪就能輸出 `done`（自主終止本來就是 ReAct 判準之一，硬編碼特例等於自廢武功）
 - **必須保留 step cap**：目前系統最強的性質是「每個 episode 可證明回到 IDLE」，ReAct 化最容易弄丟這個
@@ -126,8 +126,10 @@ legacy/                       # 舊 AutoMisty 素材
 ```
 直接開放（加參數 clamp）：display_image(表情) / move_arms / move_head /
                           change_led / play_audio / speak / look_around
-高階意圖（走確定性閉環）：approach / back_up      ← LLM 不碰 velocity / timeMs
+高階意圖（走確定性閉環）：approach                  ← LLM 不碰 velocity / timeMs
 終止：                    done
+
+（~~`back_up`~~ 已砍除：`approach()` 本來就會後退。見 §15.2）
 ```
 
 **分層原則是硬的**：LLM 決定「要不要接近、失敗了改做什麼」，控制層決定「這一步走幾公分」。
@@ -144,16 +146,24 @@ AutoMisty 移除後的表現力由**組合**取代：一支舞 = LLM 在多個 R
 距離、臉在不在、transcript queue 有無新句子——**三樣都已經在跑，零額外 LLM 呼叫、零額外延遲**。
 不做每步重跑 VLM（每步 +1–2 秒，而 5–10 秒的 episode 內場景幾乎不變）。
 
-**連帶必須處理**：目前 ACT 期間整段 `perception.pause()`，新語音進不來。要把抑制範圍縮小到**只在 TTS 播放期間**（用 `speak` 回傳的 `spoken_ms` 當抑制窗）。可在 harness 測：餵「機器人講話期間使用者插話」情境，斷言插話有收到、自己的話沒有。
+**連帶必須處理**：目前 ACT 期間整段 `perception.pause()`，新語音進不來。要把抑制範圍縮小到**只在 TTS 播放期間**。
 
-### 結構化事件流（`agent/events.py`）
+> ⚠️ ~~用 `speak` 回傳的 `spoken_ms` 當抑制窗~~ —— **這個做法不存在。** Misty 的 TTS
+> 不回傳任何時間資訊；舊主腳本是用字數估計（`words / 2.2 + 0.5`，上限 12 秒）並已自行
+> 標註未校準。M7 保留估計但把速率搬進 `config.py` 明列 UNCALIBRATED。見 §15.4。可在 harness 測：餵「機器人講話期間使用者插話」情境，斷言插話有收到、自己的話沒有。
+
+### 結構化事件流（`agent/journal.py` —— M7 grill 後定名為 **Journal**，見 §15.3）
 每件值得記錄的事發出有型別的紀錄，終端機輸出退化成其中一個渲染器：
 ```jsonl
-{"t":12.34,"type":"llm_call","step":1,"latency_ms":1840,"tokens":{"in":1203,"out":47}}
-{"t":14.18,"type":"tool_call","step":1,"tool":"approach","args":{}}
-{"t":19.02,"type":"observation","step":1,"result":"arrived","distance_cm":63}
-{"t":19.90,"type":"episode_done","steps":2,"total_latency_ms":5600}
+{"t":12.34,"type":"llm_call","turn":1,"latency_ms":1840,"tokens":{"in":1203,"out":47}}
+{"t":14.18,"type":"tool_call","turn":1,"tool":"approach","args":{}}
+{"t":19.02,"type":"observation","turn":1,"result":"arrived","distance_cm":63}
+{"t":19.90,"type":"episode_done","turns":2,"steps":3,"total_latency_ms":5600}
 ```
+
+> ⚠️ **原範例用 `step` 指 ReAct 的一輪，那與 `CONTEXT.md` 衝突。** `Step` 是控制層的一次
+> 驅動命令，ReAct 的一輪是 `Turn`。原本的 `"steps":2` 更分不出是哪一個 —— 上面已改成
+> 兩個欄位，因為一次 Episode 兩者都有意義。`t` 的語意見 §15.3。
 一個模組同時餵養三件已決定要做的事：LLM 決策測試的斷言標的、延遲與步數量測、未來 web UI（只是另一個訂閱者，agent code 一行不改）。
 
 ---
@@ -810,3 +820,96 @@ M6 #05 的 review 發現：`m5-approach-report.md` 的表頭寫 `Reading lag, p9
 **順帶記一個可重現性的差異：M6 的報告與 M5 的不同，它是逐字元決定性的。** 掃描跑的是假時鐘
 與 seeded 噪音的純模擬，沒有即時量測，所以機器負載影響不了它 —— 連跑兩次雜湊相同。這也是
 為什麼本次可以只提交 M6 的產物而不必連帶提交一份被污染的 M5。
+
+---
+
+## 15. M7 的定案（grill，2026-08-24）
+
+> spec 在 `.scratch/m7-react-and-journal/spec.md`。本節只記**決定與理由**，特別是那些
+> 推翻了 §2／§4 原文的部分 —— 那五處已在原地更正並加註。
+
+### 15.1 M7 只做單次 Episode，不做外層迴圈
+
+公開入口是「餵一個觸發輸入，跑完一次 Episode」。**不做**「一直等使用者說話」的外層迴圈。
+
+理由：外層依賴語音串流，而 `AudioStream` 的轉錄與 VAD 擠在同一條 thread 上是 HANDOFF §4
+記著的**尚未處理的已知缺陷**。把它拉進 M7 等於在沒修的地基上疊 ReAct。而單次 Episode 是個
+乾淨的 seam：測試餵一個觸發輸入、斷言 Journal，不需要 audio 也不需要真的等待。
+
+### 15.2 工具集定為 9 個，`back_up` 砍除
+
+`speak`、`display_image`、`move_arms`、`move_head`、`change_led`、`play_audio`、
+`look_around`、`approach`、`done`。
+
+**`back_up` 站不住腳**：`approach()` 本來就會後退 —— 主體太近時它自己會退，
+`test_too_close_commands_one_bounded_backward_step_then_arrives` 就在測這件事。所以
+`back_up` 要嘛與 `approach` 重複，要嘛意思是「退到比預設 target 更遠處」，而 `approach()`
+**沒有距離參數**。兩個 Tool 做同一件事，模型會挑錯，而且**從 Journal 上看不出它為什麼挑錯**。
+
+將來若真需要「請退遠一點」，那是給 `approach` 加一個受 clamp 的目標距離參數，不是加第二個
+Tool。「12 個左右」是 M0 的估計；現在有實際的控制層了，估計讓位給事實。
+
+**Tool 參數用型別定義，schema 由型別產生。** 一份定義同時負責宣告與驗證，兩者不會漂 ——
+這個 repo 已為「兩份會各自漂移」做過至少三次決定（§10、M6 #01 的盤點、本節）。這同時還掉
+§14.6 欠的工具參數檢查那筆帳。
+
+### 15.3 Journal：型別是契約，JSONL 是格式
+
+- **每種事件一個 frozen 型別。** 共同欄位只有三個：時間、種類、Episode 識別。**`turn` 不是
+  共同欄位** —— Episode 開始那筆沒有 Turn，硬塞會逼出一個 Optional，然後每個讀者都要處理它。
+- **時間是 Episode 相對秒，來自單調時鐘，時鐘可注入。** 沿用 `approach()` 既有的 Clock
+  protocol 與假時鐘，golden files 因此天然可逐字元比對。Episode 開始那筆額外帶**一個**絕對
+  wall-clock 戳記給人對時。
+- **契約是型別，JSONL 是序列化格式。** 版本欄位只放在 Episode 開始那一筆。**M10 之前 schema
+  不保證穩定** —— 這是履歷作品不是發布的 API，假裝穩定要付相容性的代價。
+- **寫入加鎖，任何 thread 直接寫。** 不採「丟佇列由主迴圈收」：那會讓緊急停止**發生的時間**
+  與**被記下的時間**差開，而那個差距正是要量的東西。
+
+### 15.4 Observation 與 Snapshot
+
+**Observation = Tool 自己的結果 + Snapshot**，Snapshot 由迴圈附加而非每個 Tool 各自組裝
+（對每個 Tool 都一樣，放進 Tool 就是複製九份）。
+
+**Snapshot 刻意固定為三樣**：主體距離、是否看得見、是否聽到新的話。三樣本來就在跑，零額外
+模型呼叫、零額外等待。更豐富的感知是**一個模型自己去呼叫的 Tool**，不是加寬 Snapshot ——
+那會讓每一步都付那個成本，而 §4 已明確否決每步重跑影像模型。
+
+失敗原因靠 `approach()` 既有的四個狀態承載，不加寬 Snapshot。Observation 送給模型時序列化
+為 JSON，**不並陳一份人話摘要** —— 同一個事實兩份拷貝會漂。
+
+**TTS 抑制窗：§4 原文的做法不存在。** Misty 的 TTS 不回傳時間；保留字數估計，但把速率常數
+搬進 `config.py` 並明列 UNCALIBRATED（它現在硬編在舊主腳本裡）。抑制窗只涵蓋播放期間，
+靠注入時鐘讓它可測。
+
+### 15.5 Memory 重新設計，不是搬移
+
+§2 原本寫「三層記憶（現有邏輯搬移）」。**改為重新設計。**
+
+一份只增不改的 **Exchange** 紀錄是唯一真相，摘要與事實是它的衍生物。取最近幾輪變成**純函式
+的切片**（不需模型，微秒級可測，§14.6 欠的五條檢查大半落在這裡）。摘要與事實抽取**在 Episode
+邊界各做一次**，不是每個 Turn 一次 —— ReAct 之下一個 Episode 有多個 Turn，但使用者只說了
+一次話，每輪抽取是在對著沒有新東西的紀錄抽。
+
+**模型的訊息串不是 memory。** 那是一個 Episode 的工作脈絡，隨 Episode 丟棄；Exchange 是跨
+Episode 活著的東西。兩者不得合而為一。
+
+**不引入向量檢索。** 一個 Episode 五到十秒、一次 session 幾十輪，語料規模撐不起嵌入呼叫與
+額外相依的成本。
+
+曾考慮讓 memory 直接折 Journal（不自己記帳），**否決**：§4 給 Journal 的責任已有三個
+（斷言標的、延遲量測、未來 UI），加上「memory 的來源」會讓它為四個理由改變。等 schema 在
+M7 穩下來，M8 之後再考慮合併不遲。
+
+### 15.6 Ticket 順序是 spec 的一部分
+
+```
+spec → Journal 型別 + golden files（先 commit） → tools / react → 最後刪舊主腳本
+```
+
+Journal 是 M7 測試的斷言標的。與 ReAct 迴圈同批長出來，斷言的詞彙就會被實作反向塑形。
+**Schema 從 spec 推導，不從實作推導。** Golden files 涵蓋 Episode 的**四種結束方式**：
+一個 Turn 就結束、多個 Turn 正常完成、撞到步數上限、被緊急停止中止 —— 少一種就有一條路徑
+沒有對照。
+
+舊主腳本在**最後一張票、單獨一支 commit** 刪除：一千多行的刪除 diff 混在其他改動裡，
+review 會看不出刪掉的是不是正確的東西。

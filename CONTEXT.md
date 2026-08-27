@@ -26,6 +26,24 @@ One commanded movement issued by the control layer. A single Turn may produce
 many Steps.
 _Avoid_: move, action, increment
 
+**Tool**:
+One capability the agent may invoke, declared to the model and dispatched by
+the registry. A Tool is the agent's whole vocabulary of action — anything it
+cannot do through one, it cannot do.
+_Avoid_: skill, function, action, command
+
+**Observation**:
+What comes back to the model after a Tool runs: that Tool's own result,
+plus a Snapshot. One per Turn.
+_Avoid_: result, feedback, response
+
+**Snapshot**:
+The three cheap perception facts attached to every Observation — how far away
+the subject is, whether they are visible, and whether anything new was heard.
+Cheap is definitional: a Snapshot costs no extra model call and no extra
+waiting, which is why it can ride along on every Turn.
+_Avoid_: perception data, state, context
+
 **Journal**:
 The agent's own typed record of what happened during an Episode. Renderers and
 tests are subscribers to it; it is never a channel the robot pushes into.
@@ -36,6 +54,13 @@ A signal Misty pushes to us over its websocket — bump sensors, touch, faces.
 The vendor's word, kept for the vendor's concept only. An Event may be recorded
 as a Journal entry, but the two are not the same thing.
 _Avoid_: robot event, sensor event, notification
+
+**Exchange**:
+One thing the subject said and what the robot said back. The unit memory is
+made of, and deliberately **not** the model's message list — that list is one
+Episode's working context and is discarded with it, while Exchanges outlive
+the Episode they came from.
+_Avoid_: message, turn, history, conversation
 
 ### Perception and measurement
 

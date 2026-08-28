@@ -913,3 +913,72 @@ Journal 是 M7 測試的斷言標的。與 ReAct 迴圈同批長出來，斷言�
 
 舊主腳本在**最後一張票、單獨一支 commit** 刪除：一千多行的刪除 diff 混在其他改動裡，
 review 會看不出刪掉的是不是正確的東西。
+
+### 15.7 拒絕理由的措辭：golden 贏，實作讓步（M7 #04 review）
+
+`tests/goldens/episode_ends_after_several_turns.jsonl` 裡那筆被拒的 `move_head` 寫的是：
+
+```
+"reason": "pitch 140 is outside the permitted range"
+```
+
+而 #04 第一版的 `_explain()` 產出的是 `"pitch: Input should be less than or equal to 26"`。
+兩者欄位對得上、**內容對不上**：golden 講**模型送了什麼**，實作講**上限是多少**，而且互相不是
+對方的子集。ticket 07 必須重現這個檔案，所以這不是措辭偏好，是 07 會不會卡住的問題。
+
+`tests/goldens/README.md` 訂的規則是「**實作產不出 golden 時，哪一邊讓步是一個決定，要寫進
+PLAN**」。這裡**實作讓步**，理由有兩層：
+
+1. golden 是在這個模組存在之前寫的，這正是它的用途。反過來改 golden 去遷就實作，等於讓
+   斷言由實作反向塑形 —— §15.6 整節就是為了防這件事。
+2. 就算沒有 golden，「你送的 140 超出範圍」對模型也比「上限是 26」有用：要改的是模型送出的
+   那個值。
+
+**同時抓到一條把實作釘死在 golden 對面的測試。** `test_the_reason_names_the_argument_and_
+what_was_wrong_with_it` 斷言 `"26" in reason` —— 斷言的是上限。它會讓正確的修法變紅。已改成
+斷言送出的值，並另外加一條直接**從 golden 檔案讀出** reason 來比對的測試：把字串抄進測試裡的
+版本，在有人改了 golden 之後還是會繼續綠。
+
+### 15.8 §4 的分層規則獨立成 `layering.py`，並且**分方向**（M7 #04 review）
+
+原本 `journal.py` 持有一份禁用鍵清單，`tools.py` import 它、**再自己實作一次比對**。這是
+§10 講的同一件事有兩份，而且兩份的行為本來就不同 —— 註冊時檢查的是 `model_fields`，序列化時
+檢查的是 mapping 的 key。規則移到 `misty_agent/agent/layering.py`，兩邊都是它的使用者。
+§15.5 拒絕把 memory 併進 Journal 的理由（不要給 Journal 多一個變動的理由）同樣適用：分層是
+§4 的事實，不是 Journal 的事實。
+
+**規則要分方向，這是 review 過程中被 golden 逼出來的。** 第一版寫成「名字結尾是時間單位就
+拒絕」，結果四個 golden 全部掛掉 —— 因為 Observation 的 result 裡有 `estimated_speech_ms`
+（§15.4 的抑制窗就是靠這個數字），`model_called` 上有 `latency_ms`。這些是**系統回報的量測**，
+不是模型下達的命令。定案：
+
+| | 模型選的（Tool 參數、`tool_called.args`） | 系統回報的（`observation.result`） |
+|---|---|---|
+| 速率（`velocity`、`speed`、`cm_per_sec`…） | 拒絕 | 拒絕 |
+| 驅動指令本身的參數名（`timeMs`、`drive_ms`…） | 拒絕 | 拒絕 |
+| 其他時間單位（`estimated_speech_ms`、`latency_ms`） | 拒絕 | **允許** |
+
+距離**故意不擋**：§15.2 已經寫明「將來若真需要退遠一點，那是給 `approach` 加一個受 clamp 的
+目標距離參數」。在這裡擋掉 `target_distance_cm`，等於替 §15.2 明白留著的決定先做了決定。
+
+**註冊時檢查的對象改成產生出來的 schema，不是 `model_fields`。** 因為 schema 才是模型真正
+看到的東西，而兩者不是同一份文件：`Field(alias="linearVelocity")` 在 `model_fields` 裡叫
+`v`、在 schema 裡叫 `linearVelocity`；巢狀模型的欄位根本不在 `model_fields` 裡，只在
+`$defs`。原本兩條路都是開的 —— 而模組 docstring 宣稱的正是「不可能」。走 alias 那條更糟：
+註冊會過，然後 `dispatch` 把每一次呼叫都當成未知參數拒絕，變成一個模型看得到、但永遠叫不動
+的 Tool。
+
+### 15.9 `ends_episode` 是註冊時宣告的屬性，不是名字（M7 #04 review）
+
+§4 說沒有獨立快路徑，`test_done_says_the_episode_should_end` 的 docstring 也這樣寫 ——
+但它**測不出來**：`build_registry()` 裡唯一 `ends_episode=True` 的 Tool，同時也是唯一叫
+`done` 的 Tool，所以把 `ends_episode=tool.ends_episode` 換成 `ends_episode=(name ==
+"done")` 完全不會紅。兩軸 review 各自獨立跑出同一個結果。
+
+**一個例子分不出屬性和拼字，要兩個。** 補了兩條測試：一個**不叫** `done` 但會結束 Episode 的
+Tool，和一個**叫** `done` 但不會結束的 Tool。這條在 05/06 把另外八個 Tool 加進來之前尤其
+重要 —— 到那時候這個 mutation 會自然變紅，但那是運氣，不是測試。
+
+同一個形狀還出現在別處：`ToolContext` 是 05/06 唯一碰得到機器人的路徑，而在 review 之前
+沒有任何測試斷言呼叫端傳進去的 context 真的到得了 handler 手上 —— 把它換成一個當場新建的
+空 context 不會紅。

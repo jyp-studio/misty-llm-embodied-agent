@@ -19,3 +19,15 @@
 - [ ] 沒有引入新的測試 seam
 - [ ] 沒有任何 Tool 的參數含 velocity 或 timeMs
 - [ ] 測試在專案 venv 下零 skip，不需硬體
+
+## Notes（來自 #04 的 review）
+
+- **參數型別定義在模組層級，不要定義在函式裡。** `from __future__ import annotations` 會把
+  註解變成字串，函式內的類別解析不到。`tools.py` 會拋一個說明清楚的 `TypeError`。
+- **分層守衛現在讀的是產生出來的 schema，不是 `model_fields`**，所以 alias 和巢狀模型都擋得住，
+  規則在 `misty_agent/agent/layering.py`（見 `PLAN.md` §15.8）。距離參數**故意不擋**。
+- `ToolContext` 有 `robot`、`readings`、`config`、`clock` 四個欄位。`speak` 的抑制窗
+  （ticket 10）需要 `clock`。
+- **每個 clamp 的測試要有陰性對照。** #04 的教訓是：只有一個例子的規則，分不出「屬性」和
+  「剛好」—— `ends_episode` 那條就是這樣漏掉的（`PLAN.md` §15.9）。
+- 拒絕理由的措辭已對齊 golden：超範圍時說**模型送了什麼**，不說上限是多少（§15.7）。

@@ -465,6 +465,37 @@ def test_an_observation_result_cannot_carry_a_drive_command_either():
         )
 
 
+def test_a_duration_the_model_chose_is_refused_in_arguments():
+    """`tool_called` is the model commanding, so a duration there is driving.
+
+    Not covered by the three spellings above: those are refused whichever
+    direction they travel, so they cannot tell whether this record screens as
+    commanded or as reported. This one can — it is allowed in a result.
+    """
+    with pytest.raises(ValueError, match="control parameter|duration"):
+        ToolCalled(
+            t=0.0, episode_id="ep-1", turn=1, tool="speak", args={"wait_seconds": 3}
+        )
+
+
+def test_a_duration_the_system_measured_is_allowed_in_a_result():
+    """The other half of the direction, and the goldens depend on it.
+
+    `PLAN.md` §15.4's suppression window is `estimated_speech_ms`, and
+    `episode_ends_after_several_turns.jsonl` carries it in an Observation. A
+    guard that refused it would fail every golden.
+    """
+    record = Observation(
+        t=0.0,
+        episode_id="ep-1",
+        turn=1,
+        result={"estimated_speech_ms": 1409, "ok": True},
+        snapshot=Snapshot(distance_cm=60, face_present=True, new_speech=None),
+    )
+
+    assert record.result["estimated_speech_ms"] == 1409
+
+
 def test_ordinary_arguments_still_pass():
     # The negative control. A guard that rejected everything would satisfy the
     # three tests above.

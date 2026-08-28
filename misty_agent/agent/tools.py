@@ -28,14 +28,16 @@ property it declares rather than something the loop infers from its name.
 
 from __future__ import annotations
 
+import inspect
+import re
 from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
     Dict,
+    Iterator,
     Mapping,
     Optional,
-    Sequence,
     Tuple,
     Type,
     get_type_hints,
@@ -43,27 +45,38 @@ from typing import (
 
 from pydantic import BaseModel, ValidationError
 
-from misty_agent.agent.journal import (
-    FORBIDDEN_KEYS,
-    Journal,
-    ToolCalled,
-    ToolRejected,
-)
+from misty_agent.agent.journal import Journal, ToolCalled, ToolRejected
+from misty_agent.agent.layering import refuse_control_parameters
 
 
 @dataclass(frozen=True)
 class ToolContext:
     """What a Tool is given besides its own arguments.
 
-    Two fields, and neither is speculative: seven of the nine Tools in
-    `PLAN.md` §15.2 drive the robot, and `approach` additionally needs the
-    distance readings. Defining the calling convention is this ticket's job,
-    and a convention that could not serve the Tools already specified would
+    Four fields, and each is one that a Tool named in `PLAN.md` §15.2 already
+    needs: seven of the nine drive the robot, `approach` also reads distances,
+    and M5's `approach(readings, robot, *, config, clock)` is the signature
+    this has to be able to call. `speak` needs the clock too, for §15.4's
+    suppression window. Defining the calling convention is this ticket's job,
+    and a convention that could not call the Tools already specified would
     have to be changed by every one of them in the next ticket.
+
+    Held as `Any` on purpose: importing the robot and config types here would
+    make the vocabulary of action depend on one particular robot, and the
+    simulator and the real Misty are both meant to fit.
     """
 
     robot: Any
     readings: Any
+    config: Any = None
+    clock: Any = None
+
+
+#: What a Tool may be called. The function-calling APIs this feeds accept
+#: `^[a-zA-Z0-9_-]{1,64}$`, and a name outside it is rejected at the far end
+#: of a network call — which is a slow, remote way to find out about a typo
+#: that registration can catch immediately.
+TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 @dataclass(frozen=True)
@@ -85,6 +98,12 @@ class Tool:
         """
         parameters = self.args_model.model_json_schema()
         parameters.pop("title", None)
+        # The argument model's own docstring is written for whoever maintains
+        # it, and pydantic puts it here. Left in, the model would read this
+        # module's reasoning about `PLAN.md` as if it were instructions about
+        # the Tool. What the model should be told is `self.description`; per
+        # argument, `Field(description=...)`, which is untouched.
+        parameters.pop("description", None)
         return {
             "type": "function",
             "function": {
@@ -115,10 +134,17 @@ class ToolRegistry:
         self, name: str, description: str, *, ends_episode: bool = False
     ) -> Callable[[Callable[..., Mapping[str, Any]]], Callable[..., Mapping[str, Any]]]:
         def register(handler):
+            if not TOOL_NAME.fullmatch(name):
+                raise ValueError(
+                    f"{name!r} is not a usable Tool name: it has to match "
+                    f"{TOOL_NAME.pattern} to survive the function-calling API"
+                )
             if name in self._tools:
                 raise ValueError(f"a Tool named {name!r} is already registered")
             args_model = _argument_type(handler)
-            _refuse_control_parameters(name, args_model)
+            refuse_control_parameters(
+                    f"Tool {name!r}", _declared_names(args_model), commanded=True
+                )
             self._tools[name] = Tool(
                 name=name,
                 description=description,
@@ -151,7 +177,10 @@ def _argument_type(handler: Callable[..., Any]) -> Type[BaseModel]:
             f"module — one defined inside a function is not"
         ) from error
     parameters = [
-        name for name in handler.__code__.co_varnames[: handler.__code__.co_argcount]
+        parameter.name
+        for parameter in inspect.signature(handler).parameters.values()
+        if parameter.kind
+        in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
     ]
     annotated = hints.get(parameters[0]) if parameters else None
     if not (isinstance(annotated, type) and issubclass(annotated, BaseModel)):
@@ -164,16 +193,29 @@ def _argument_type(handler: Callable[..., Any]) -> Type[BaseModel]:
     return annotated
 
 
-def _refuse_control_parameters(name: str, args_model: Type[BaseModel]) -> None:
-    flattened = {key.replace("_", "") for key in FORBIDDEN_KEYS}
-    for field in args_model.model_fields:
-        if field.lower().replace("_", "") in flattened:
-            raise ValueError(
-                f"Tool {name!r} may not take {field!r}: physical control "
-                f"parameters belong to the control layer, and a Tool that "
-                f"declared one would tell the model in its own schema that "
-                f"sending one is allowed (PLAN.md §4)"
-            )
+def _declared_names(args_model: Type[BaseModel]) -> Iterator[str]:
+    """Every name the generated schema tells the model it may send.
+
+    Read off the schema rather than off `model_fields`, because the schema is
+    what the model actually sees and the two are not the same document. A
+    field aliased `Field(alias="linearVelocity")` is `v` in `model_fields` and
+    `linearVelocity` in the schema; a nested model's fields do not appear in
+    `model_fields` at all, only under `$defs`. Checking the fields would have
+    left both of those routes open, and the docstring above claims neither is.
+    """
+
+    def walk(node: Any) -> Iterator[str]:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                yield from properties
+            for value in node.values():
+                yield from walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from walk(value)
+
+    return walk(args_model.model_json_schema())
 
 
 def dispatch(
@@ -236,17 +278,34 @@ def _refuse(journal: Journal, turn: int, name: str, reason: str) -> Dispatched:
     return Dispatched(accepted=False, reason=reason)
 
 
+#: Validation failures that are a number being out of bounds, as opposed to
+#: being the wrong kind of thing entirely.
+_OUT_OF_RANGE = frozenset(
+    {"greater_than", "greater_than_equal", "less_than", "less_than_equal"}
+)
+
+
 def _explain(error: ValidationError) -> str:
     """Why the arguments were refused, in words rather than a stack trace.
 
     The model reads this back as an Observation, so it has to say which
     argument and what was wrong with it — "validation error" tells it nothing
     it can act on.
+
+    An out-of-range number names **the value it sent**, not the bound it
+    missed. That wording is not a preference: it is what
+    `tests/goldens/episode_ends_after_several_turns.jsonl` already says a
+    refused `move_head` looks like, and that file was written before this
+    module existed. Every error is reported, not just the first — a model told
+    about one bad argument at a time takes a Turn per argument to find out.
     """
     parts = []
     for problem in error.errors():
         where = ".".join(str(piece) for piece in problem["loc"]) or "(arguments)"
-        parts.append(f"{where}: {problem['msg']}")
+        if problem["type"] in _OUT_OF_RANGE:
+            parts.append(f"{where} {problem['input']!s} is outside the permitted range")
+        else:
+            parts.append(f"{where}: {problem['msg']}")
     return "; ".join(parts)
 
 
@@ -255,9 +314,13 @@ def _explain(error: ValidationError) -> str:
 # ---------------------------------------------------------------------------
 
 class NoArguments(BaseModel):
-    """For a Tool that takes none. `extra='forbid'` still applies."""
+    """For a Tool that takes none.
 
-    model_config = {"extra": "forbid"}
+    No `extra="forbid"`: `dispatch` refuses unknown arguments before
+    validation runs, so setting it here would be a second copy of a rule that
+    is already enforced — and the copy that never fires is the one that is
+    wrong when they drift (`PLAN.md` §10).
+    """
 
 
 def build_registry() -> ToolRegistry:

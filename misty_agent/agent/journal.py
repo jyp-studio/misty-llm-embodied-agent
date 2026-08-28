@@ -32,9 +32,11 @@ opening record so a human can still place the run in real time.
 `PLAN.md` §4's layering claim is that the model decides *whether* to approach
 and the control layer decides *how far* each Step goes. A velocity or a drive
 duration appearing in a record would make that claim false in exactly the
-artefact a reader would check it against. `tests/test_journal.py` asserts that
-no record kind declares such a field and that no serialised Journal mentions
-one.
+artefact a reader would check it against. What counts as one is `layering.py`'s
+to define — the same rule also refuses to let a Tool *declare* one, and a rule
+with two implementations is the thing `PLAN.md` §10 is about.
+`tests/test_journal.py` asserts that no record kind declares such a field and
+that no serialised Journal mentions one.
 """
 
 from __future__ import annotations
@@ -59,6 +61,8 @@ from typing import (
     Union,
 )
 
+from misty_agent.agent.layering import refuse_control_parameters
+
 #: What this Journal's shape is called today. The `unstable` is load-bearing:
 #: it tells a reader the schema will move before M10, and it is asserted.
 JOURNAL_SCHEMA = "0.1.0-unstable"
@@ -77,27 +81,6 @@ TIME_PLACES = 3
 #: *scenarios* to keep goldens for, and two of them — ending on the first Turn
 #: and ending after several — are both the model choosing to stop.
 OUTCOMES = ("done", "turn_limit", "aborted")
-
-#: Keys that must never appear in a Tool's arguments or an Observation.
-#:
-#: `PLAN.md` §4's layering claim is that the model decides *whether* to
-#: approach and the control layer decides *how far* each Step goes. Arguments
-#: and payloads are free-form mappings filled in by later tickets, so they are
-#: the one route by which that claim could quietly become false — and the
-#: Journal is the artefact a reader would check it against. Screened at
-#: construction, not at serialisation: a record that should not exist should
-#: not be constructible.
-FORBIDDEN_KEYS = frozenset(
-    {
-        "velocity",
-        "linearvelocity",
-        "angularvelocity",
-        "timems",
-        "time_ms",
-        "drive_ms",
-        "cm_per_sec",
-    }
-)
 
 #: What a mapping field may contain. Anything else does not survive JSON: a
 #: tuple comes back as a list and quietly breaks equality against a golden.
@@ -140,17 +123,20 @@ class EpisodeClock:
 # The records
 # ---------------------------------------------------------------------------
 
-def _screen(where: str, mapping: Mapping[str, Any]) -> None:
-    """Refuse a mapping that would make the Journal lie, or fail to round-trip."""
+def _screen(where: str, mapping: Mapping[str, Any], *, commanded: bool) -> None:
+    """Refuse a mapping that would make the Journal lie, or fail to round-trip.
+
+    Arguments and payloads are free-form mappings filled in by later tickets,
+    so they are the one route by which `PLAN.md` §4's layering claim could
+    quietly become false — and the Journal is the artefact a reader would
+    check it against. What counts as crossing that line is `layering.py`'s to
+    say, not the Journal's, and `commanded` is how this record says whether
+    the model picked these keys or the system is reporting them. Screened at
+    construction rather than at serialisation: a record that should not exist
+    should not be constructible.
+    """
     for key, value in mapping.items():
-        if key.lower().replace("_", "") in {
-            forbidden.replace("_", "") for forbidden in FORBIDDEN_KEYS
-        }:
-            raise ValueError(
-                f"{where} may not carry {key!r}: physical control parameters "
-                f"are the control layer's, and a Journal that recorded one "
-                f"would contradict PLAN.md §4's layering claim"
-            )
+        refuse_control_parameters(where, (key,), commanded=commanded)
         if not isinstance(value, JSON_TYPES):
             raise ValueError(
                 f"{where}[{key!r}] is a {type(value).__name__}, which does not "
@@ -158,7 +144,7 @@ def _screen(where: str, mapping: Mapping[str, Any]) -> None:
                 f"break a golden comparison silently"
             )
         if isinstance(value, dict):
-            _screen(f"{where}[{key!r}]", value)
+            _screen(f"{where}[{key!r}]", value, commanded=commanded)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -219,7 +205,8 @@ class ToolCalled(Record):
     type: str = "tool_called"
 
     def __post_init__(self) -> None:
-        _screen(f"{self.tool} arguments", self.args)
+        # The model chose these, so a duration here is the model driving.
+        _screen(f"{self.tool} arguments", self.args, commanded=True)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -271,7 +258,9 @@ class Observation(Record):
     type: str = "observation"
 
     def __post_init__(self) -> None:
-        _screen("an Observation result", self.result)
+        # The system is reporting these back, so `estimated_speech_ms` is a
+        # measurement rather than a command (`PLAN.md` §15.4).
+        _screen("an Observation result", self.result, commanded=False)
 
 
 @dataclass(frozen=True, kw_only=True)

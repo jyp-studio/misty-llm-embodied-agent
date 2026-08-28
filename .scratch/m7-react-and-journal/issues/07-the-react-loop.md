@@ -31,3 +31,16 @@ ReAct 的一輪。目前**沒有任何呼叫端**（grep 只有 `config.py` 自�
 - [ ] **產出的 Journal 對得上 golden 1、2、3**
 - [ ] 有測試證明模型收到的任何文字都不含 velocity 或 timeMs
 - [ ] 測試在專案 venv 下零 skip，不呼叫真模型、不需網路
+
+## Notes（來自 #04 的 review）
+
+- **`config.py` 的 `max_react_steps` 要改名成 Turn 的說法**（它自己的說明就寫 "Hard cap on
+  LLM **turns**"）。目前零個呼叫端，現在改是免費的。
+- **golden 2 的拒絕理由現在產得出來了。** #04 的 `_explain()` 原本產不出，實作已讓步，
+  決定寫在 `PLAN.md` §15.7。這張票直接對檔案比就好。
+- **`Dispatched` 沒有 Step 計數。** `episode_finished.steps` 是「實際發生的驅動次數的總和」，
+  而 `approach` 的 Step 數目前只在 `result["steps"]` 這個字串鍵裡。迴圈要嘛用字串鍵取，
+  要嘛在這張票給 `Dispatched` 加一個型別化的欄位 —— **選哪個要寫進 ticket 的 Comments**，
+  因為它決定 golden 的 `steps` 是怎麼算出來的。
+- `ends_episode` 從 registry 讀，**不要**比對名字（`PLAN.md` §4、§15.9）。已有兩條測試釘死。
+- 被拒絕的呼叫 `ends_episode` 一定是 False，dispatch 已保證。

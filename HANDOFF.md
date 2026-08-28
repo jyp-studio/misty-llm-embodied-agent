@@ -209,8 +209,12 @@ observability），再 `/to-spec` → `/to-tickets`。`PLAN.md` §4 已有 ReAct
 - 工作樹有四筆**不屬於任何里程碑**的既有修改：`.env.example`、`architecture.svg`、
   `docs/measurements/m4-harness-report.md`、`tests/conftest.py`。它們活過了整個 M6，
   請繼續保留。提交時用明確檔案清單 stage；不要用 `git add -A`。
-  **也不要用目錄**：M6 #05 差點用 `git add docs/measurements/` 把 `m4-harness-report.md`
-  掃進去，是靠 commit 前的 `git diff --cached --stat` 才發現。那一步不是形式。
+  **也不要用目錄。** M6 #05 差點用 `git add docs/measurements/` 把 `m4-harness-report.md`
+  掃進去，是靠 commit 前的 `git diff --cached --stat` 才發現。
+  **M7 #03 用 `git add tests/` 真的把 `tests/conftest.py` 掃進去了** —— 而且那次我沒有在
+  commit 前檢查 stat，是提交後看 `git status` 少了一行才發現。用 `--amend` 把該檔還原成
+  未提交（內容逐字元不變）。**這條警告是我自己寫的，然後我自己違反了它。** 逐檔列出，
+  而且 commit 前真的看一眼 `git diff --cached --stat`。
 - **備份在 `~/dev/misty-embodied-agent.backup`**（含原始 `HANDOFF.md`）。`main` 分支未動。
 
 ### 環境

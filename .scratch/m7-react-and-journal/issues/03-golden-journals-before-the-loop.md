@@ -126,3 +126,11 @@ Observation。
 測試只改時間 —— 而 `t` 相符正是 ticket 07 用可注入時鐘比對 golden 的全部意義。補上之後 14/14。
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **460 passed、零 skip**。
+
+**提交後發現的一個程序錯誤（已修正）。** 我用 `git add tests/` 暫存，把
+`tests/conftest.py` —— HANDOFF §4 明列的四個受保護檔案之一 —— 掃進了 `6301145`。
+提交後看 `git status` 少了一行才發現。已用 `--amend` 把它還原成未提交，內容逐字元不變
+（提交前先備份到 scratchpad 比對過）。
+
+**這條警告是我在 M6 #05 差點犯錯之後自己寫進 HANDOFF 的，然後我自己違反了它。** 已把
+真實案例補進那一條，並加上一句我這次漏掉的：**commit 前真的看一眼 `git diff --cached --stat`。**

@@ -73,3 +73,56 @@ Turn 從 1 開始不跳號、結束那筆的 `turns` 等於真的開始過的 Tu
 目前沒有任何呼叫端，所以在 07 改名的成本仍然是零；等迴圈寫完就得連環境變數一起動。
 
 驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **445 passed、零 skip**（400 → 445）。
+
+---
+
+**Review 後的更正（2026-08-25，同日）。** 兩軸序列跑、各自隔離 worktree，兩軸都做了完整的
+mutation testing。**14 個 mutation 有 11 個存活**，另外**兩軸各自獨立推翻了我在上面寫的一個
+事實宣稱**。
+
+**(1) 我寫的「九個全紅」是錯的。** 我的 mutation 把 `f"record {index} ({want.type}).{field.name}"`
+整段換成 `f"record {index}"`，於是連**種類名**一起消失，測試自然紅。reviewer 用更精準的
+mutation —— **只拿掉 `.{field.name}`、保留 `({want.type})`** —— 結果**存活**：我的斷言是
+`"turn" in message`，而 `turn_started` 這個種類名本身就含有 "turn"。**那條測試分不出「有沒有
+報欄位名」。** 我的 mutation 不夠精準，而我把「我的九個全紅」寫成了「這個 helper 被守住了」。
+
+**(2) 根因是 Primitive Obsession：helper 回傳格式化字串，所以測試只能做 substring 比對。**
+改成回傳**結構化的 `Difference`**（`what` / `index` / `kind` / `field` / `expected` / `actual`，
+外加 `__str__` 給人看）。三個原本存活的 mutation —— 報最後一個差異、expected 與 actual 互換、
+只報種類不報欄位 —— 現在都不可能存活，因為測試斷言的是欄位而不是字串。
+
+**(3) helper 搬出生產程式碼。** 它**沒有任何生產呼叫端**，是一個住在 `misty_agent/` 的測試
+工具。§15.5 才剛以「不要給 Journal 第四個改變的理由」否決過類似的東西，這是同一個錯誤的
+小號版本。移到 `tests/journal_diff.py`。
+
+**(4) `spoke_for_ms: 850` 是憑空來的 —— 而且它把一個被劃掉的概念請了回來。** PLAN §4 的估計式
+是 `words / 2.2 + 0.5`（上限 12 秒），「Coming over.」兩個字應該是 **1409ms**，沒有任何整數字數
+會得到 850。更糟的是 §4 **劃掉了** `spoken_ms` 並註明「這個做法不存在」，而我用幾乎一樣的名字
+把它寫進一份宣稱「由 spec 推導」的檔案。改成 `estimated_speech_ms`，值由估計式算出，並加測試
+釘住它必須符合估計式。
+
+**(5) 中止那份 golden 大概是錯的，而我只把它標成「最不確定」。** 它記錄 `approach` 在腳踏板
+觸發之後回報 **`arrived`** —— 但 ticket 08 要求「中止之後仍然回到閒置：沒有留下未停止的動作」。
+如果停止真的停下了馬達，四個狀態會給出 `timeout` 或 `drive_error`，不會是 `arrived`。
+**`arrived` 等於說機器人完成了一段它被禁止完成的行程。** 改成 `timeout` 並加測試釘住「中止後
+不得宣稱 arrived」。
+
+**(6) 沒有任何 golden 展示失敗或拒絕。** spec 要求 Journal 涵蓋「參數被拒絕」，user story 2
+是「失敗後改做別的」—— 而我的四份裡每個 `approach` 都成功、`tool_rejected` 一次都沒出現。
+ticket 04 的拒絕路徑與 ticket 07 的失敗分支**沒有比對對象**。多輪那份現在包含一次被型別擋下的
+`move_head`，以及一次以 `lost_user` 結束的 `approach`。
+
+**(7) golden 可以被整份換掉而套件全綠。** reviewer 把「多輪」那份直接換成「單輪」那份的內容 ——
+outcome 涵蓋率測試照樣通過，**多輪這條路徑就這樣無聲消失了**。README 訂的規則原本純屬榮譽制。
+補上每份 golden 的形狀斷言：各自不同的 episode id、工具序列、`steps` 等於實際驅動次數之和、
+turn 上限等於 `config` 的值、`latency_ms` 與時間差一致、除了 `done` 之外每個工具呼叫都有
+Observation。
+
+**這些新斷言當場在我自己手寫的 golden 上抓到一個錯**（第一份的 turn 起點到模型回覆是 947ms，
+而 `latency_ms` 寫 943）。修的是 golden 不是測試 —— 四份全部改用「模型呼叫恰好花掉它自己回報的
+時間」重新產生。
+
+**重跑 14 個 mutation：13 個紅。** 剩下一個（helper 完全跳過 `t` 欄位）存活，因為我沒有任何
+測試只改時間 —— 而 `t` 相符正是 ticket 07 用可注入時鐘比對 golden 的全部意義。補上之後 14/14。
+
+驗證：`.venv/bin/python -m pytest tests/ -q -rs` → **460 passed、零 skip**。

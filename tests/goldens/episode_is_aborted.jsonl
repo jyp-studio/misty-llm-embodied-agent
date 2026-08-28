@@ -1,7 +1,7 @@
 {"episode_id": "ep-aborted", "schema": "0.1.0-unstable", "started_at_wall_clock": "2026-08-25T09:14:03+08:00", "t": 0.0, "trigger": "speech", "type": "episode_started"}
 {"episode_id": "ep-aborted", "t": 0.004, "turn": 1, "type": "turn_started"}
-{"episode_id": "ep-aborted", "latency_ms": 1024, "t": 1.03, "tokens_in": 811, "tokens_out": 15, "turn": 1, "type": "model_called"}
-{"args": {}, "episode_id": "ep-aborted", "t": 1.032, "tool": "approach", "turn": 1, "type": "tool_called"}
-{"episode_id": "ep-aborted", "source": "foot_bumper", "t": 4.617, "type": "stop_requested"}
-{"episode_id": "ep-aborted", "result": {"result": "arrived", "steps": 1}, "snapshot": {"distance_cm": 71, "face_present": true, "new_speech": null}, "t": 6.55, "turn": 1, "type": "observation"}
-{"episode_id": "ep-aborted", "outcome": "aborted", "steps": 1, "t": 6.553, "turns": 1, "type": "episode_finished"}
+{"episode_id": "ep-aborted", "latency_ms": 1024, "t": 1.028, "tokens_in": 811, "tokens_out": 15, "turn": 1, "type": "model_called"}
+{"args": {}, "episode_id": "ep-aborted", "t": 1.03, "tool": "approach", "turn": 1, "type": "tool_called"}
+{"episode_id": "ep-aborted", "source": "foot_bumper", "t": 4.615, "type": "stop_requested"}
+{"episode_id": "ep-aborted", "result": {"result": "timeout", "steps": 1}, "snapshot": {"distance_cm": 97, "face_present": true, "new_speech": null}, "t": 6.548, "turn": 1, "type": "observation"}
+{"episode_id": "ep-aborted", "outcome": "aborted", "steps": 1, "t": 6.551, "turns": 1, "type": "episode_finished"}

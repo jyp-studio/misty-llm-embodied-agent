@@ -1,22 +1,22 @@
 {"episode_id": "ep-turn-limit", "schema": "0.1.0-unstable", "started_at_wall_clock": "2026-08-25T09:14:03+08:00", "t": 0.0, "trigger": "visual", "type": "episode_started"}
-{"episode_id": "ep-turn-limit", "t": 0.003, "turn": 1, "type": "turn_started"}
-{"episode_id": "ep-turn-limit", "latency_ms": 897, "t": 0.903, "tokens_in": 840, "tokens_out": 14, "turn": 1, "type": "model_called"}
-{"args": {}, "episode_id": "ep-turn-limit", "t": 0.905, "tool": "look_around", "turn": 1, "type": "tool_called"}
-{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 154, "face_present": true, "new_speech": null}, "t": 2.305, "turn": 1, "type": "observation"}
-{"episode_id": "ep-turn-limit", "t": 2.307, "turn": 2, "type": "turn_started"}
-{"episode_id": "ep-turn-limit", "latency_ms": 897, "t": 3.207, "tokens_in": 880, "tokens_out": 14, "turn": 2, "type": "model_called"}
-{"args": {}, "episode_id": "ep-turn-limit", "t": 3.209, "tool": "look_around", "turn": 2, "type": "tool_called"}
-{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 153, "face_present": true, "new_speech": null}, "t": 4.609, "turn": 2, "type": "observation"}
-{"episode_id": "ep-turn-limit", "t": 4.611, "turn": 3, "type": "turn_started"}
-{"episode_id": "ep-turn-limit", "latency_ms": 897, "t": 5.511, "tokens_in": 920, "tokens_out": 14, "turn": 3, "type": "model_called"}
-{"args": {}, "episode_id": "ep-turn-limit", "t": 5.513, "tool": "look_around", "turn": 3, "type": "tool_called"}
-{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 152, "face_present": true, "new_speech": null}, "t": 6.913, "turn": 3, "type": "observation"}
-{"episode_id": "ep-turn-limit", "t": 6.915, "turn": 4, "type": "turn_started"}
-{"episode_id": "ep-turn-limit", "latency_ms": 897, "t": 7.815, "tokens_in": 960, "tokens_out": 14, "turn": 4, "type": "model_called"}
-{"args": {}, "episode_id": "ep-turn-limit", "t": 7.817, "tool": "look_around", "turn": 4, "type": "tool_called"}
-{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 151, "face_present": true, "new_speech": null}, "t": 9.217, "turn": 4, "type": "observation"}
-{"episode_id": "ep-turn-limit", "t": 9.219, "turn": 5, "type": "turn_started"}
-{"episode_id": "ep-turn-limit", "latency_ms": 897, "t": 10.119, "tokens_in": 1000, "tokens_out": 14, "turn": 5, "type": "model_called"}
-{"args": {}, "episode_id": "ep-turn-limit", "t": 10.121, "tool": "look_around", "turn": 5, "type": "tool_called"}
-{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 150, "face_present": true, "new_speech": null}, "t": 11.521, "turn": 5, "type": "observation"}
-{"episode_id": "ep-turn-limit", "outcome": "turn_limit", "steps": 0, "t": 11.523, "turns": 5, "type": "episode_finished"}
+{"episode_id": "ep-turn-limit", "t": 0.004, "turn": 1, "type": "turn_started"}
+{"episode_id": "ep-turn-limit", "latency_ms": 871, "t": 0.875, "tokens_in": 840, "tokens_out": 14, "turn": 1, "type": "model_called"}
+{"args": {}, "episode_id": "ep-turn-limit", "t": 0.877, "tool": "look_around", "turn": 1, "type": "tool_called"}
+{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 154, "face_present": true, "new_speech": null}, "t": 2.277, "turn": 1, "type": "observation"}
+{"episode_id": "ep-turn-limit", "t": 2.279, "turn": 2, "type": "turn_started"}
+{"episode_id": "ep-turn-limit", "latency_ms": 882, "t": 3.161, "tokens_in": 880, "tokens_out": 14, "turn": 2, "type": "model_called"}
+{"args": {}, "episode_id": "ep-turn-limit", "t": 3.163, "tool": "look_around", "turn": 2, "type": "tool_called"}
+{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 153, "face_present": true, "new_speech": null}, "t": 4.563, "turn": 2, "type": "observation"}
+{"episode_id": "ep-turn-limit", "t": 4.565, "turn": 3, "type": "turn_started"}
+{"episode_id": "ep-turn-limit", "latency_ms": 893, "t": 5.458, "tokens_in": 920, "tokens_out": 14, "turn": 3, "type": "model_called"}
+{"args": {}, "episode_id": "ep-turn-limit", "t": 5.46, "tool": "look_around", "turn": 3, "type": "tool_called"}
+{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 152, "face_present": true, "new_speech": null}, "t": 6.86, "turn": 3, "type": "observation"}
+{"episode_id": "ep-turn-limit", "t": 6.862, "turn": 4, "type": "turn_started"}
+{"episode_id": "ep-turn-limit", "latency_ms": 904, "t": 7.766, "tokens_in": 960, "tokens_out": 14, "turn": 4, "type": "model_called"}
+{"args": {}, "episode_id": "ep-turn-limit", "t": 7.768, "tool": "look_around", "turn": 4, "type": "tool_called"}
+{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 151, "face_present": true, "new_speech": null}, "t": 9.168, "turn": 4, "type": "observation"}
+{"episode_id": "ep-turn-limit", "t": 9.17, "turn": 5, "type": "turn_started"}
+{"episode_id": "ep-turn-limit", "latency_ms": 915, "t": 10.085, "tokens_in": 1000, "tokens_out": 14, "turn": 5, "type": "model_called"}
+{"args": {}, "episode_id": "ep-turn-limit", "t": 10.087, "tool": "look_around", "turn": 5, "type": "tool_called"}
+{"episode_id": "ep-turn-limit", "result": {"ok": true}, "snapshot": {"distance_cm": 150, "face_present": true, "new_speech": null}, "t": 11.487, "turn": 5, "type": "observation"}
+{"episode_id": "ep-turn-limit", "outcome": "turn_limit", "steps": 0, "t": 11.489, "turns": 5, "type": "episode_finished"}

@@ -45,13 +45,34 @@ Turn, so recording one would be recording something nobody reads.
 from starting; it does not cut the fifth short. So the limit file has five
 complete Turns and then the ending.
 
-**An abort does not discard work already done.** The stop arrives from another
-thread part way through a Tool call, and Python cannot interrupt a call that
-has not returned. So the Tool completes, its Observation is recorded, and only
-then does the Episode end — with `outcome="aborted"`. The gap between
-`stop_requested` and `episode_finished` is the interrupt latency, which is
-exactly why those are two records rather than one (`PLAN.md` §15.3).
+**An abort does not discard work already done, but neither does it claim the
+work succeeded.** The stop arrives from another thread part way through a Tool
+call, and Python cannot interrupt a call that has not returned. So the Tool
+finishes and its Observation is recorded — but the bumper has halted the
+motors, so what it reports is `timeout`, not `arrived`. An `arrived` after a
+stop would say the robot completed a drive it was forbidden to finish.
+
+The gap between `stop_requested` and `episode_finished` is the interrupt
+latency, which is exactly why those are two records rather than one
+(`PLAN.md` §15.3).
 
 That last one is the least certain of the three. It is what ticket 08 will
 have to confirm, and if it turns out otherwise, this file changes **and
 `PLAN.md` says why**.
+
+## What else these files pin
+
+`episode_ends_after_several_turns.jsonl` carries a **refused Tool call** and a
+Tool that **did not succeed** — the model asks for an angle the type will not
+allow, and later an `approach` that ends in `lost_user`. Without those, ticket
+04's rejection path and ticket 07's failure branch would have nothing to be
+checked against, and the spec asks for both.
+
+Every number in these files follows from something. `estimated_speech_ms` is
+`PLAN.md` §4's estimator (`words / 2.2 + 0.5`, capped at 12 s) and nothing
+else — §15.4 records that Misty's TTS returns no timing at all, so an invented
+figure would be a number from nowhere in a file whose whole claim is to be
+derived. `steps` is the sum of the drives that actually happened. A model
+call takes exactly the latency it reports. The turn-limit file stops at the
+configured cap rather than at a hard-coded five. Each of those is asserted, so
+a golden cannot be quietly replaced with one that merely looks plausible.

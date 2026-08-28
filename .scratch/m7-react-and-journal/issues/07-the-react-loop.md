@@ -12,6 +12,12 @@
 
 模型呼叫走一個**窄介面**，測試注入腳本化的回應，不去 mock 第三方套件。
 
+⚠️ **一個 M7 #03 期間發現的命名問題，在這裡最便宜地修掉：** `config.py` 的
+`max_react_steps` **用 `steps` 指的是 Turn** —— 它自己的描述寫的是「Hard cap on LLM
+**turns** per episode」。`CONTEXT.md` 的 `Step` 是控制層的一次驅動命令，而 `Turn` 才是
+ReAct 的一輪。目前**沒有任何呼叫端**（grep 只有 `config.py` 自己），所以現在改名的成本是零；
+等迴圈寫完就得連環境變數一起動。
+
 **Blocked by:** 03, 05, 06
 
 **Status:** ready-for-agent

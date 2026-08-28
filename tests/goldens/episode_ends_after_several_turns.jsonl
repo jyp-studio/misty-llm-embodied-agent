@@ -1,0 +1,17 @@
+{"episode_id": "ep-several-turns", "schema": "0.1.0-unstable", "started_at_wall_clock": "2026-08-25T09:14:03+08:00", "t": 0.0, "trigger": "speech", "type": "episode_started"}
+{"episode_id": "ep-several-turns", "t": 0.003, "turn": 1, "type": "turn_started"}
+{"episode_id": "ep-several-turns", "latency_ms": 1198, "t": 1.204, "tokens_in": 806, "tokens_out": 24, "turn": 1, "type": "model_called"}
+{"args": {"text": "Coming over."}, "episode_id": "ep-several-turns", "t": 1.206, "tool": "speak", "turn": 1, "type": "tool_called"}
+{"episode_id": "ep-several-turns", "result": {"spoke_for_ms": 850}, "snapshot": {"distance_cm": 142, "face_present": true, "new_speech": null}, "t": 2.061, "turn": 1, "type": "observation"}
+{"episode_id": "ep-several-turns", "t": 2.063, "turn": 2, "type": "turn_started"}
+{"episode_id": "ep-several-turns", "latency_ms": 951, "t": 3.017, "tokens_in": 901, "tokens_out": 12, "turn": 2, "type": "model_called"}
+{"args": {}, "episode_id": "ep-several-turns", "t": 3.019, "tool": "approach", "turn": 2, "type": "tool_called"}
+{"episode_id": "ep-several-turns", "result": {"result": "arrived", "steps": 2}, "snapshot": {"distance_cm": 63, "face_present": true, "new_speech": null}, "t": 9.442, "turn": 2, "type": "observation"}
+{"episode_id": "ep-several-turns", "t": 9.444, "turn": 3, "type": "turn_started"}
+{"episode_id": "ep-several-turns", "latency_ms": 915, "t": 10.362, "tokens_in": 963, "tokens_out": 31, "turn": 3, "type": "model_called"}
+{"args": {"blue": 90, "green": 180, "red": 0}, "episode_id": "ep-several-turns", "t": 10.364, "tool": "change_led", "turn": 3, "type": "tool_called"}
+{"episode_id": "ep-several-turns", "result": {"ok": true}, "snapshot": {"distance_cm": 63, "face_present": true, "new_speech": null}, "t": 10.401, "turn": 3, "type": "observation"}
+{"episode_id": "ep-several-turns", "t": 10.403, "turn": 4, "type": "turn_started"}
+{"episode_id": "ep-several-turns", "latency_ms": 874, "t": 11.28, "tokens_in": 1021, "tokens_out": 8, "turn": 4, "type": "model_called"}
+{"args": {}, "episode_id": "ep-several-turns", "t": 11.282, "tool": "done", "turn": 4, "type": "tool_called"}
+{"episode_id": "ep-several-turns", "outcome": "done", "steps": 2, "t": 11.283, "turns": 4, "type": "episode_finished"}

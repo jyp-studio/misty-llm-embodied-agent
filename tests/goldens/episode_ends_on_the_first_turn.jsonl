@@ -1,0 +1,5 @@
+{"episode_id": "ep-first-turn", "schema": "0.1.0-unstable", "started_at_wall_clock": "2026-08-25T09:14:03+08:00", "t": 0.0, "trigger": "speech", "type": "episode_started"}
+{"episode_id": "ep-first-turn", "t": 0.004, "turn": 1, "type": "turn_started"}
+{"episode_id": "ep-first-turn", "latency_ms": 943, "t": 0.951, "tokens_in": 812, "tokens_out": 11, "turn": 1, "type": "model_called"}
+{"args": {}, "episode_id": "ep-first-turn", "t": 0.953, "tool": "done", "turn": 1, "type": "tool_called"}
+{"episode_id": "ep-first-turn", "outcome": "done", "steps": 0, "t": 0.954, "turns": 1, "type": "episode_finished"}

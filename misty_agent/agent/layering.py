@@ -135,6 +135,27 @@ def control_parameter(name: str, *, commanded: bool) -> Optional[str]:
     return None
 
 
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def mentions_control_parameter(text: str) -> Optional[str]:
+    """The first word in `text` that a Tool would not be allowed to declare.
+
+    `control_parameter` reads a name; this reads a sentence, because a name
+    can reach the model inside one. A refusal that says "linearVelocity is not
+    an argument approach takes" has still told the model the word — and put it
+    in the Journal, which is the artefact `PLAN.md` §4's layering claim is
+    checked against.
+
+    `commanded=True` throughout: anything appearing in a message *to* the
+    model is on the side of the boundary where the model does the choosing.
+    """
+    for word in _WORD.findall(text):
+        if control_parameter(word, commanded=True) is not None:
+            return word
+    return None
+
+
 def refuse_control_parameters(
     where: str, names: Iterable[str], *, commanded: bool
 ) -> None:

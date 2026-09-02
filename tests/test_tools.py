@@ -251,11 +251,11 @@ def test_an_unknown_argument_is_refused_rather_than_ignored(registry):
         return {"ok": True}
 
     outcome = dispatch(
-        registry, "nod", {"pitch": 0, "speed": 9}, a_context(), a_journal(), turn=1
+        registry, "nod", {"pitch": 0, "wiggle": 9}, a_context(), a_journal(), turn=1
     )
 
     assert not outcome.accepted
-    assert "speed" in outcome.reason
+    assert "wiggle" in outcome.reason
 
 
 def test_a_missing_argument_is_refused(registry):
@@ -751,3 +751,89 @@ def test_the_schema_does_not_hand_the_model_this_modules_own_reasoning(registry)
 
     assert "PLAN.md" not in json.dumps(schema)
     assert schema["function"]["description"] == "Nod once."
+
+
+def test_an_unknown_argument_that_is_a_control_parameter_is_not_named_back(
+    registry,
+):
+    """The refusal explains, without teaching the model the spelling.
+
+    A refusal is read back as an Observation and written to the Journal, so
+    echoing `linearVelocity` there would put a control parameter in both —
+    the two places `PLAN.md` §4's layering claim is actually checked. The
+    Journal refuses to record such a reason at all, so a `dispatch` that
+    echoed it would raise rather than return.
+    """
+    @registry.tool("nod", "Nod once.")
+    def nod(args: HeadArgs, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry,
+        "nod",
+        {"pitch": 0, "linearVelocity": 20},
+        a_context(),
+        a_journal(),
+        turn=1,
+    )
+
+    assert not outcome.accepted
+    assert "linearVelocity" not in outcome.reason
+    assert "control layer" in outcome.reason
+
+
+def test_a_refusal_that_named_a_control_parameter_cannot_be_recorded(registry):
+    """The guard is on the record, not only on the caller that writes it.
+
+    `_screen` reaches a Tool's arguments and an Observation's result, both
+    mappings. A refusal's reason is a sentence, so it needed its own.
+    """
+    from misty_agent.agent.journal import ToolRejected
+
+    with pytest.raises(ValueError, match="may not say"):
+        ToolRejected(
+            t=0.0,
+            episode_id="ep-1",
+            turn=1,
+            tool="approach",
+            reason="linearVelocity: not an argument 'approach' takes",
+        )
+
+
+@pytest.mark.parametrize(
+    "leaked", ["linearVelocity", "drive_ms", "timeMs", "wait_seconds", "speed"]
+)
+def test_the_refusal_guard_reads_words_not_the_whole_sentence(leaked):
+    """A control parameter surrounded by other words is still a leak.
+
+    Checking the sentence as one name happens to catch `linearVelocity` — the
+    rate stems match anywhere — but it misses every duration, because the
+    duration rule looks at the *last* segment and the last segment of a
+    sentence is the last word of the sentence.
+    """
+    from misty_agent.agent.journal import ToolRejected
+
+    with pytest.raises(ValueError, match="may not say"):
+        ToolRejected(
+            t=0.0,
+            episode_id="ep-1",
+            turn=1,
+            tool="approach",
+            reason=f"{leaked}: not an argument 'approach' takes; it takes none",
+        )
+
+
+def test_an_ordinary_refusal_is_still_allowed_to_name_the_argument():
+    """The negative control. A guard that rejected every reason would satisfy
+    the test above and make every refusal useless."""
+    from misty_agent.agent.journal import ToolRejected
+
+    record = ToolRejected(
+        t=0.0,
+        episode_id="ep-1",
+        turn=1,
+        tool="move_head",
+        reason="pitch 140 is outside the permitted range",
+    )
+
+    assert "pitch" in record.reason

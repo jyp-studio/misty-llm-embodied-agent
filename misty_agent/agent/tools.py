@@ -49,7 +49,11 @@ from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
 
 from misty_agent.agent.journal import Journal, ToolCalled, ToolRejected
-from misty_agent.agent.layering import refuse_control_parameters
+from misty_agent.agent.layering import (
+    control_parameter,
+    refuse_control_parameters,
+)
+from misty_agent.control.approach import approach as run_approach
 
 
 @dataclass(frozen=True)
@@ -257,7 +261,8 @@ def dispatch(
             journal,
             turn,
             name,
-            f"{', '.join(unknown)}: not an argument {name!r} takes; it takes "
+            f"{', '.join(_name_or_describe(u) for u in unknown)}: not an "
+            f"argument {name!r} takes; it takes "
             f"{', '.join(tool.args_model.model_fields) or 'none'}",
         )
 
@@ -273,6 +278,21 @@ def dispatch(
         accepted=True,
         ends_episode=tool.ends_episode,
         result=tool.handler(arguments, ctx),
+    )
+
+
+def _name_or_describe(argument: str) -> str:
+    """Say the argument back, unless saying it would teach the model a word.
+
+    A refusal is read by the model as an Observation and written to the
+    Journal. Echoing `linearVelocity` there would put a control parameter in
+    both, which is what `PLAN.md` §4 says cannot happen — and the model has
+    no need of the spelling, only of the reason.
+    """
+    return (
+        "a physical control parameter, which is the control layer's"
+        if control_parameter(argument, commanded=True)
+        else argument
     )
 
 
@@ -549,6 +569,47 @@ def build_registry() -> ToolRegistry:
             fileName=SOUND_FILES[args.sound], volume=args.volume
         )
         return {"ok": True}
+
+    @registry.tool(
+        "approach",
+        "Move closer to the person you can see, or step back if they are too "
+        "near. Stops on its own.",
+    )
+    def approach(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
+        """The whole of `PLAN.md` §4's layering claim, in six lines.
+
+        The model says *whether*. Everything about *how far* — the step size,
+        the direction, when to stop, what counts as a fresh reading — is M5's
+        closed loop, and this does not touch any of it. Letting the model
+        compute a velocity and a duration is the thing the README opens by
+        criticising, and the way to make that impossible is to have nowhere
+        to put them.
+
+        The four states go back **as they are**. Compressing them to a
+        boolean would leave the model unable to tell "they walked away" from
+        "the robot refused to move", and those want different next Turns.
+
+        The key is `result` rather than `status` because that is what the
+        golden Journals say (`tests/goldens/`), and they were written first.
+        """
+        if ctx.config is None:
+            # `run_approach` has a working default that passing `config=None`
+            # would defeat, and the failure would surface as an AttributeError
+            # from inside the control layer naming neither this Tool nor the
+            # field. `PLAN.md` §10 #4 is about knobs that look connected and
+            # are not; this is the same shape one layer up.
+            raise ValueError(
+                "approach needs ToolContext.config: the control layer reads "
+                "its step size, timeouts and tolerances from it"
+            )
+        outcome = run_approach(
+            ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock
+        )
+        # `.value`, not the member: `ApproachStatus` is a str mixin, so it
+        # compares and serialises identically and looks harmless — but
+        # `TerminalRenderer` puts it in an f-string, where it prints
+        # `ApproachStatus.ARRIVED` instead of `arrived`.
+        return {"result": outcome.status.value, "steps": outcome.steps}
 
     @registry.tool(
         "look_around",

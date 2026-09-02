@@ -61,7 +61,10 @@ from typing import (
     Union,
 )
 
-from misty_agent.agent.layering import refuse_control_parameters
+from misty_agent.agent.layering import (
+    mentions_control_parameter,
+    refuse_control_parameters,
+)
 
 #: What this Journal's shape is called today. The `unstable` is load-bearing:
 #: it tells a reader the schema will move before M10, and it is asserted.
@@ -222,6 +225,19 @@ class ToolRejected(Record):
     tool: str
     reason: str
     type: str = "tool_rejected"
+
+    def __post_init__(self) -> None:
+        # The one record whose payload is a sentence rather than a mapping,
+        # so `_screen` cannot reach it — and the one place the model's own
+        # rejected argument names would otherwise be repeated back verbatim.
+        offending = mentions_control_parameter(self.reason)
+        if offending is not None:
+            raise ValueError(
+                f"a refusal may not say {offending!r}: repeating a control "
+                f"parameter back to the model puts it in the Journal and in "
+                f"the model's next Observation, which is exactly where "
+                f"PLAN.md §4's layering claim is read"
+            )
 
 
 @dataclass(frozen=True, kw_only=True)

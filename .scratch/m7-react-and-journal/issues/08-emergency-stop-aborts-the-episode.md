@@ -17,3 +17,16 @@
 - [ ] 產出的 Journal 對得上 golden 4
 - [ ] Turn 上限與終止保證在中止路徑上仍然成立
 - [ ] 測試在專案 venv 下零 skip，不需硬體
+
+
+## Notes（來自 #06 的 review）
+
+- **`approach` Tool 沒有自己的 try/except，這是這張票的前提。** 有一條測試釘住它
+  (`test_a_failure_from_outside_the_control_loop_is_not_turned_into_success`)：從
+  `run_approach` **外面**來的失敗不會被吞成成功。`approach()` 自己會把機器人的例外接成
+  `drive_error`，所以包在外面的 try/except 在正常情境下不會被觸發 —— 要一個從外面來的失敗
+  才測得出來，而緊急停止正是那種。
+- `tests/goldens/README.md` 記的決定：中止的 Episode 裡 `approach` 回報 `timeout`，**不是**
+  `arrived`。上面那條測試就是保護這件事。
+- 拒絕理由現在會被 `layering.mentions_control_parameter` 擋（§15.16），中止相關的訊息若含
+  velocity / timeMs 字樣，`ToolRejected` 會拒絕被建出來。

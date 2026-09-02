@@ -1080,3 +1080,58 @@ Episode，做不了別的 —— §4 說 AutoMisty 移除後表現力由組合�
 
 另外：`fear` 改叫 `afraid`（舊腳本用 `fear`）。純粹因為模型送的是形容詞，其他六個也都是
 （`happy`、`sad`、`angry`、`surprised`、`love`、`neutral`），混用名詞會讓 enum 讀起來不一致。
+
+### 15.16 拒絕理由也會洩漏，而 `_screen` 到不了它（M7 #06 review）
+
+Spec 軸發現：模型送 `{"linearVelocity": 0.5, "timeMs": 800}` 給 `approach`，dispatch 產生的
+拒絕理由是 `"linearVelocity, timeMs: not an argument 'approach' takes"` —— 這句話會寫進
+`ToolRejected` 紀錄，並在 07 變成模型讀到的 Observation。
+
+`journal.py` 的 `_screen` 守的是 `ToolCalled.args` 和 `Observation.result`，**兩個都是
+mapping**。`ToolRejected.reason` 是一個句子，`_screen` 根本到不了。spec 那句「velocity 與
+timeMs 也不出現在送給模型的任何文字裡」因此是破的 —— 而且破在最尷尬的地方：**Journal 正是
+一個讀者用來檢查 §4 分層主張的東西**。
+
+兩層修法：
+
+1. `layering.mentions_control_parameter(text)` —— 把句子切成字，逐字問 `control_parameter`。
+   `ToolRejected.__post_init__` 用它擋下來，所以這種紀錄**建不出來**。
+2. dispatch 遇到未知參數時，是控制參數的就**描述而不是複述**：「a physical control parameter,
+   which is the control layer's」。模型不需要那個拼法，只需要理由。
+
+**必須逐字切，不能整句丟進去。** 整句丟進去剛好會抓到 `linearVelocity`（速率 stem 是子字串
+比對，出現在哪裡都算），但**每一個時間單位都會漏** —— 時間規則看的是最後一段，而一個句子的
+最後一段是句子的最後一個字。`drive_ms: not an argument...` 整句丟進去回傳 None。這條是
+mutation 才逼出來的。
+
+### 15.17 我把一個「等價變異」判斷錯了（M7 #06 review）
+
+`approach` Tool 回傳 `outcome.status.value`。我跑的 mutation 把它換成 `outcome.status`
+（enum 本身），整套測試照樣綠，於是我判定那是**等價變異**（equivalent mutant）並寫進紀錄 ——
+理由是 `ApproachStatus(str, Enum)`，`json.dumps` 出來一模一樣，`from_jsonl` 往返也相等。
+
+**Standards 軸指出那不等價。** Python 3.11 的 mixin enum，`__str__` / `__format__` **不是**
+value：`f"{ApproachStatus.ARRIVED}"` 得到 `"ApproachStatus.ARRIVED"`。而 `journal.py` 的
+`TerminalRenderer` 就是用 f-string 印 `record.result.get("result", "")` —— §4 把那個 renderer
+算成 Journal 的一等訂閱者。所以那是**一個 Journal 的讀者被騙**，不是無害的型別差異。
+
+我驗證了序列化和比較，**沒有驗證顯示**。教訓：宣稱等價，要把該型別所有的出口都走過一遍，
+不是走過自己想得到的那幾個。測試補在 `_describe()` 上。
+
+### 15.18 「薄轉接」要證明的是它**沒有**加東西（M7 #06）
+
+`approach` Tool 是六行：呼叫 M5 的閉環，把四個狀態原封不動傳回。難的是證明它真的什麼都沒加。
+
+`test_the_tool_says_exactly_what_the_backend_said` 的第一版 docstring 寫「任何規劃、重試或
+平滑化都會在這裡顯示出來」—— **它看不到重試**。因為所有的 double 都是決定性的，重試第二次會
+得到和第一次一樣的答案，兩邊照樣相等。這正是 §15.9 那條：docstring 斷言了它的測試檢查不到的
+事。已改成說清楚它抓得到什麼（改名、壓縮、增刪 key）、抓不到什麼，並另外用一個**第一次失敗、
+第二次成功**的 double 去抓重試。
+
+同理，「Tool 沒有自己的 try/except」也需要一個從 `run_approach` **外面**來的失敗才測得到 ——
+`approach()` 自己會把機器人的例外接成 `drive_error`，所以包在外面的 try/except 在所有正常
+情境下根本不會被觸發。ticket 08 的緊急停止正是那種從外面來的失敗，所以這條是 08 的前提。
+
+**`ToolContext.config` 是 None 時要當場說清楚。** `run_approach(config=None)` 會讓
+`approach()` 自己那個能用的預設值失效，然後在控制層裡拋一個 `AttributeError: 'NoneType'`，
+訊息裡既沒有 Tool 名字也沒有欄位名字。這是 §10 #4 換一層出現。

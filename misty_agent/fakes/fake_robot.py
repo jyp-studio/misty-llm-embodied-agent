@@ -96,3 +96,24 @@ class RecordingCommands(RobotCommands):
 
     def clear(self) -> None:
         self.requests.clear()
+
+
+class FakeClock:
+    """A clock whose only motion is what someone asks it to sleep through.
+
+    The `Clock` protocol `misty_agent/control/approach.py` defines, with the
+    sleeps recorded. Tests that assert on timing need to assert on something,
+    and a real wait would make the suite slow and flaky in exchange for
+    nothing.
+    """
+
+    def __init__(self, now: float = 0.0) -> None:
+        self.now = now
+        self.slept: List[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds

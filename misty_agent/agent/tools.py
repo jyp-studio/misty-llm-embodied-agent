@@ -32,10 +32,12 @@ import inspect
 import re
 from dataclasses import dataclass
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
     Iterator,
+    Literal,
     Mapping,
     Optional,
     Tuple,
@@ -43,7 +45,8 @@ from typing import (
     get_type_hints,
 )
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
+
 
 from misty_agent.agent.journal import Journal, ToolCalled, ToolRejected
 from misty_agent.agent.layering import refuse_control_parameters
@@ -323,13 +326,178 @@ class NoArguments(BaseModel):
     """
 
 
+# --- What the joints will actually do -------------------------------------
+#
+# Every bound below is quoted from the Misty II REST reference, and they are
+# five *different* ranges. Reaching for one shared constant would be the same
+# mistake as one shared schema: it would look tidier and it would be wrong
+# about four of them.
+#
+# https://docs.mistyrobotics.com/misty-ii/web-api/api-reference/
+#
+# These have never run against a robot (`PLAN.md` §8, first bullet). They are
+# what the documentation says, which is a different claim from what the
+# hardware does.
+
+#: MoveHead, degrees: the reference's table gives pitch as -40 (up) to 26
+#: (down). A web search will tell you 29; that figure is not in the table,
+#: and the vendored `legacy/**/CUBS_Misty.py` uses 26 alongside the yaw stops.
+HEAD_PITCH_UP, HEAD_PITCH_DOWN = -40.0, 26.0
+#: MoveHead, degrees: roll runs -40 (left) to 40 (right).
+HEAD_ROLL_LEFT, HEAD_ROLL_RIGHT = -40.0, 40.0
+#: MoveHead, degrees: yaw runs -81 (right) to 81 (left).
+HEAD_YAW_RIGHT, HEAD_YAW_LEFT = -81.0, 81.0
+#: MoveArms, in degrees: -29 is as high as the arms go (any higher fouls the
+#: display lens), 0 is straight forward, 90 is hanging straight down.
+ARM_UP, ARM_DOWN = -29.0, 90.0
+#: ChangeLED: each of red, green and blue is "the ... RGB color value
+#: (range 0 to 255)".
+LED_MIN, LED_MAX = 0, 255
+#: PlayAudio: "a value between 0 and 100 for the loudness of the audio clip".
+VOLUME_MIN, VOLUME_MAX = 0, 100
+
+#: Longest utterance `speak` accepts. The only bound here that is **not** from
+#: the reference — Misty documents no maximum — so it is derived instead:
+#: `PLAN.md` §4's estimate saturates at 12 s, which is (12.0 - 0.5) * 2.2 ≈ 25
+#: words, and 25 words of English is about 150 characters. Past that the
+#: estimate stops tracking the speech, and ticket 10's suppression window
+#: would reopen while Misty is still talking.
+#:
+#: A module constant rather than a `Settings` field: a Tool's argument type is
+#: built once at import and could not read a per-Episode config anyway, so the
+#: field would look adjustable and not be (`PLAN.md` §10 #4).
+SPEECH_MAX_CHARS = 150
+
+#: Where a `look_around` scan points, in order. Well inside the documented
+#: yaw range: the point is to see who is there, not to reach the stops.
+SCAN_YAWS = (-60.0, 0.0, 60.0)
+
+#: The expression images Misty ships, keyed by what the model actually wants
+#: to convey. The model picks a feeling and this picks the file — a free-text
+#: filename would let it name an image the robot does not have, and the only
+#: sign would be a 404 inside the driver.
+#: https://lessons.mistyrobotics.com/resource-database/image-files
+EXPRESSION_IMAGES = {
+    "happy": "e_Joy.jpg",
+    "sad": "e_Sadness.jpg",
+    "angry": "e_Anger.jpg",
+    "surprised": "e_Surprise.jpg",
+    "love": "e_Love.jpg",
+    "afraid": "e_ApprehensionConcerned.jpg",
+    "neutral": "e_DefaultContent.jpg",
+}
+
+#: The system sounds, same idea. A deliberately small subset: the robot ships
+#: around sixty, and handing the model all of them would spend schema on
+#: choices it has no way to tell apart. Every filename here is in the
+#: resource database below.
+#: https://lessons.mistyrobotics.com/resource-database/audio-files
+SOUND_FILES = {
+    "joy": "s_Joy.wav",
+    "amazement": "s_Amazement.wav",
+    "awe": "s_Awe.wav",
+    "anger": "s_Anger.wav",
+    "acceptance": "s_Acceptance.wav",
+    "annoyance": "s_Annoyance.wav",
+}
+
+Expression = Literal[
+    "happy", "sad", "angry", "surprised", "love", "afraid", "neutral"
+]
+Sound = Literal["joy", "amazement", "awe", "anger", "acceptance", "annoyance"]
+
+
+class SpeakArgs(BaseModel):
+    text: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=SPEECH_MAX_CHARS,
+        ),
+    ] = Field(description="What to say out loud, in the user's language.")
+
+
+class DisplayImageArgs(BaseModel):
+    expression: Expression = Field(description="The face to show.")
+
+
+class MoveArmsArgs(BaseModel):
+    left: float = Field(
+        default=ARM_DOWN, ge=ARM_UP, le=ARM_DOWN,
+        description="Left arm, degrees: -29 straight up, 0 forward, 90 down.",
+    )
+    right: float = Field(
+        default=ARM_DOWN, ge=ARM_UP, le=ARM_DOWN,
+        description="Right arm, degrees: -29 straight up, 0 forward, 90 down.",
+    )
+
+
+class MoveHeadArgs(BaseModel):
+    """All three default to 0, which the reference calls looking straight
+    ahead — so the model names only the axis it wants to change, and calling
+    this with nothing is how it recentres."""
+
+    pitch: float = Field(
+        default=0.0, ge=HEAD_PITCH_UP, le=HEAD_PITCH_DOWN,
+        description="Degrees: -40 looks up, 0 level, 26 looks down.",
+    )
+    roll: float = Field(
+        default=0.0, ge=HEAD_ROLL_LEFT, le=HEAD_ROLL_RIGHT,
+        description="Degrees of head tilt: -40 left ear down, 40 right.",
+    )
+    yaw: float = Field(
+        default=0.0, ge=HEAD_YAW_RIGHT, le=HEAD_YAW_LEFT,
+        description="Degrees: -81 turns right, 0 forward, 81 turns left.",
+    )
+
+
+class ChangeLedArgs(BaseModel):
+    red: int = Field(default=0, ge=LED_MIN, le=LED_MAX, description="0-255.")
+    green: int = Field(default=0, ge=LED_MIN, le=LED_MAX, description="0-255.")
+    blue: int = Field(default=0, ge=LED_MIN, le=LED_MAX, description="0-255.")
+
+
+class PlayAudioArgs(BaseModel):
+    sound: Sound = Field(description="Which of the built-in sounds to play.")
+    volume: int = Field(
+        default=50, ge=VOLUME_MIN, le=VOLUME_MAX,
+        description="0 is silent, 100 is full volume.",
+    )
+
+
+def estimate_speech_ms(text: str, config: Any) -> int:
+    """How long that will take to say, near enough to suppress our own voice.
+
+    `PLAN.md` §4's estimate, and §15.4 records why it is an estimate at all:
+    Misty's TTS returns no timing, so there is nothing to read back. Every
+    constant is UNCALIBRATED and lives in `Settings` rather than here — the
+    old main script hard-coded them, which made a guess look like a fact.
+
+    **This under-reads CJK badly.** `split()` counts whitespace-separated
+    words, and a whole Chinese sentence is one of them. Ticket 10 opens the
+    suppression window on this number, so that is where it has to be dealt
+    with; `PLAN.md` §15.13 records it rather than leaving it to be discovered.
+    """
+    words = max(1, len(text.split()))
+    seconds = words / config.speech_words_per_second + config.speech_overhead_s
+    return int(round(min(config.speech_estimate_cap_s, seconds) * 1000))
+
+
 def build_registry() -> ToolRegistry:
     """Every Tool this agent has.
 
-    Tickets 05 and 06 add the other eight. `done` is here because it is the
-    one that needs nothing from the robot, which makes it the smallest thing
-    that exercises registering, generating a schema, dispatching and
-    recording.
+    `PLAN.md` §4: with AutoMisty gone, expressiveness is **composition**.
+    There is no `wave` and no `dance` — a wave is `move_arms` twice, and a
+    dance is the model putting arms, LED and sound together over several
+    Turns. That is why these seven look so small: they are the whole of what
+    the agent can express, and anything more elaborate is the model's to build
+    out of them.
+
+    None of them takes a velocity or a duration. The driver's `move_head` and
+    `move_arms` both accept one, and both are left unset here: how fast a
+    joint should travel is the control layer's business (`PLAN.md` §4), and
+    Misty has a default.
     """
     registry = ToolRegistry()
 
@@ -340,5 +508,82 @@ def build_registry() -> ToolRegistry:
     )
     def done(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         return {}
+
+    @registry.tool("speak", "Say something out loud.")
+    def speak(args: SpeakArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        ctx.robot.speak(text=args.text)
+        return {"ok": True, "estimated_speech_ms": estimate_speech_ms(
+            args.text, ctx.config
+        )}
+
+    @registry.tool("display_image", "Change the face on the screen.")
+    def display_image(args: DisplayImageArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        image = EXPRESSION_IMAGES[args.expression]
+        ctx.robot.display_image(fileName=image)
+        return {"ok": True}
+
+    @registry.tool("move_arms", "Move both arms to a position.")
+    def move_arms(args: MoveArmsArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        ctx.robot.move_arms(
+            leftArmPosition=args.left,
+            rightArmPosition=args.right,
+            units="degrees",
+        )
+        return {"ok": True}
+
+    @registry.tool("move_head", "Point the head somewhere.")
+    def move_head(args: MoveHeadArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        ctx.robot.move_head(
+            pitch=args.pitch, roll=args.roll, yaw=args.yaw, units="degrees"
+        )
+        return {"ok": True}
+
+    @registry.tool("change_led", "Change the colour of the chest light.")
+    def change_led(args: ChangeLedArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        ctx.robot.change_led(red=args.red, green=args.green, blue=args.blue)
+        return {"ok": True}
+
+    @registry.tool("play_audio", "Play one of the built-in sounds.")
+    def play_audio(args: PlayAudioArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        ctx.robot.play_audio(
+            fileName=SOUND_FILES[args.sound], volume=args.volume
+        )
+        return {"ok": True}
+
+    @registry.tool(
+        "look_around",
+        "Sweep the head from side to side to find who is nearby.",
+    )
+    def look_around(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
+        """Turn the head until somebody is in view, and then stop turning.
+
+        `PLAN.md` §15.2 cut `back_up` because two Tools doing one thing means
+        the model picks wrong and the Journal cannot show why. This has to
+        survive that same test against `move_head`, and only one thing makes
+        it: it **looks while it turns**. `move_head` twice across two Turns
+        would give the model a Snapshot at each angle and strictly more
+        control — so a `look_around` that merely swept and recentred would be
+        the worse of two Tools doing one job, and should have been cut.
+
+        So it stops where it finds someone. The Snapshot ticket 07 appends is
+        taken after the Tool returns, which means the head has to still be
+        pointing at them for that Snapshot to be about them. A scan that swept
+        back to centre would report `found_at_yaw` and then hand the model a
+        Snapshot of an empty room.
+
+        It reports the angle and nothing else. Distance and presence are
+        already the Snapshot's, and §15.4 refuses to carry one fact twice.
+        """
+        settle_s = ctx.config.look_around_settle_s
+        for yaw in SCAN_YAWS:
+            ctx.robot.move_head(pitch=0.0, roll=0.0, yaw=yaw, units="degrees")
+            ctx.clock.sleep(settle_s)
+            if ctx.readings is not None and ctx.readings.latest_reading():
+                return {"ok": True, "found_at_yaw": yaw}
+        # Nobody anywhere: face forward again, so the next Turn starts from
+        # the same place every other Tool assumes.
+        ctx.robot.move_head(pitch=0.0, roll=0.0, yaw=0.0, units="degrees")
+        ctx.clock.sleep(settle_s)
+        return {"ok": True, "found_at_yaw": None}
 
     return registry

@@ -21,3 +21,15 @@
 - [ ] 時鐘可注入，測試不靠真實等待
 - [ ] 沒有任何程式碼再去尋找一個不存在的 `spoken_ms` 回傳值
 - [ ] 測試在專案 venv 下零 skip，不需硬體
+
+
+## Notes（來自 #05 的 review）
+
+- **「速率常數在設定裡並明列 UNCALIBRATED」這條已經在 05 做掉了。** 原因是 golden 2 需要
+  `estimated_speech_ms`、而 07 要重現 golden 2，但這張票是 Blocked by 05、會排在 07 之後 ——
+  照原順序等於交給 07 一個沒人擁有的相依。見 `PLAN.md` §15.13。
+  `misty_agent/agent/tools.py::estimate_speech_ms`，常數是 `speech_words_per_second`、
+  `speech_overhead_s`、`speech_estimate_cap_s`。
+- **⚠️ 那個估計對中文是壞的，這張票必須處理。** `words / 2.2 + 0.5` 數的是空白分隔的詞，
+  一整句中文只算一個：「你好，我過來一點」估出來 0.95 秒。抑制窗開在這個數字上，會在 Misty
+  還在講的時候就重新打開 —— 也就是這張票要修的舊缺陷會以另一種形式回來。

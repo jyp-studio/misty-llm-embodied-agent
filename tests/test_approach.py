@@ -15,19 +15,8 @@ import pytest
 
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
-from misty_agent.fakes import RecordingCommands
+from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.perception.distance import DistanceReading
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self.now = 0.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.now += seconds
 
 
 @dataclass(frozen=True)

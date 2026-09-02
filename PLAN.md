@@ -982,3 +982,101 @@ Tool，和一個**叫** `done` 但不會結束的 Tool。這條在 05/06 把另�
 同一個形狀還出現在別處：`ToolContext` 是 05/06 唯一碰得到機器人的路徑，而在 review 之前
 沒有任何測試斷言呼叫端傳進去的 context 真的到得了 handler 手上 —— 把它換成一個當場新建的
 空 context 不會紅。
+
+### 15.10 七個 Tool 的數字全部來自 REST reference，而我抄錯過一個（M7 #05）
+
+七個直接 Tool 的每一個 clamp 都對應官方文件裡那個參數自己的範圍，**六個範圍互不相同**：
+
+| 參數 | 範圍 | 來源 |
+|---|---|---|
+| head pitch | -40（上）～ **26**（下） | REST reference 的 MoveHead 表格 |
+| head roll | -40（左）～ 40（右） | 同上 |
+| head yaw | -81（右）～ 81（左） | 同上 |
+| arm position | -29（上）～ 90（下），degrees | MoveArms |
+| LED 各通道 | 0 ～ 255 | ChangeLED |
+| volume | 0 ～ 100 | PlayAudio |
+
+`test_every_documented_range_is_its_own` 把這六組**逐一列出來**比對，就是為了讓「整理成一個
+共用常數」這種修改變紅 —— 那會讓其中四個變成錯的。
+
+**pitch 我第一版寫 29，是錯的。** 網路搜尋回來的是 29，但 REST reference 的表格寫的是 26，
+而且 repo 裡本來就有三處旁證（`tests/test_tools.py` 的 fixture、`legacy/**/CUBS_Misty.py`
+把 `pitch=26` 和已知正確的 `yaw=±81` 寫在一起）。Standards 軸抓到的。教訓不是「要查證」，是
+**當 in-tree 的既有數字和外部搜尋結果打架時，先假設 in-tree 是對的**——它至少是這個專案某個
+人在有機器人的時候寫下的。
+
+§8 的第一條（驅動層只有契約測試、無實機驗證）同樣適用於這些數字：它們是**文件說的**，不是
+**硬體做的**。
+
+### 15.11 `display_image` / `play_audio` 收的是語意名稱，不是檔名（M7 #05）
+
+模型送 `happy`、`joy`，Tool 自己去對應 `e_Joy.jpg`、`s_Joy.wav`。理由是自由文字檔名讓模型
+可以指名一個機器人上根本沒有的檔案，而失敗會以 driver 裡的一個 404 出現，**Journal 上看不出
+為什麼**。enum 進到 schema 之後，模型是在選，不是在猜。
+
+音效只放六個而不是機器人上的六十幾個：把全部塞進 schema 是拿 token 換模型分辨不出來的選項。
+**這是刪減，要說清楚是刪減** —— 原本的註解寫成「文件只列了這些」，那是假話，已改。
+
+### 15.12 `speak` 的長度上限是設計決定，所以是常數不是設定（M7 #05）
+
+`SPEECH_MAX_CHARS = 240` 是這七個 Tool 裡**唯一不是**從 reference 來的界限（Misty 沒有記載
+上限）。它一開始被我放進 `Settings`，而 review 指出那是 §10 #4 那條：**宣告了卻沒接線比字面值
+更糟**。Tool 的參數型別在 import 時就建好，讀不到 per-Episode 的 config，所以那個欄位看起來
+可調、實際不可調 —— 而 `look_around` 的 settle **是**從 `ctx.config` 讀的，同一個 config
+物件被一個 Tool 尊重、被另一個忽略。
+
+改成模組常數。`look_around_settle_s` 留在 `Settings` 並標 UNCALIBRATED（它是真的未校準：
+MoveHead 沒帶 velocity 或 duration，頭實際要多久到位不知道）。
+
+**另外補了一條把 240 這個字面值釘死的測試。** 其他測試都是拿 `SPEECH_MAX_CHARS` 去比，所以
+把常數改成 2400 之後測試會跟著一起變寬、照樣綠 —— 和 golden 存在的理由是同一件事。
+
+### 15.13 語音時長估計搬進來了，而它對中文是壞的（M7 #05）
+
+§15.4 說「保留字數估計，把速率常數搬進 config 並明列 UNCALIBRATED」。這件事本來排在 ticket
+10，但 **Spec 軸指出那個排法會卡住 07**：golden 2 的 `speak` 結果是
+`{"estimated_speech_ms": 1409, "ok": true}`，而 07 的驗收條件是「產出的 Journal 對得上
+golden 1、2、3」；ticket 10 又是 **Blocked by 05**，會落在 07 之後。所以 05 交給 07 一個
+07 自己不擁有的相依。估計函式因此提前到 05，10 的那條 checkbox 變成已完成。
+
+`estimate_speech_ms("Coming over.", Settings())` = **1409 ms**，與 golden 2 逐位相符 ——
+那個 golden 是在這個函式存在之前寫的，所以這是它真的從 §4 的公式推導出來的證據，不是巧合。
+
+**`words / 2.2 + 0.5` 對中文會嚴重低估。** `text.split()` 數的是空白分隔的詞，而一整句中文
+是**一個**詞：「你好，我過來一點」估出來是 0.95 秒。這個專案的機器人講中文（`test_journal.py`
+的 fixture 就是中文），所以這不是邊角案例。抑制窗開在這個數字上，窗會在 Misty 還在講的時候
+就重新打開 —— 也就是 §15.4 要修的那個舊缺陷會以另一種形式回來。**ticket 10 必須處理**，
+函式的 docstring 和 `speech_words_per_second` 的描述都指到這一節。
+
+**`SPEECH_MAX_CHARS` 改成推導出來的 150。** 原本的 240 是我隨手挑的，而 §4 的估計在 12 秒
+封頂 ——(12.0 - 0.5) × 2.2 ≈ 25 個詞 ≈ 150 字元。超過之後估計就不再跟著文字長度走，`speak`
+會回報一個比實際語音短的時長。
+
+### 15.14 `look_around` 差點就該被砍掉（M7 #05）
+
+第一版的 `look_around` 是「掃過三個角度、每個停一下、回正中」。**Spec 軸指出它過不了 §15.2
+砍 `back_up` 用的那條測試**：它掃完就回正，所以 ±60° 看到的東西一樣都沒留下 —— 07 附加的
+Snapshot 描述的是正前方。回傳的 `looked_at: 4` 數的是「發了幾個指令」，不是「找到了什麼」，
+而 `ctx.readings` 明明就在 context 裡、完全沒用。這樣的話，模型連兩個 Turn 呼叫 `move_head`
+反而拿到更多（每個角度都有一個真的 Snapshot），這正是「兩個 Tool 做同一件事，模型會挑錯」。
+
+改成**邊轉邊看**：每個角度停下之後讀一次 `latest_reading()`，**找到人就停在那裡**，回傳
+`found_at_yaw`；三個角度都沒有才回正並回傳 `None`。停在那裡是關鍵 —— 07 的 Snapshot 是在
+Tool 回傳**之後**才附加的，頭要還指著那個人，那個 Snapshot 才會是關於那個人的。掃完回正的
+版本會回報「在 -60 找到人」，旁邊擺一張空房間的 Snapshot，同一筆紀錄裡兩個事實互相矛盾。
+
+回傳只有角度。距離和是否看得見都是 Snapshot 的，§15.4 拒絕同一個事實兩份。同理，
+`display_image` 與 `play_audio` 原本回傳 `showing` / `played` 把模型自己送的參數又抄一遍 ——
+那些已經在 04 寫的 `tool_called.args` 上了，已移除。
+
+### 15.15 「表現力靠組合」在目前的 Turn 上限下付不起（M7 #05，**未決**）
+
+Spec 軸算的：舊腳本的 `wave` 是 `move_arms` 四次加一次回正 = **5 個 Turn**，而
+`config.max_react_steps` 預設就是 **5**。也就是說在預設值下，模型揮一次手就用完整個
+Episode，做不了別的 —— §4 說 AutoMisty 移除後表現力由組合取代，而這個上限讓組合付不起。
+
+**這裡不改。** 上限的語意（它數的是 Turn 不是 Step）和它的值都是 ticket 07 的範圍，而且改值
+要有依據，不是挑一個更大的數字。記在這裡，07 必須做這個決定並寫下理由。
+
+另外：`fear` 改叫 `afraid`（舊腳本用 `fear`）。純粹因為模型送的是形容詞，其他六個也都是
+（`happy`、`sad`、`angry`、`surprised`、`love`、`neutral`），混用名詞會讓 enum 讀起來不一致。

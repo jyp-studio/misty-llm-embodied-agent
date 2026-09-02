@@ -4,6 +4,10 @@ No Misty II is available to this project (PLAN.md §1), so these are not a
 convenience — they are the only way any of this code has ever executed.
 """
 
-from misty_agent.fakes.fake_robot import RecordedRequest, RecordingCommands
+from misty_agent.fakes.fake_robot import (
+    FakeClock,
+    RecordedRequest,
+    RecordingCommands,
+)
 
-__all__ = ["RecordedRequest", "RecordingCommands"]
+__all__ = ["FakeClock", "RecordedRequest", "RecordingCommands"]

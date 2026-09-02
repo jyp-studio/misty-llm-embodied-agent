@@ -99,3 +99,29 @@ def test_out_of_range_values_are_rejected(field, value):
 def test_sensor_transport_lag_may_be_zero():
     # Zero is the honest default: it is not a measurement, it is "unmodelled".
     assert Settings(sensor_transport_lag_s=0.0).sensor_transport_lag_s == 0.0
+
+
+def test_a_look_around_scan_cannot_be_configured_not_to_settle():
+    """Zero is not a shorter pause, it is no pause.
+
+    `look_around` issues MoveHead without a velocity or duration, so the only
+    thing making the head arrive before the next command is this wait. A
+    settle of 0 turns the scan into four commands the robot never finishes,
+    and the last one wins.
+    """
+    with pytest.raises(ValidationError):
+        Settings(look_around_settle_s=0.0)
+
+
+def test_the_speaking_rate_cannot_be_zero():
+    """Zero words per second is a division by zero inside the estimate, and
+    the estimate is what ticket 10's suppression window is opened on."""
+    with pytest.raises(ValidationError):
+        Settings(speech_words_per_second=0.0)
+
+
+def test_the_speech_estimate_cap_cannot_be_zero():
+    """A cap of zero makes every utterance estimate to nothing, so the window
+    would close and reopen before Misty made a sound."""
+    with pytest.raises(ValidationError):
+        Settings(speech_estimate_cap_s=0.0)

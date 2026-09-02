@@ -264,6 +264,41 @@ class Settings(BaseSettings):
     post_backup_settle_s: float = Field(default=0.3, ge=0.0)
 
     # ------------------------------------------------------------------
+    # Expression (the seven direct Tools, PLAN.md §15.2)
+    # ------------------------------------------------------------------
+    speech_words_per_second: float = Field(
+        default=2.2, gt=0.0,
+        description=(
+            "Speaking rate the utterance-length estimate assumes. "
+            "UNCALIBRATED: Misty's TTS returns no timing at all (PLAN.md "
+            "§15.4), so this is the rate the old main script hard-coded, "
+            "moved here rather than left posing as a fact. It also assumes "
+            "whitespace-separated words, which CJK text does not have — see "
+            "PLAN.md §15.13."
+        ),
+    )
+    speech_overhead_s: float = Field(
+        default=0.5, ge=0.0,
+        description="Fixed start-up added to the estimate. UNCALIBRATED.",
+    )
+    speech_estimate_cap_s: float = Field(
+        default=12.0, gt=0.0,
+        description=(
+            "Longest the estimate may return, so a bad estimate cannot hold "
+            "ticket 10's suppression window shut indefinitely. UNCALIBRATED."
+        ),
+    )
+    look_around_settle_s: float = Field(
+        default=0.6, gt=0.0,
+        description=(
+            "Pause at each position of a `look_around` scan, so the head "
+            "arrives and fresh frames come back before the next command. "
+            "UNCALIBRATED: MoveHead is issued without a velocity or duration, "
+            "so how long Misty actually takes to get there is unknown."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Perception
     # ------------------------------------------------------------------
     focal_length: float = Field(

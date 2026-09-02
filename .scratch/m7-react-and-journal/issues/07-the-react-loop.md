@@ -44,3 +44,17 @@ ReAct 的一輪。目前**沒有任何呼叫端**（grep 只有 `config.py` 自�
   因為它決定 golden 的 `steps` 是怎麼算出來的。
 - `ends_episode` 從 registry 讀，**不要**比對名字（`PLAN.md` §4、§15.9）。已有兩條測試釘死。
 - 被拒絕的呼叫 `ends_episode` 一定是 False，dispatch 已保證。
+
+
+## Notes（來自 #05 的 review）
+
+- **golden 2 的 `estimated_speech_ms` 現在產得出來了。** `speak` 回傳它，
+  `estimate_speech_ms("Coming over.", Settings())` = 1409，與 golden 逐位相符。速率常數在
+  `Settings` 裡並標 UNCALIBRATED（§15.13）。
+- **`max_react_steps` 的值也要決定，不只是改名。** 舊腳本揮一次手是 5 個 Turn，而預設上限
+  就是 5 —— §4 的「表現力靠組合」在這個上限下付不起。§15.15 記了這件事並指名由這張票決定，
+  **要有依據，不是挑一個更大的數字**。
+- `look_around` 找到人之後**頭會停在那裡**，所以這張票附加的 Snapshot 才會是關於那個人的
+  （§15.14）。不要在 Tool 回傳之後把頭轉回正。
+- Tool 的結果**不重複參數**：`display_image` / `play_audio` 只回 `{"ok": True}`，模型送了
+  什麼在 `tool_called.args` 上。§15.4。

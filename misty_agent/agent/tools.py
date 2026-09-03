@@ -121,6 +121,16 @@ class Tool:
         }
 
 
+#: The one key a Tool's result may use to say how many Steps it drove.
+#:
+#: `episode_finished.steps` in the goldens is the sum of the drives that
+#: actually happened, and only `approach` drives — but the ReAct loop should
+#: not know that, and should not reach into a result dict looking for a
+#: string. So the string lives here, `dispatch` reads it, and the loop gets a
+#: typed field. `PLAN.md` §15.20 records why this rather than the alternative.
+STEPS_KEY = "steps"
+
+
 @dataclass(frozen=True)
 class Dispatched:
     """What came of asking for a Tool."""
@@ -129,6 +139,9 @@ class Dispatched:
     ends_episode: bool = False
     result: Optional[Mapping[str, Any]] = None
     reason: Optional[str] = None
+    #: Drive commands this call issued, for `episode_finished.steps`. Zero for
+    #: every Tool that does not move the base, which is eight of the nine.
+    steps: int = 0
 
 
 class ToolRegistry:
@@ -274,11 +287,30 @@ def dispatch(
     journal.record(
         ToolCalled, turn=turn, tool=name, args=arguments.model_dump(mode="json")
     )
+    result = tool.handler(arguments, ctx)
     return Dispatched(
         accepted=True,
         ends_episode=tool.ends_episode,
-        result=tool.handler(arguments, ctx),
+        result=result,
+        steps=_steps_in(result),
     )
+
+
+def _steps_in(result: Mapping[str, Any]) -> int:
+    """How many Steps that call drove, or zero.
+
+    Read here and nowhere else. A loop that did this itself would have to know
+    which Tools drive and what they call the count — and would go wrong
+    silently the first time one of them disagreed.
+    """
+    reported = result.get(STEPS_KEY, 0) if isinstance(result, Mapping) else 0
+    if not isinstance(reported, int) or isinstance(reported, bool) or reported < 0:
+        raise ValueError(
+            f"a Tool reported {reported!r} Steps: the count goes into "
+            f"episode_finished.steps, which the goldens assert is the number "
+            f"of drives that actually happened"
+        )
+    return reported
 
 
 def _name_or_describe(argument: str) -> str:

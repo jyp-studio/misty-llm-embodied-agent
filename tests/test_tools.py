@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.tools import (
+    NoArguments,
     ToolContext,
     ToolRegistry,
     dispatch,
@@ -837,3 +838,49 @@ def test_an_ordinary_refusal_is_still_allowed_to_name_the_argument():
     )
 
     assert "pitch" in record.reason
+
+
+# ---------------------------------------------------------------------------
+# The Step count that ends up in `episode_finished.steps`
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("reported", [True, False, -1, 1.5, "2", None])
+def test_a_step_count_that_is_not_a_count_is_refused(registry, reported):
+    """This number becomes `episode_finished.steps`, which the goldens assert
+    is the number of drives that actually happened.
+
+    `True` is the one that matters: it is an `int` as far as `isinstance` is
+    concerned and it would silently arrive as 1, so a Tool reporting
+    `steps: True` would add a drive that never happened to the Journal.
+    """
+    @registry.tool("drive_ish", "Pretends to drive.")
+    def drive_ish(args: NoArguments, ctx: ToolContext):
+        return {"ok": True, "steps": reported}
+
+    with pytest.raises(ValueError, match="Steps"):
+        dispatch(registry, "drive_ish", {}, a_context(), a_journal(), turn=1)
+
+
+def test_a_tool_that_reports_no_steps_counts_as_none(registry):
+    """The negative control: eight of the nine Tools never drive."""
+    @registry.tool("nod", "Nod once.")
+    def nod(args: HeadArgs, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "nod", {"pitch": 0}, a_context(), a_journal(), turn=1
+    )
+
+    assert outcome.steps == 0
+
+
+def test_the_steps_a_tool_reports_are_the_steps_dispatch_passes_on(registry):
+    @registry.tool("wander", "Wander about.")
+    def wander(args: NoArguments, ctx: ToolContext):
+        return {"result": "arrived", "steps": 3}
+
+    outcome = dispatch(
+        registry, "wander", {}, a_context(), a_journal(), turn=1
+    )
+
+    assert outcome.steps == 3

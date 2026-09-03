@@ -25,3 +25,11 @@
 - [ ] 被明確選取但沒有 API key 時，訊息說明怎麼提供，而不是丟一個難懂的錯誤
 - [ ] 舊的那份「印給人看」的腳本不再存在
 - [ ] 預設測試在專案 venv 下零 skip
+
+
+## Notes（來自 #07）
+
+- 窄介面就是 `misty_agent/agent/react.py` 的 `Model` protocol：`decide(working_context,
+  tools) -> Decision`。這張票要做的是一個真的實作，加上 `@pytest.mark.llm_live`。
+- `tests/test_react.py::ScriptedModel` 是離線那一側，斷言的是 Journal 上的不變量 ——
+  這張票要斷言的也是同一批不變量，不是模型說了什麼。

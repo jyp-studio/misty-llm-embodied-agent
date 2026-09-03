@@ -25,3 +25,14 @@
 - [ ] `PLAN.md` §14.6 的 memory 那一列標記為已還
 - [ ] 沒有引入向量檢索或外部記憶服務
 - [ ] 測試在專案 venv 下零 skip
+
+
+## Notes（來自 #07）
+
+- **working context 裡目前只有 trigger、模型自己的決定、Observation 和拒絕理由。** 沒有 system
+  prompt、沒有 memory —— `instructions=` 參數本來寫了，但零測試零呼叫端，已按 Speculative
+  Generality 移除（§15.23）。**這張票決定還該有什麼，並且要有測試。**
+- `misty_agent/agent/react.py` 的 `working_context` 是 `List[Dict[str, Any]]`，交給模型時
+  轉成 tuple（有測試釘住模型改不動迴圈的那份）。
+- `CONTEXT.md` 的 `Exchange` **不是**模型的訊息清單：那份清單是一個 Episode 的工作脈絡、
+  隨 Episode 丟掉，而 Exchange 是要活過 Episode 的。命名別混。

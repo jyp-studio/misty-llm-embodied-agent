@@ -19,6 +19,40 @@ Quietly editing a golden so the code passes is the failure this whole
 arrangement exists to prevent. Editing one is allowed; editing one without
 saying so is not.
 
+**It has been invoked three times, all in ticket 07** (`PLAN.md` §15.19,
+§15.21, §15.22), and once before it in ticket 04 (§15.7, where the
+implementation gave way instead):
+
+| What | Which side gave way |
+|---|---|
+| The refusal wording for an out-of-range angle | the implementation (§15.7) |
+| `t`: the hand-written 2 ms bookkeeping gaps | the goldens (§15.21) |
+| `look_around`'s result gaining `found_at_yaw` | the goldens (§15.22) |
+| The turn cap rising from 5 to 8 | the goldens (§15.19) |
+
+Ticket 03 wrote sixty assertions about these files' *content*. Fifty-nine of
+them passed unchanged across those edits, and the sixtieth was a renamed
+config field — which is the check that the edits were to timing and shape,
+not to meaning.
+
+## How the timestamps work
+
+> **`t` advances only when something really waits** — a model call, or a Tool
+> that sleeps. Records the loop writes in between share a timestamp, because
+> under an injected clock no time has passed between them.
+
+So every `t` here can be recomputed by hand from the file's own numbers: add
+each `model_called.latency_ms` and each Tool's own waiting to the Turn it
+belongs to. `tests/test_react.py::test_every_timestamp_follows_from_a_real_wait`
+checks the rule rather than trusting it.
+
+The earlier version of these files charged a plausible-looking 2 ms to each
+record and 4 ms to starting a Turn. Nothing reproduces that: the `Clock` the
+spec specifies advances on `sleep` and dispatch does not sleep, so those gaps
+are zero in any deterministic run. §15.21 has the full argument, including
+what this costs — "byte-for-byte comparable" is now "equal in structure and
+every non-timing field, with `t` following a rule you can check on paper".
+
 ## The four
 
 | File | Ends because | `outcome` |
@@ -36,6 +70,11 @@ they are separate *paths* through the loop, not separate endings.
 
 Reading them is how you find out what the loop is supposed to do. Three
 choices are visible only here:
+
+**`episode_is_aborted.jsonl` is still on the old timing convention.** It
+carries a `stop_requested`, which only ticket 08 can produce, and editing a
+golden nobody can yet verify is worse than leaving it. Ticket 08 brings it
+onto the rule above.
 
 **`done` produces a `tool_called` but no `observation`.** An Observation is
 what the model reads to decide the next Turn. After `done` there is no next
@@ -61,6 +100,11 @@ have to confirm, and if it turns out otherwise, this file changes **and
 `PLAN.md` says why**.
 
 ## What else these files pin
+
+`episode_hits_the_turn_limit.jsonl` runs to eight Turns, not five, because
+the cap is eight — derived in `PLAN.md` §15.19 from the longest gesture the
+script this replaces could perform, since §4 claims composition replaces it.
+Its `look_around` results carry `found_at_yaw`, which is §15.22.
 
 `episode_ends_after_several_turns.jsonl` carries a **refused Tool call** and a
 Tool that **did not succeed** — the model asks for an angle the type will not

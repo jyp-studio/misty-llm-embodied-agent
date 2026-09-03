@@ -30,3 +30,14 @@
   `arrived`。上面那條測試就是保護這件事。
 - 拒絕理由現在會被 `layering.mentions_control_parameter` 擋（§15.16），中止相關的訊息若含
   velocity / timeMs 字樣，`ToolRejected` 會拒絕被建出來。
+
+
+## Notes（來自 #07）
+
+- **`run_episode` 目前沒有中止的入口。** outcome 只會是 `done` 或 `turn_limit`，在迴圈裡本地
+  算出來。這張票要加一個 seam（例如一個帶 `requested()` 的 stop 物件），在 dispatch 之後檢查
+  並把 outcome 設成 `aborted`。形狀容得下，但簽名要動。
+- **`episode_is_aborted.jsonl` 還在舊的時間慣例上。** §15.21 換了規則（時間只在真的有等待時
+  前進），但那個 golden 有 `stop_requested`、只有這張票產得出來，所以刻意沒動它。**這張票要
+  把它帶到新規則上**，`tests/goldens/README.md` 已註明。
+- `approach` Tool 沒有自己的 try/except，測試釘死了（見 #06 的 Notes）。

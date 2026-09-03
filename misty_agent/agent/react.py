@@ -1,0 +1,229 @@
+"""One Episode: a trigger in, a few decisions, and back to idle.
+
+This is the file that makes the word "agent" honest. Until now the only
+callers of the control layer were tests and measurement harnesses; from here
+the model chooses, one Turn at a time, and the Journal records what it chose.
+
+## The two properties worth more than the features
+
+**Every Episode provably returns to idle.** `PLAN.md` §4 calls that the
+strongest property this system has, and ReAct is the easiest way to lose it —
+a loop that ends when the model says so ends when the model says so. The Turn
+cap is therefore not a safety net bolted on the side: the loop is a bounded
+`for`, and running out of Turns is one of the three ways an Episode ends
+rather than an error. There is no `while True` here and no `break` that
+depends on the model being reasonable.
+
+**The model may stop on the first Turn, and nothing here special-cases that.**
+Whether a Tool ends the Episode is a property the registry declares
+(`PLAN.md` §15.9); this loop reads it and never compares a name. Self-termination
+is what makes a ReAct loop a ReAct loop, so hard-coding it would be
+disqualifying.
+
+## Where each record comes from
+
+The Journal is the deliverable, not a log. Everything the loop learns is
+written through it, and `tests/goldens/` is four Journals this loop has to be
+able to produce — written before it existed, which is the only way they can
+be evidence of anything.
+
+Three shapes are decided here rather than in a Tool:
+
+**A refusal produces no Observation.** The rejection reason *is* what the
+model reads next Turn, so recording an Observation beside it would be the
+same fact twice (`PLAN.md` §15.4) — and there is no Snapshot worth taking,
+because nothing happened.
+
+**`done` produces no Observation either.** An Observation is what the model
+reads to decide the next Turn, and after `done` there is no next Turn.
+
+**The Snapshot is attached by the loop, not assembled by each Tool.** It is
+the same three facts for all nine, so putting it in the Tools would be nine
+copies of one thing.
+
+## The narrow model interface
+
+`Model` is the only new seam this milestone adds. Messages and Tool schemas
+in, one Tool choice out — which is what lets a test script the model's answers
+without mocking anybody's SDK. The list of messages is **one Episode's working
+context** and is discarded with it; `CONTEXT.md` reserves *Exchange* for the
+durable unit memory is made of, and this is deliberately not that.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
+
+from misty_agent.agent.journal import (
+    EpisodeFinished,
+    EpisodeStarted,
+    Journal,
+    ModelCalled,
+    Observation,
+    Snapshot,
+    TurnStarted,
+)
+from misty_agent.agent.tools import Dispatched, ToolContext, ToolRegistry, dispatch
+
+
+@dataclass(frozen=True)
+class Decision:
+    """What the model came back with.
+
+    Always a Tool call: "say nothing and stop" is `done`, so there is no
+    second shape to handle and no way for the model to answer in a way the
+    loop has to interpret.
+    """
+
+    tool: str
+    args: Mapping[str, Any]
+    tokens_in: int
+    tokens_out: int
+
+
+class Model(Protocol):
+    """The narrow seam. Nothing here knows what an HTTP request is."""
+
+    def decide(
+        self,
+        working_context: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+    ) -> Decision: ...
+
+
+class Perception(Protocol):
+    """The three cheap facts, however they are actually obtained."""
+
+    def snapshot(self) -> Snapshot: ...
+
+
+@dataclass(frozen=True)
+class EpisodeOutcome:
+    """How it ended, and the two counts that are not the same thing."""
+
+    outcome: str
+    turns: int
+    steps: int
+
+
+def run_episode(
+    trigger: str,
+    *,
+    model: Model,
+    registry: ToolRegistry,
+    ctx: ToolContext,
+    journal: Journal,
+    perception: Perception,
+) -> EpisodeOutcome:
+    """Run one Episode to completion and return how it ended.
+
+    `journal` arrives already built, on the same clock as `ctx.clock`: the
+    latency this loop measures and the timestamps the Journal writes have to
+    come from one clock or they describe two different runs.
+    """
+    config = ctx.config
+    clock = ctx.clock
+    journal.record(EpisodeStarted, trigger=trigger)
+
+    # What the model is shown, and only this. There is no system prompt and no
+    # memory here yet: ticket 09 redesigns memory (`PLAN.md` §15.5) and owns
+    # what else belongs in this list. A parameter added now in anticipation
+    # would be one nothing calls and no test covers.
+    working_context: List[Dict[str, Any]] = [
+        {"role": "user", "content": {"trigger": trigger}}
+    ]
+
+    turns = 0
+    steps = 0
+    # The cap is the loop bound, not a check inside it. `turn_limit` is
+    # therefore what happens when the `for` runs out, which is why it needs no
+    # branch of its own and cannot be forgotten.
+    outcome = "turn_limit"
+
+    for turn in range(1, config.max_turns_per_episode + 1):
+        turns = turn
+        journal.record(TurnStarted, turn=turn)
+
+        began = clock.monotonic()
+        decision = model.decide(tuple(working_context), registry.schemas())
+        journal.record(
+            ModelCalled,
+            turn=turn,
+            latency_ms=int(round((clock.monotonic() - began) * 1000)),
+            tokens_in=decision.tokens_in,
+            tokens_out=decision.tokens_out,
+        )
+        working_context.append(_asked_for(decision))
+
+        dispatched = dispatch(
+            registry, decision.tool, decision.args, ctx, journal, turn=turn
+        )
+        steps += dispatched.steps
+
+        if dispatched.ends_episode:
+            outcome = "done"
+            break
+
+        if not dispatched.accepted:
+            # The reason is the Observation, in the sense that matters: it is
+            # what the model reads next Turn. Recording one as well would be
+            # the same fact in two records.
+            working_context.append(_refused(decision, dispatched))
+            continue
+
+        observation = journal.record(
+            Observation,
+            turn=turn,
+            result=dispatched.result,
+            snapshot=perception.snapshot(),
+        )
+        working_context.append(_observed(observation))
+
+    journal.record(EpisodeFinished, outcome=outcome, turns=turns, steps=steps)
+    return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
+
+
+def _asked_for(decision: Decision) -> Dict[str, Any]:
+    return {
+        "role": "assistant",
+        "content": {"tool": decision.tool, "args": dict(decision.args)},
+    }
+
+
+def _refused(decision: Decision, dispatched: Dispatched) -> Dict[str, Any]:
+    return {
+        "role": "tool",
+        "content": {"tool": decision.tool, "refused": dispatched.reason},
+    }
+
+
+def _observed(observation: Observation) -> Dict[str, Any]:
+    """The Observation the model reads, as JSON and only as JSON.
+
+    `PLAN.md` §15.4 turned down putting a prose summary beside it: the same
+    fact written twice is two things that can disagree, and the one the model
+    actually attends to would be the one nobody checked.
+    """
+    return {
+        "role": "tool",
+        "content": {
+            "result": dict(observation.result),
+            "snapshot": {
+                "distance_cm": observation.snapshot.distance_cm,
+                "face_present": observation.snapshot.face_present,
+                "new_speech": observation.snapshot.new_speech,
+            },
+        },
+    }
+
+
+def as_text(working_context: Sequence[Mapping[str, Any]]) -> str:
+    """Everything the model is handed, as one string.
+
+    Exists so a test can assert on the whole of it at once — `PLAN.md` §4's
+    layering claim is about what reaches the model, and checking the parameter
+    lists of nine Tools is not the same thing as checking that.
+    """
+    return json.dumps(list(working_context), sort_keys=True, default=str)

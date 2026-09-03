@@ -20,17 +20,17 @@ ReAct 的一輪。目前**沒有任何呼叫端**（grep 只有 `config.py` 自�
 
 **Blocked by:** 03, 05, 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 單次 Episode 有公開入口，接受觸發輸入、回傳結構化結果
-- [ ] Turn 上限是硬上限；耗盡時 Episode 仍然結束並回到閒置
-- [ ] 模型可以在第一個 Turn 結束 Episode，沒有硬編碼的特例路徑
-- [ ] Observation 由迴圈組裝：Tool 結果加上三樣 Snapshot
-- [ ] Observation 序列化為 JSON，不並陳人話摘要
-- [ ] 模型呼叫走窄介面；測試注入腳本化回應，不 mock 第三方套件
-- [ ] **產出的 Journal 對得上 golden 1、2、3**
-- [ ] 有測試證明模型收到的任何文字都不含 velocity 或 timeMs
-- [ ] 測試在專案 venv 下零 skip，不呼叫真模型、不需網路
+- [x] 單次 Episode 有公開入口，接受觸發輸入、回傳結構化結果
+- [x] Turn 上限是硬上限；耗盡時 Episode 仍然結束並回到閒置
+- [x] 模型可以在第一個 Turn 結束 Episode，沒有硬編碼的特例路徑
+- [x] Observation 由迴圈組裝：Tool 結果加上三樣 Snapshot
+- [x] Observation 序列化為 JSON，不並陳人話摘要
+- [x] 模型呼叫走窄介面；測試注入腳本化回應，不 mock 第三方套件
+- [x] **產出的 Journal 對得上 golden 1、2、3**
+- [x] 有測試證明模型收到的任何文字都不含 velocity 或 timeMs
+- [x] 測試在專案 venv 下零 skip，不呼叫真模型、不需網路
 
 ## Notes（來自 #04 的 review）
 
@@ -58,3 +58,55 @@ ReAct 的一輪。目前**沒有任何呼叫端**（grep 只有 `config.py` 自�
   （§15.14）。不要在 Tool 回傳之後把頭轉回正。
 - Tool 的結果**不重複參數**：`display_image` / `play_audio` 只回 `{"ok": True}`，模型送了
   什麼在 `tool_called.args` 上。§15.4。
+
+
+## Comments
+
+完成於 2026-09-03。`misty_agent/agent/react.py`（迴圈與窄介面）、`tests/test_react.py`
+38 條測試。全套 **776 passed、零 skip**（730 → 776）。
+
+**三個 golden 都對上了** —— 逐紀錄、逐欄位。包含 ticket 04 讓步產出的拒絕理由
+（`"pitch 140 is outside the permitted range"`）和 ticket 05 的 `estimated_speech_ms: 1409`，
+兩個都是在那些實作存在**之前**寫進 golden 的數字。
+
+**四個決定，都記在 PLAN：**
+
+- **§15.19 `max_react_steps` → `max_turns_per_episode`，值從 5 改成 8。** 下界是推導的：
+  舊腳本 `_do_gesture("wave")` 展開成 6 個原始命令（機械數過：body 2×2 + reset 2），
+  §4 說那種表現力由組合取代，那上限至少要容得下它再加一句話和一次自我結束 = 8。
+  代價是 golden 3 跟著長到 8 個 Turn。
+- **§15.20 Step 計數放 `Dispatched` 上**，不讓迴圈去撈 `result["steps"]`。字串只在
+  `STEPS_KEY` 一處，`_steps_in()` 拒絕負數、布林和非整數 —— `steps: True` 會悄悄變成 1。
+- **§15.21 golden 的 `t` 讓步。** 手寫的 2ms/4ms 簿記成本在注入時鐘下一律是 0（那個時鐘
+  只在 `sleep()` 時前進，而 dispatch 不 sleep）。新規則：**時間只在真的有等待時前進**，
+  所以每個 `t` 仍可用檔案自己的 `latency_ms` 手算驗證。這削弱了 spec 的「逐字元比對」說法，
+  §15.21 把能主張的範圍改寫清楚了。
+- **§15.22 golden 3 的 `look_around` 結果讓 §15.14 贏**，加上 `found_at_yaw`。
+
+**golden 改動逐欄位盤點過**：goldens 1、2 只有 `t` 變，golden 3 是 `t` + `found_at_yaw` +
+延長，golden 4 沒動。**沒有夾帶內容修改。** 把原始 golden 放回去跑 ticket 03 的六十條內容
+斷言：59 條通過，唯一失敗的正是那條專門防「改上限默默失效」的測試。
+
+---
+
+## Review
+
+**兩軸這次跑不起來** —— subagent 連續四次 529。兩軸的工作我自己補做，而且這件事記在
+`PLAN.md` §15.23，因為前六張票每一張都是 review 抓到我自己看不到的東西。
+
+自己跑的十三個 mutation（刻意挑第一輪沒想到的）**存活六個**，全是真漏洞。共同原因一句話：
+**我的斷言幾乎全指著 Journal，而 Journal 可以是對的、同時模型什麼有用的資訊都沒收到。**
+
+最嚴重的是 `as_text` 回傳 `""` 就存活 —— 分層測試（模型收到的文字不含 velocity/timeMs）
+整個建在它上面，它回空字串那條測試在任何實作下都會綠。其他五個：Snapshot 的值沒被斷言真的
+到得了模型、模型看不到自己上一輪的要求、trigger 沒進 context、working context 以可變 list
+交出去。補了九條指著 working context 的測試，12/13 紅。
+
+剩下那一個（寫第二筆 `EpisodeFinished`）**是實測驗證過的等價變異** —— `Journal.record`
+本來就拒絕。§15.17 的教訓是「宣稱等價要實測」，這次照做了。
+
+**`instructions=` 移除**：接線了但零測試零呼叫端，ticket 09 才是決定 working context 裡還該
+有什麼的那張票。
+
+**⚠️ `.env.example` 過期兩層** —— `MISTY_MAX_REACT_STEPS` 還在「DECLARED BUT NOT YET
+WIRED」區塊裡，而迴圈已落地、名字也改了。它是四個受保護檔案之一，**只標記不修改**。

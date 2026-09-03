@@ -274,7 +274,7 @@ def test_the_turn_limit_golden_stops_at_the_configured_cap():
     """Otherwise revising the cap silently invalidates this golden."""
     records = load("episode_hits_the_turn_limit.jsonl")
 
-    assert records[-1].turns == Settings().max_react_steps
+    assert records[-1].turns == Settings().max_turns_per_episode
 
 
 def test_the_aborted_golden_does_not_claim_the_drive_completed():

@@ -1135,3 +1135,110 @@ value：`f"{ApproachStatus.ARRIVED}"` 得到 `"ApproachStatus.ARRIVED"`。而 `j
 **`ToolContext.config` 是 None 時要當場說清楚。** `run_approach(config=None)` 會讓
 `approach()` 自己那個能用的預設值失效，然後在控制層裡拋一個 `AttributeError: 'NoneType'`，
 訊息裡既沒有 Tool 名字也沒有欄位名字。這是 §10 #4 換一層出現。
+
+### 15.19 Turn 上限改名，並定為 8 —— 下界是推導出來的，不是挑的（M7 #07）
+
+**改名先說：** `max_react_steps` → `max_turns_per_episode`。它的舊名字用 `steps`，而它自己的
+描述寫的是「Hard cap on LLM **turns**」；`CONTEXT.md` 的 `Step` 是控制層的一次驅動命令，
+`Turn` 才是 ReAct 的一輪。改名時只有一個呼叫端（`tests/test_goldens.py`），成本接近零。
+
+**值定為 8。** §15.15 記下的問題是：舊腳本揮一次手要好幾個 Turn，而上限預設就是 5，
+§4 說「表現力靠組合」在那個上限下付不起。§15.15 指名由這張票決定，而且**要有依據**。
+
+依據是舊腳本自己的手勢。`full_robot_v3.py` 的 `_do_gesture("wave")` 展開成 **6 個原始命令**
+（兩輪各兩次 `move_arms`，加上 `move_arms` 回正、`move_head` 回正）。§4 主張 AutoMisty 移除
+後這種表現力由模型組合原始 Tool 取代 —— 那麼上限至少要讓它**做得到它取代的那件事，並且還能
+說一句話、還能自己結束**：6 + 1 (`speak`) + 1 (`done`) = **8**。
+
+這是**下界**，不是量出來的最佳值。這張票的敘述本來就說「上限值是初值，之後用 Journal 的資料
+修正」，`max_turns_per_episode` 的描述也照樣寫著要從 Journal 資料修正。改的是它現在有個站得住
+的下界，而不是一個沒來由的 5。
+
+**代價：golden 3 要跟著長到 8 個 Turn。** `test_the_turn_limit_golden_stops_at_the_configured_cap`
+（ticket 03 寫的）就是為了讓「改上限」不能默默讓那個 golden 失效。延長時沿用檔案自己的算術
+規律（latency +11ms、tokens_in +40、距離 −1），不是隨手填。
+
+### 15.20 Step 計數放在 `Dispatched` 上，不讓迴圈去撈字串鍵（M7 #07）
+
+ticket 04 的 review 留下的問題：`episode_finished.steps` 是實際驅動次數的總和，而 `approach`
+的次數只在 `result["steps"]` 這個字串鍵裡。兩個選項，選了後者：
+
+1. 迴圈自己 `result.get("steps", 0)` —— 迴圈就得知道哪些 Tool 會驅動、以及它們把次數叫什麼。
+2. **`dispatch` 讀那個鍵，`Dispatched` 給迴圈一個型別化的 `steps` 欄位。**
+
+選 2 的理由是分層：迴圈不該知道 Tool 結果的形狀。字串只出現在 `tools.py` 的 `STEPS_KEY`
+一處，而且 `_steps_in()` 會拒絕負數、布林和非整數 —— 那個數字會進 `episode_finished.steps`，
+golden 斷言它是真的發生過的驅動次數，所以一個 `True` 悄悄被當成 1 是有後果的。
+
+### 15.21 golden 的 `t` 讓步：時間只在真的等待時前進（M7 #07）
+
+**先說結論：goldens 1 與 2 的每一個非時間欄位，迴圈都逐一對上了** —— 包含 ticket 04 讓步
+產出的拒絕理由（`"pitch 140 is outside the permitted range"`）與 ticket 05 的
+`estimated_speech_ms: 1409`。唯一對不上的是 `t`。
+
+原因很具體。golden 的 `t` 手寫時帶了看起來合理的簿記成本：`episode_started` 到
+`turn_started` 是 4ms，`model_called` 到 `tool_called` 是 2ms，等等。但 spec §125–127 指定
+沿用 `approach()` 既有的 `Clock` protocol 與假時鐘，而**那個假時鐘只在 `sleep()` 時前進**。
+dispatch 不 sleep、寫紀錄不 sleep，所以那些 2ms/4ms 在確定性的執行下**一律是 0**。
+
+三個選項：讓迴圈為了對上 golden 去 sleep 2ms（荒謬，而且會讓正式執行變慢）；讓假時鐘每次讀
+就前進一格（湊不出來 —— `EpisodeClock` 的原點是第一次讀，`episode_started` 就不可能是 0.0，
+而且那會變成 golden 在測假時鐘而不是測迴圈）；**或讓 golden 的 `t` 讓步**。
+
+選第三個。新規則寫進 `tests/goldens/README.md`：
+
+> **`t` 只在真的有等待時前進** —— 一次模型呼叫，或一個會 sleep 的 Tool。迴圈連續寫下的
+> 紀錄共用同一個時間戳，因為在注入時鐘之下它們之間確實沒有時間流過。
+
+這條規則讓每一個 `t` 仍然**可以用檔案自己的數字手算驗證**（`latency_ms` 加上 Tool 的等待
+時間），所以「golden 由 spec 推導」這個性質保住了 —— 讓步的是那些簿記成本，不是內容。
+
+**這削弱了 spec §126 的「逐字元比對」說法**，要說清楚：現在能主張的是「結構與所有非時間欄位
+逐一相符，`t` 由一條可手算的規則決定」。相鄰紀錄共用時間戳是這條規則的直接後果，不是缺陷 ——
+注入時鐘之下它們之間就是沒有時間。
+
+**golden 4（中止）不在這張票裡動。** 它有 `stop_requested`，要 ticket 08 才產得出來，
+而改一個自己驗證不了的 golden 比放著更糟。08 要把它帶到同一條規則上，README 已註明。
+
+### 15.22 `look_around` 的結果讓 §15.14 贏（M7 #07）
+
+golden 3 的 `look_around` 結果是 `{"ok": true}`，而 §15.14 在 ticket 05 的 review 之後把它
+改成邊轉邊看、回傳 `found_at_yaw`。golden 寫在那個改動之前。
+
+**golden 讓步。** §15.14 是有記錄、有理由的設計決定（掃完回正的版本過不了 §15.2 砍 `back_up`
+用的那條測試），而 golden 3 那筆 `{"ok": true}` 反映的是被那次 review 推翻的舊形狀。順帶一個
+自身一致性問題也修掉了：golden 3 的 Snapshot 寫 `face_present: true`，那麼同一個 Turn 裡的
+`look_around` 本來就該找到人 —— 舊的 `{"ok": true}` 對這件事一個字都沒說。
+
+### 15.23 兩軸 review 這次跑不起來，我自己補做（M7 #07）
+
+subagent 連續四次 529（server overloaded），兩軸都起不來。不等了，兩軸的工作我自己做，
+**並且把「這次沒有第二雙眼睛」寫在這裡**，因為前六張票每一張都是 review 抓到我看不到的東西。
+
+自己跑的 Standards 電池（十三個，刻意挑我第一輪沒想到的）**存活六個**，全部是真的漏洞：
+
+| 存活的 mutation | 為什麼會活 |
+|---|---|
+| `as_text` 回傳 `""` | **最嚴重的一個。** 分層測試（模型收到的文字不含 velocity）整個建在 `as_text` 上，它回空字串的話那條測試在任何實作下都會綠。 |
+| `_observed` 把 `distance_cm` 寫成 None | 沒有任何測試斷言 Snapshot 的值真的到得了模型手上 —— 只斷言了它進得了 Journal。 |
+| 模型送出的決定完全不進 working context | 模型看不到自己上一輪要求了什麼，就分不出「拒絕」和「別的事的回答」。 |
+| trigger 不進 working context | 第一個 Turn 變成對著空氣做決定。 |
+| working context 以可變 list 交出去 | 模型那一側是不可信的一側，交出活的 list 等於讓它改寫歷史而 Journal 看不出來。 |
+| 寫第二筆 `EpisodeFinished` | **這個是真的等價變異** —— `Journal.record` 本來就拒絕，我**實測驗證過**（§15.17 的教訓），不是假設。 |
+
+共同原因很清楚：**我的斷言幾乎全都指著 Journal，而 Journal 可以是對的、同時模型什麼有用的
+資訊都沒收到。** Journal 是交付物，但它不是唯一的出口。補了九條指著 working context 的測試
+之後 12/13 紅（剩下那個是已驗證的等價變異）。
+
+**Spec 軸自己做的部分：golden 的改動逐欄位盤點過。** goldens 1、2 只有 `t` 變；golden 3 是
+`t` 加 `found_at_yaw` 加延長 3 個 Turn；golden 4 沒動。沒有夾帶任何內容修改。
+
+**59/60 這個數字也實測了**：把**原始** golden 放回去跑 ticket 03 的六十條內容斷言，59 條通過，
+唯一失敗的是 `test_the_turn_limit_golden_stops_at_the_configured_cap` —— 也就是那條專門用來
+讓「改上限」不能默默失效的測試，正在做它該做的事。新 golden 則是 60/60。
+
+**`instructions=` 參數移除。** 它接線了、但零測試零呼叫端，是 Speculative Generality，而
+ticket 09（memory 重新設計，§15.5）才是決定 working context 裡還該有什麼的那張票。
+
+**`.env.example` 已經過期兩層**（`MISTY_MAX_REACT_STEPS` 在「DECLARED BUT NOT YET WIRED」
+區塊裡，而迴圈已經落地、名字也改了）。它是四個受保護檔案之一，**只標記不修改**。

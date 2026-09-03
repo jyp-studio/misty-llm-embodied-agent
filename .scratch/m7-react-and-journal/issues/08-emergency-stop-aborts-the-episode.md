@@ -8,15 +8,15 @@
 
 **Blocked by:** 02, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 從另一條執行緒觸發緊急停止會中止進行中的 Episode
-- [ ] 中止成為一筆 Journal 紀錄，時間是它發生的時間
-- [ ] **中止之後仍然回到閒置**：沒有留下未停止的動作
-- [ ] 有測試證明中止發生在一個 Turn 的**中間**時也成立，不是只在 Turn 邊界
-- [ ] 產出的 Journal 對得上 golden 4
-- [ ] Turn 上限與終止保證在中止路徑上仍然成立
-- [ ] 測試在專案 venv 下零 skip，不需硬體
+- [x] 從另一條執行緒觸發緊急停止會中止進行中的 Episode
+- [x] 中止成為一筆 Journal 紀錄，時間是它發生的時間
+- [x] **中止之後仍然回到閒置**：沒有留下未停止的動作
+- [x] 有測試證明中止發生在一個 Turn 的**中間**時也成立，不是只在 Turn 邊界
+- [x] 產出的 Journal 對得上 golden 4
+- [x] Turn 上限與終止保證在中止路徑上仍然成立
+- [x] 測試在專案 venv 下零 skip，不需硬體
 
 
 ## Notes（來自 #06 的 review）
@@ -41,3 +41,43 @@
   前進），但那個 golden 有 `stop_requested`、只有這張票產得出來，所以刻意沒動它。**這張票要
   把它帶到新規則上**，`tests/goldens/README.md` 已註明。
 - `approach` Tool 沒有自己的 try/except，測試釘死了（見 #06 的 Notes）。
+
+
+## Comments
+
+完成於 2026-09-03。`misty_agent/agent/stop.py`（`EmergencyStop` 與 `NeverStops` 空物件）、
+`react.py` 加一個 `stop` 參數與兩個檢查點、`tests/test_stop.py` 10 條、`test_react.py` 加
+13 條。全套 **799 passed、零 skip**（776 → 799）。
+
+**golden 4 對上了，而且它與原始檔案的差異只有 `t`** —— 七筆紀錄、種類、順序、
+`outcome=aborted`、`steps=1`、`turns=1`、`result={timeout, 1}`、`source=foot_bumper`
+全部本來就相符。逐欄位盤點過（只有 6 筆的 `t` 變），ticket 03 的六十條內容斷言 60/60 通過。
+這正是 §15.21 預測的，也是 #07 的 Notes 交代這張票要做的事：把它帶到新的時間規則上。
+四個 golden 現在都在同一條規則上。
+
+**三個決定記在 §15.24：** 先記錄後 halt（時間戳要是腳踩下去的時間，halt 是 HTTP 往返）；
+用 `halt` 不用 `drive/stop`（後者會留一隻手臂在半空）；halt 失敗要吞例外 —— 它跑在感測器
+執行緒上沒人接，而**一個沒停下來、Episode 還繼續跑的 halt 比只是沒停下來更糟**。
+
+**迴圈檢查兩次，是兩件不同的事：** dispatch 之前那次拒絕開始新的物理動作，Observation 之後
+那次在已經在跑的動作回傳之後結束 Episode。golden 4 走第二條。
+
+---
+
+## Review
+
+**兩軸仍然跑不起來**（#07 的 529 之後沒恢復），照 §15.23 的做法自己補做，並且記在這裡。
+
+**自己跑十五個 mutation，存活一個 —— 而那一個很有意思：把 `request()` 的鎖整個拿掉，
+「多執行緒同時踩只能產生一個 stop」那條測試照樣綠。**
+
+八條執行緒卡在 barrier 一起衝抓不到；`sys.setswitchinterval(1e-9)` 也抓不到。視窗在 GIL 下
+太窄。改用 `threading.settrace` 掛「每行 `time.sleep(0)`」的 hook 之後，無鎖版本會出現兩個
+贏家、兩筆 `stop_requested`，有鎖版本永遠一個 —— **兩邊都實測過才寫進測試**。15/15 全紅。
+
+這是 M7 #02 那個教訓的第二次出現（當時「時間戳在鎖之前取」也是名義上測並行、實際把鎖拿掉
+還是綠）。寫進 §15.25：**併發的測試要先證明它抓得到那個 bug，再相信它。**
+
+**⚠️ 還沒接線的部分（不在這張票的驗收條件裡，但要說清楚）：** `EmergencyStop.request` 目前
+沒有任何生產程式碼呼叫它 —— 舊腳本用 `_thread.interrupt_main()`，而把 `BumpSensor` 事件接到
+這個物件上是 **ticket 12**（刪舊主腳本、接上新入口）的事。這張票交付的是機制與它的證明。

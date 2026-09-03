@@ -29,6 +29,11 @@ implementation gave way instead):
 | `t`: the hand-written 2 ms bookkeeping gaps | the goldens (§15.21) |
 | `look_around`'s result gaining `found_at_yaw` | the goldens (§15.22) |
 | The turn cap rising from 5 to 8 | the goldens (§15.19) |
+| `t` again, for the aborted file, in ticket 08 | the golden (§15.24) |
+
+All four files are now on the timing rule below. The aborted one came last
+because only ticket 08 can produce a `stop_requested`, and retiming a golden
+nobody can yet regenerate would have been a change nobody could check.
 
 Ticket 03 wrote sixty assertions about these files' *content*. Fifty-nine of
 them passed unchanged across those edits, and the sixtieth was a renamed
@@ -70,11 +75,6 @@ they are separate *paths* through the loop, not separate endings.
 
 Reading them is how you find out what the loop is supposed to do. Three
 choices are visible only here:
-
-**`episode_is_aborted.jsonl` is still on the old timing convention.** It
-carries a `stop_requested`, which only ticket 08 can produce, and editing a
-golden nobody can yet verify is worse than leaving it. Ticket 08 brings it
-onto the rule above.
 
 **`done` produces a `tool_called` but no `observation`.** An Observation is
 what the model reads to decide the next Turn. After `done` there is no next

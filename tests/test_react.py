@@ -30,6 +30,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+import threading
 
 import pytest
 
@@ -41,6 +42,7 @@ from misty_agent.agent.journal import (
     ModelCalled,
     Observation,
     Snapshot,
+    StopRequested,
     ToolCalled,
     ToolRejected,
     TurnStarted,
@@ -48,12 +50,13 @@ from misty_agent.agent.journal import (
     to_jsonl,
 )
 from misty_agent.agent.react import Decision, EpisodeOutcome, as_text, run_episode
+from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import ToolContext, build_registry
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.perception.distance import DistanceReading
 
-from test_approach import WorldThatLosesTheUserAfterAStep
+from test_approach import MovingWorld, WorldThatLosesTheUserAfterAStep
 
 GOLDENS = pathlib.Path(__file__).parent / "goldens"
 WALL_CLOCK = "2026-08-25T09:14:03+08:00"
@@ -637,3 +640,295 @@ def test_the_journal_itself_refuses_a_second_ending():
 
     with pytest.raises(ValueError, match="already finished"):
         journal.record(EpisodeFinished, outcome="done", turns=1, steps=0)
+
+
+# ---------------------------------------------------------------------------
+# The abort path (ticket 08)
+# ---------------------------------------------------------------------------
+#
+# The only way an Episode ends that the loop did not decide, and therefore the
+# only one that can falsify "every Episode provably returns to idle" rather
+# than demonstrate it.
+
+class StopsAfterOneDrive(MovingWorld):
+    """A bumper pressed while the base is moving.
+
+    The stop fires from inside `drive_time`, which is the honest shape: the
+    interruption arrives *during* a Tool call, not between two of them, and
+    Python cannot interrupt a call that has not returned. After the halt no
+    fresh reading comes back, so `approach` spends the rest of its deadline
+    waiting and reports `timeout` — which is the decision
+    `tests/goldens/README.md` records, because an `arrived` here would claim
+    the robot finished a drive it was forbidden to finish.
+    """
+
+    def __init__(self, clock, *, start_cm, config, press) -> None:
+        super().__init__(
+            clock, start_cm=start_cm, actual_motion_multiplier=1.0, config=config
+        )
+        self._press = press
+        self.stopped_at = None
+
+    def drive_time(self, **kwargs):
+        response = super().drive_time(**kwargs)
+        if self.stopped_at is None:
+            self.stopped_at = self._clock.monotonic()
+            self._press()
+        return response
+
+    def latest_reading(self):
+        self._clock.sleep(0.001)
+        if self.stopped_at is not None:
+            return None
+        return super().latest_reading()
+
+
+ABORT_CONFIG = Settings(
+    approach_timeout_s=4.0,
+    post_step_settle_s=0.8,
+    approach_reading_timeout_s=2.0,
+)
+
+
+def is_aborted():
+    """Golden 4: one Turn, `approach`, a bumper part way through."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-aborted", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+    world = StopsAfterOneDrive(
+        clock,
+        start_cm=200.0,
+        config=ABORT_CONFIG,
+        press=lambda: stop.request("foot_bumper"),
+    )
+    stop = EmergencyStop(journal, world)
+    ctx = ToolContext(
+        robot=world, readings=world, config=ABORT_CONFIG, clock=clock
+    )
+    model = ScriptedModel(clock, ("approach", {}, 1024, 811, 15))
+    outcome = run_episode(
+        "speech",
+        model=model,
+        registry=build_registry(),
+        ctx=ctx,
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(97)),
+        stop=stop,
+    )
+    return outcome, journal, model, stop, world
+
+
+def test_the_loop_reproduces_the_aborted_golden():
+    expected = list(from_jsonl((GOLDENS / "episode_is_aborted.jsonl").read_text()))
+    _, journal, _, _, _ = is_aborted()
+
+    difference = first_difference(expected, list(journal.records))
+
+    assert difference is None, str(difference)
+
+
+def test_the_aborted_golden_formatting_matches_too():
+    _, journal, _, _, _ = is_aborted()
+
+    assert to_jsonl(list(journal.records)) == (
+        GOLDENS / "episode_is_aborted.jsonl"
+    ).read_text()
+
+
+def test_an_abort_ends_the_episode():
+    outcome, journal, _, _, _ = is_aborted()
+
+    assert outcome.outcome == "aborted"
+    assert journal.records[-1].outcome == "aborted"
+    assert isinstance(journal.records[-1], EpisodeFinished)
+
+
+def test_the_stop_arrives_in_the_middle_of_a_turn_not_at_its_edge():
+    """The requirement this ticket exists for.
+
+    An abort that only worked between Turns would be a loop that checks a flag,
+    not a robot that stops. This asserts the stop landed strictly between the
+    `tool_called` and the `observation` of the same Turn — i.e. while a
+    physical action was in progress.
+    """
+    _, journal, _, _, _ = is_aborted()
+    records = list(journal.records)
+
+    called = next(r for r in records if isinstance(r, ToolCalled))
+    stopped = next(r for r in records if isinstance(r, StopRequested))
+    observed = next(r for r in records if isinstance(r, Observation))
+
+    assert called.t <= stopped.t < observed.t
+    assert called.turn == observed.turn
+
+
+def test_the_stop_is_stamped_when_it_happened_not_when_the_loop_noticed():
+    """The gap between those two is the interrupt latency, which is the whole
+    reason `stop_requested` and `episode_finished` are separate records
+    (`PLAN.md` §15.3). A stop stamped on the loop's own schedule would report
+    the latency as zero.
+    """
+    _, journal, _, _, world = is_aborted()
+    records = list(journal.records)
+    stopped = next(r for r in records if isinstance(r, StopRequested))
+    finished = records[-1]
+
+    assert stopped.t == pytest.approx(world.stopped_at, abs=1e-9)
+    assert finished.t > stopped.t, "the interrupt latency came out as zero"
+
+
+def test_the_interrupted_tool_keeps_the_work_it_had_already_done():
+    """Python cannot interrupt a call that has not returned, so the Tool
+    finishes and its Observation is recorded. Discarding it would lose a drive
+    that really happened — and `episode_finished.steps` would then disagree
+    with the robot."""
+    outcome, journal, _, _, _ = is_aborted()
+    observed = next(r for r in journal.records if isinstance(r, Observation))
+
+    assert observed.result["steps"] == 1
+    assert outcome.steps == 1
+
+
+def test_the_interrupted_tool_does_not_claim_it_arrived():
+    """`tests/goldens/README.md`: an `arrived` after a stop would say the robot
+    completed a drive it was forbidden to finish."""
+    _, journal, _, _, _ = is_aborted()
+    observed = next(r for r in journal.records if isinstance(r, Observation))
+
+    assert observed.result["result"] != "arrived"
+    assert observed.result["result"] == "timeout"
+
+
+def test_everything_is_halted_when_the_bumper_is_pressed():
+    """「中止之後仍然回到閒置：沒有留下未停止的動作」."""
+    _, _, _, stop, world = is_aborted()
+
+    assert stop.halted
+    assert "halt" in world.endpoints
+
+
+def test_no_further_turn_begins_after_an_abort():
+    """The Turn cap is not what ends this Episode; the stop is. Both have to
+    hold, and a loop that carried on to the cap would have driven again."""
+    outcome, journal, model, _, _ = is_aborted()
+
+    assert outcome.turns == 1
+    assert len(model.asked) == 1
+    assert sum(isinstance(r, TurnStarted) for r in journal.records) == 1
+
+
+def test_a_stop_between_turns_starts_no_new_action():
+    """The other of the loop's two checks. A stop that arrives while the model
+    is thinking must not be followed by a Tool call — the Journal should show
+    the Turn beginning, the model answering, and then nothing physical.
+    """
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-mid", clock=clock, wall_clock=lambda: WALL_CLOCK)
+    robot = RecordingCommands()
+    stop = EmergencyStop(journal, robot)
+
+    class PressesWhileThinking:
+        def decide(self, working_context, tools):
+            clock.sleep(0.5)
+            stop.request("foot_bumper")
+            return Decision(tool="approach", args={}, tokens_in=1, tokens_out=1)
+
+    outcome = run_episode(
+        "speech",
+        model=PressesWhileThinking(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+        stop=stop,
+    )
+
+    kinds = [r.type for r in journal.records]
+    assert outcome.outcome == "aborted"
+    assert "tool_called" not in kinds
+    assert "drive/time" not in robot.endpoints
+
+
+def test_a_halt_that_fails_still_ends_the_episode():
+    """A stop that leaves the robot moving is bad. A stop that leaves the
+    robot moving *and* the Episode running is worse, and that is the one this
+    rules out."""
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-bad", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    class RefusesToHalt(RecordingCommands):
+        def halt(self, motorMask=None):
+            raise RuntimeError("the motor controller did not answer")
+
+    robot = RefusesToHalt()
+    stop = EmergencyStop(journal, robot)
+
+    class PressesWhileThinking:
+        def decide(self, working_context, tools):
+            clock.sleep(0.2)
+            stop.request("foot_bumper")
+            return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
+
+    outcome = run_episode(
+        "speech",
+        model=PressesWhileThinking(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+        stop=stop,
+    )
+
+    assert outcome.outcome == "aborted"
+    assert stop.halted is False
+
+
+def test_an_abort_arriving_from_a_real_thread_still_ends_the_episode():
+    """Everything above fires the stop inline, which is deterministic and
+    proves the loop's logic. It does not prove the Journal survives two
+    threads writing to it, and 「從另一條執行緒觸發」 is the requirement.
+    """
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-thread", clock=clock, wall_clock=lambda: WALL_CLOCK)
+    robot = RecordingCommands()
+    stop = EmergencyStop(journal, robot)
+    pressed = threading.Event()
+
+    class WaitsForTheBumper:
+        def decide(self, working_context, tools):
+            presser = threading.Thread(
+                target=lambda: (stop.request("foot_bumper"), pressed.set())
+            )
+            presser.start()
+            presser.join(timeout=5)
+            assert pressed.wait(timeout=5), "the bumper thread never ran"
+            clock.sleep(0.3)
+            return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
+
+    outcome = run_episode(
+        "speech",
+        model=WaitsForTheBumper(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+        stop=stop,
+    )
+
+    assert outcome.outcome == "aborted"
+    assert sum(isinstance(r, StopRequested) for r in journal.records) == 1
+
+
+def test_an_episode_with_no_stop_wired_still_runs():
+    """The null object earns its place: nothing about the ordinary path should
+    have to know that an emergency stop exists."""
+    outcome, _, _ = ends_on_the_first_turn()
+
+    assert outcome.outcome == "done"

@@ -19,3 +19,17 @@
 - [ ] 這是單獨一支 commit，不夾帶其他改動
 - [ ] 全套測試在專案 venv 下綠且零 skip
 - [ ] 量測台仍可一次產出兩份報告
+
+
+## Notes（來自 #08）
+
+- **`EmergencyStop` 還沒有生產呼叫端。** `misty_agent/agent/stop.py` 的機制與測試都在（15/15
+  mutation 全紅），但把 `BumpSensor` 事件接到 `stop.request("foot_bumper")` 是這張票的事 ——
+  舊腳本用的是 `_thread.interrupt_main()`（`full_robot_v3.py:756` 的
+  `register_foot_bumper_stop`），那個做法會讓 KeyboardInterrupt 落在任何地方，而且不保證
+  馬達停下來。
+- 訂閱的形狀沿用舊腳本那段：`events.subscribe("BumpSensor", condition=[event_condition(
+  "isContacted", "=", True)], debounce_ms=1000, keep_alive=True, ...)`。`request()` 本身
+  是 idempotent 的，所以 debounce 失效也不會產生第二筆 `stop_requested`。
+- 新入口要把 Journal、`ToolContext`、`EmergencyStop` 用**同一個時鐘**建起來 ——
+  `run_episode` 量的延遲和 Journal 寫的時間戳必須來自同一個時鐘，否則描述的是兩次不同的執行。

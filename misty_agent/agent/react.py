@@ -65,7 +65,13 @@ from misty_agent.agent.journal import (
     Snapshot,
     TurnStarted,
 )
-from misty_agent.agent.tools import Dispatched, ToolContext, ToolRegistry, dispatch
+from misty_agent.agent.stop import NEVER_STOPS, Stop
+from misty_agent.agent.tools import (
+    Dispatched,
+    ToolContext,
+    ToolRegistry,
+    dispatch,
+)
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,7 @@ def run_episode(
     ctx: ToolContext,
     journal: Journal,
     perception: Perception,
+    stop: Stop = NEVER_STOPS,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
 
@@ -157,6 +164,14 @@ def run_episode(
         )
         working_context.append(_asked_for(decision))
 
+        # Checked here as well as at the end of the Turn, and the two are not
+        # the same check. This one refuses to *begin* a physical action after
+        # someone has asked for everything to stop; the one below ends the
+        # Episode once the action already running has returned.
+        if stop.requested():
+            outcome = "aborted"
+            break
+
         dispatched = dispatch(
             registry, decision.tool, decision.args, ctx, journal, turn=turn
         )
@@ -180,6 +195,16 @@ def run_episode(
             snapshot=perception.snapshot(),
         )
         working_context.append(_observed(observation))
+
+        # The stop may have arrived while the Tool was running. Python cannot
+        # interrupt a call that has not returned, so the Tool finished and its
+        # Observation is recorded — discarding it would lose something the
+        # robot really did. What it must not do is claim the work succeeded:
+        # `tests/goldens/README.md` records that decision, and the aborted
+        # golden reports `timeout` rather than `arrived`.
+        if stop.requested():
+            outcome = "aborted"
+            break
 
     journal.record(EpisodeFinished, outcome=outcome, turns=turns, steps=steps)
     return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)

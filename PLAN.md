@@ -661,11 +661,14 @@ M6 刪掉舊 simulation runner 時，有兩項覆蓋沒有留在 M6 的樹裡。
 
 | 帶走的覆蓋 | 為什麼不在 M6 重建 | M7 要交付什麼 |
 |---|---|---|
-| **Memory 折疊與持久化**（舊 T9 五條檢查：視窗上限、事實抽取、檔案寫出、重載後仍在、prompt block 含近期輪次） | 測試伸手進舊主腳本的內部，而 M7 正要重寫那些內部。先搬會搬到即將消失的形狀上 | memory 搬出舊主腳本時，同等或更強的覆蓋要一起長出來 |
-| **工具參數的合法性檢查**（舊 T8 三條檢查倖存的那半） | 舊 T8 測的是「消毒 model 回傳的 malformed JSON」。M7 改用 function calling，結構由模型端保證，這個需求會消失 | 但「超出範圍或未知的工具參數要被拒絕，而不是送到機器人」這件事仍然成立，且應與 tool registry 一起交付 |
+| ~~**Memory 折疊與持久化**（舊 T9 五條檢查：視窗上限、事實抽取、檔案寫出、重載後仍在、prompt block 含近期輪次）~~ **已還（M7 #09）** | 測試伸手進舊主腳本的內部，而 M7 正要重寫那些內部。先搬會搬到即將消失的形狀上 | `misty_agent/agent/memory.py` + `tests/test_memory.py`（29 條）。五條檢查全部有對應，而且**更強**：視窗上限與 prompt block 現在是純函式，不需要假的 OpenAI client 就能測；折疊改成不刪除，所以「重載後仍在」連 Exchange 原文一起涵蓋。見 §15.26 |
+| ~~**工具參數的合法性檢查**（舊 T8 三條檢查倖存的那半）~~ **已還（M7 #04）** | 舊 T8 測的是「消毒 model 回傳的 malformed JSON」。M7 改用 function calling，結構由模型端保證，這個需求會消失 | 但「超出範圍或未知的工具參數要被拒絕，而不是送到機器人」這件事仍然成立，且應與 tool registry 一起交付 |
 
 **這兩條在 M7 完成前，專案沒有對應的可執行覆蓋。** 這是刻意接受的空窗，不是疏漏；
 `docs/measurements/m6-coverage-audit.md` 的 T8 與 T9 段落有完整推理。
+
+**兩筆都已還清**：工具參數在 #04（`tools.py` 的型別即 schema 即驗證），memory 在 #09
+（`memory.py`）。§14.6 這張表到此結案。
 
 ### 14.7 偵測器有記憶：交叉檢查必須用連續輸入
 
@@ -1276,3 +1279,50 @@ Observation 之後那次在已經在跑的動作回傳之後結束 Episode。gol
 
 這是 M7 #02 那個教訓的第二次出現 —— 當時「時間戳在鎖之前取」那條測試也是名義上在測並行、
 實際上把鎖拿掉還是綠。**併發的測試要先證明它抓得到那個 bug，再相信它。**
+
+### 15.26 Memory：只增不改，衍生物在 Episode 邊界重算（M7 #09）
+
+`misty_agent/agent/memory.py`。§15.5 的設計落地，三個地方與舊版不同：
+
+**折疊不刪除。** 舊版的 `short_term` 是一個 deque，溢位就把最舊的 pop 掉丟給摘要 —— 摘要漏了
+什麼，原文就永久沒了。新版 `_folded` 只是一個**讀取位置**，Exchange 全部留著。這也讓「重載
+後仍在」順便涵蓋了 Exchange 原文，不只是 facts。
+
+**「最近幾輪」是純函式切片。** 不呼叫模型、不碰 I/O。§14.6 欠的五條檢查裡，視窗上限與
+prompt block 這兩條因此可以在微秒內跑完，而且**建構 Memory 時 summariser 與 extractor
+都傳 None 也測得動** —— 那是「它真的沒碰模型」最強的證明形式。
+
+**衍生在 Episode 邊界做一次。** `close_episode()` 是唯一呼叫模型的地方。ReAct 之下一個
+Episode 有多個 Turn 但使用者只說了一次話，舊版每輪抽取是在對著沒有新東西的紀錄付一次模型
+呼叫與它的延遲。**這條只能在迴圈層級證明** —— memory 自己看不出「某個 Turn 沒有觸發它」，
+所以 `test_a_long_episode_derives_memory_exactly_once` 跑滿八個 Turn 然後斷言 extractor
+被呼叫一次。
+
+**兩個衍生都不能把 Episode 一起帶走。** summariser 失敗就退回粗暴的截斷串接（絕不整批丟
+失），extractor 失敗就什麼都不更新。**一份過時的摘要是比較差的記憶；一個因為摘要逾時而
+消失的互動是比較差的機器人。**
+
+**`close_episode()` 在 `EpisodeFinished` 之後才跑。** 摘要可能是一次模型呼叫，折進 Episode
+的時間裡會讓每一次延遲量測都包含沒有人在等的工作 —— 而且會移動 `episode_finished.t`，
+那是四個 golden 釘住的東西。
+
+**存檔是先寫暫存檔再 rename。** 這個 process 可能被一隻腳打斷（`stop.py`），而**昨天的記憶
+救得回來，今天的一半救不回來**。
+
+### 15.27 「說了什麼」由 Tool 自己宣告，迴圈不去猜（M7 #09）
+
+Exchange 的另一半是「機器人回了什麼」。迴圈要拿到它，兩條路：
+
+1. 迴圈自己看 `decision.args["text"]` —— 那是 §15.20 拒絕過的字串鍵耦合，而且迴圈得知道
+   那個 Tool 叫 `speak`。
+2. **registry 宣告**：`@registry.tool("speak", ..., speaks="text")`，`dispatch` 從**驗證後**
+   的參數取值放進 `Dispatched.spoken`。
+
+選 2，理由與 `ends_episode` 是同一條（§15.9）：**推斷出來的性質會在名字改變的那天默默失效**，
+而 memory 會停止記錄卻沒有任何測試變紅。註冊時會檢查 `speaks` 指的欄位真的存在。
+
+拿驗證後的值而不是原始請求，是為了「記下來的就是講出去的」—— `speak` 的參數型別會 strip，
+兩者在有前後空白時不一樣。
+
+**沒有把它放進 Tool 的結果裡**，因為 §15.4 拒絕 Observation 重複參數 —— #05 的 review 就是
+為了這條把 `said` / `showing` / `played` 拿掉的。

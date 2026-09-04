@@ -50,6 +50,7 @@ from misty_agent.agent.journal import (
     to_jsonl,
 )
 from misty_agent.agent.react import Decision, EpisodeOutcome, as_text, run_episode
+from misty_agent.agent.memory import Exchange, Memory
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import ToolContext, build_registry
 from misty_agent.config import Settings
@@ -57,6 +58,7 @@ from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.perception.distance import DistanceReading
 
 from test_approach import MovingWorld, WorldThatLosesTheUserAfterAStep
+from test_memory import CountingExtractor, CountingSummariser
 
 GOLDENS = pathlib.Path(__file__).parent / "goldens"
 WALL_CLOCK = "2026-08-25T09:14:03+08:00"
@@ -488,12 +490,17 @@ def test_the_model_is_handed_every_tool_it_has(name="", episode=None):
 # including `as_text` returning "" and the Snapshot arriving as all-None.
 
 def test_the_trigger_is_the_first_thing_the_model_is_told():
-    """Otherwise the first Turn is a decision made about nothing."""
+    """Otherwise the first Turn is a decision made about nothing.
+
+    Both halves: *what kind* of thing started this, and — when it was speech —
+    *what was said*. Ticket 09 added the words; before it the model was told
+    only that someone had spoken.
+    """
     _, _, model = ends_on_the_first_turn()
     first_context, _ = model.asked[0]
 
     assert first_context[0]["role"] == "user"
-    assert first_context[0]["content"] == {"trigger": "speech"}
+    assert first_context[0]["content"] == {"trigger": "speech", "said": ""}
 
 
 def test_the_model_is_shown_what_it_asked_for_last_turn():
@@ -932,3 +939,218 @@ def test_an_episode_with_no_stop_wired_still_runs():
     outcome, _, _ = ends_on_the_first_turn()
 
     assert outcome.outcome == "done"
+
+
+# ---------------------------------------------------------------------------
+# Memory (ticket 09)
+# ---------------------------------------------------------------------------
+#
+# The claim `PLAN.md` §15.5 makes is about *where* deriving happens, and the
+# only place that can be checked is here: memory alone cannot tell you that a
+# Turn did not trigger it.
+
+def test_a_long_episode_derives_memory_exactly_once():
+    """Eight Turns, one thing the subject said, one round of deriving.
+
+    The old code extracted facts per Turn. Under ReAct that is a model call
+    and its latency spent asking about a record that has not changed since the
+    last Turn asked.
+    """
+    summariser, extractor = CountingSummariser(), CountingExtractor()
+    memory = Memory(summariser=summariser, extractor=extractor, window=6)
+    cap = Settings().max_turns_per_episode
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-mem", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    outcome = run_episode(
+        "speech",
+        said="hello there",
+        memory=memory,
+        model=ScriptedModel(
+            clock, *[("look_around", {}, 10, 1, 1) for _ in range(cap)]
+        ),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(),
+            readings=ScriptedReadings(*[a_reading() for _ in range(cap * 4)]),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    assert outcome.turns == cap
+    assert extractor.calls == 1
+    assert summariser.calls == 0
+
+
+def test_what_the_robot_said_is_what_gets_remembered():
+    """The other half of an Exchange, collected from what each Tool declares
+    it speaks — so the loop never has to know the Tool is called `speak` or
+    its argument `text`."""
+    memory = Memory(summariser=None, extractor=None, window=6)
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-say", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    run_episode(
+        "speech",
+        said="are you there?",
+        memory=memory,
+        model=ScriptedModel(
+            clock,
+            ("speak", {"text": "I am here."}, 10, 1, 1),
+            ("speak", {"text": "Coming over."}, 10, 1, 1),
+            ("done", {}, 10, 1, 1),
+        ),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    remembered = memory.exchanges[-1]
+    assert remembered.said == "are you there?"
+    assert remembered.replied == "I am here. Coming over."
+
+
+def test_an_episode_where_the_robot_says_nothing_still_records_the_exchange():
+    """Otherwise "they spoke and the robot ignored them" leaves no trace, and
+    the next Episode's model has no idea it happened."""
+    memory = Memory(summariser=None, extractor=None, window=6)
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-mute", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    run_episode(
+        "speech",
+        said="hello?",
+        memory=memory,
+        model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    assert memory.exchanges[-1] == Exchange(said="hello?", replied="")
+
+
+def test_the_models_message_list_is_never_stored_as_memory(tmp_path):
+    """The confusion this whole redesign is arranged against.
+
+    `CONTEXT.md` reserves *Exchange* for the durable unit and says the message
+    list is one Episode's working context, discarded with it. Persisting the
+    latter would save a wall of Tool-call plumbing — roles, schemas,
+    Observations, refusals — that nobody will ever read and that says nothing
+    about the person.
+    """
+    path = str(tmp_path / "memory.json")
+    memory = Memory(summariser=None, extractor=None, window=6, path=path)
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-leak", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    scripted = ScriptedModel(
+        clock,
+        ("move_head", {"pitch": 140}, 10, 1, 1),
+        ("speak", {"text": "Coming over."}, 10, 1, 1),
+        ("done", {}, 10, 1, 1),
+    )
+    run_episode(
+        "speech",
+        said="come here",
+        memory=memory,
+        model=scripted,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+    memory.save()
+
+    saved = (tmp_path / "memory.json").read_text()
+    for plumbing in ("role", "assistant", "tool_called", "snapshot",
+                     "observation", "refused", "outside the permitted range"):
+        assert plumbing not in saved, plumbing
+    assert "come here" in saved and "Coming over." in saved
+
+
+def test_what_memory_knows_is_the_first_thing_the_model_reads():
+    """A memory nobody is shown is a file, not a memory."""
+    memory = Memory(summariser=None, extractor=None, window=6)
+    memory.remember(Exchange(said="I am Ana", replied="Hello Ana"))
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-read", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
+    run_episode(
+        "speech",
+        said="hello again",
+        memory=memory,
+        model=scripted,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    first_context, _ = scripted.asked[0]
+    assert first_context[0]["role"] == "system"
+    assert "I am Ana" in first_context[0]["content"]
+
+
+def test_an_episode_with_no_memory_shows_the_model_no_system_block():
+    """The null object again: the ordinary path should not have to know
+    memory exists."""
+    _, _, model = ends_on_the_first_turn()
+    first_context, _ = model.asked[0]
+
+    assert all(entry["role"] != "system" for entry in first_context)
+
+
+def test_memory_is_derived_after_the_episode_has_already_ended():
+    """`close_episode` may call a model. Folding that into the Episode would
+    put work nobody is waiting for inside every latency measurement — and
+    would move `episode_finished.t`, which four goldens pin.
+    """
+    seen_at_close = {}
+
+    class NotesWhenItRan:
+        calls = 0
+
+        def extract(self, known, exchanges):
+            NotesWhenItRan.calls += 1
+            seen_at_close["records"] = [r.type for r in journal.records]
+            return {}
+
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-after", clock=clock, wall_clock=lambda: WALL_CLOCK)
+    memory = Memory(summariser=None, extractor=NotesWhenItRan(), window=6)
+
+    run_episode(
+        "speech",
+        said="hello",
+        memory=memory,
+        model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    assert NotesWhenItRan.calls == 1
+    assert seen_at_close["records"][-1] == "episode_finished"

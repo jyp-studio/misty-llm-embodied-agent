@@ -65,6 +65,7 @@ from misty_agent.agent.journal import (
     Snapshot,
     TurnStarted,
 )
+from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.agent.tools import (
     Dispatched,
@@ -123,6 +124,8 @@ def run_episode(
     journal: Journal,
     perception: Perception,
     stop: Stop = NEVER_STOPS,
+    said: str = "",
+    memory: Remembers = NO_MEMORY,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
 
@@ -134,13 +137,21 @@ def run_episode(
     clock = ctx.clock
     journal.record(EpisodeStarted, trigger=trigger)
 
-    # What the model is shown, and only this. There is no system prompt and no
-    # memory here yet: ticket 09 redesigns memory (`PLAN.md` §15.5) and owns
-    # what else belongs in this list. A parameter added now in anticipation
-    # would be one nothing calls and no test covers.
-    working_context: List[Dict[str, Any]] = [
-        {"role": "user", "content": {"trigger": trigger}}
-    ]
+    # What the model is shown, and only this. Memory goes in at the top as one
+    # block of prose (`memory.py` builds it); everything after it is this
+    # Episode's own working context and dies with the Episode.
+    working_context: List[Dict[str, Any]] = []
+    remembered = memory.as_prompt_block()
+    if remembered:
+        working_context.append({"role": "system", "content": remembered})
+    working_context.append(
+        {"role": "user", "content": {"trigger": trigger, "said": said}}
+    )
+
+    # What the robot says aloud this Episode, for the other half of the
+    # Exchange. Collected from what each Tool declares it speaks, so the loop
+    # never has to know that the Tool is called `speak` or its argument `text`.
+    spoken: List[str] = []
 
     turns = 0
     steps = 0
@@ -176,6 +187,8 @@ def run_episode(
             registry, decision.tool, decision.args, ctx, journal, turn=turn
         )
         steps += dispatched.steps
+        if dispatched.spoken:
+            spoken.append(dispatched.spoken)
 
         if dispatched.ends_episode:
             outcome = "done"
@@ -207,6 +220,16 @@ def run_episode(
             break
 
     journal.record(EpisodeFinished, outcome=outcome, turns=turns, steps=steps)
+
+    # After the ending, deliberately. `close_episode` may call a model, and
+    # folding that into the Episode's recorded duration would make every
+    # latency measurement include work the robot does once nobody is waiting.
+    # It is also once per Episode rather than once per Turn: under ReAct the
+    # subject spoke once, and re-extracting each Turn asks about a record that
+    # has not changed (`PLAN.md` §15.5).
+    memory.remember(Exchange(said=said, replied=" ".join(spoken)))
+    memory.close_episode()
+
     return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
 
 

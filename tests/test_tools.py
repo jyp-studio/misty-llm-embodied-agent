@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.tools import (
     NoArguments,
+    SpeakArgs,
     ToolContext,
     ToolRegistry,
     dispatch,
@@ -86,6 +87,12 @@ class NestedDrive(BaseModel):
     """A control parameter one level down, where `model_fields` cannot see it."""
 
     motion: InnerMotion
+
+
+class Words(BaseModel):
+    """A Tool whose argument is words the robot says out loud."""
+
+    text: str
 
 
 class DocumentedArgs(BaseModel):
@@ -884,3 +891,93 @@ def test_the_steps_a_tool_reports_are_the_steps_dispatch_passes_on(registry):
     )
 
     assert outcome.steps == 3
+
+
+# ---------------------------------------------------------------------------
+# Which argument, if any, is words the robot says out loud
+# ---------------------------------------------------------------------------
+
+def test_a_tool_that_speaks_reports_the_words_it_said(registry):
+    """Memory's half of an Exchange, and the loop must not have to guess it."""
+    @registry.tool("announce", "Announce something.", speaks="text")
+    def announce(args: Words, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "announce", {"text": "Coming over."}, a_context(), a_journal(),
+        turn=1,
+    )
+
+    assert outcome.spoken == "Coming over."
+
+
+def test_speaking_is_declared_not_guessed_from_the_tool_name(registry):
+    """`PLAN.md` §15.9 again, in a third place.
+
+    A `dispatch` that looked for a Tool called `speak` would report nothing
+    for this one — and memory would silently stop recording what the robot
+    said the day somebody renamed it.
+    """
+    @registry.tool("murmur", "Say it quietly.", speaks="text")
+    def murmur(args: Words, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "murmur", {"text": "hello"}, a_context(), a_journal(), turn=1
+    )
+
+    assert outcome.spoken == "hello"
+
+
+def test_a_tool_named_speak_that_does_not_declare_it_reports_nothing(registry):
+    """The other half: the name alone must not be enough."""
+    @registry.tool("speak", "Not the real one.")
+    def speak(args: Words, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "speak", {"text": "hello"}, a_context(), a_journal(), turn=1
+    )
+
+    assert outcome.spoken is None
+
+
+def test_what_is_reported_is_the_validated_text_not_the_raw_request(registry):
+    """So that what is remembered is what was actually spoken.
+
+    The real `speak` strips its text before sending it to the robot, and a
+    memory holding the unstripped version would disagree with what came out
+    of the speaker.
+    """
+    @registry.tool("announce", "Announce something.", speaks="text")
+    def announce(args: SpeakArgs, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "announce", {"text": "  hello  "}, a_context(), a_journal(),
+        turn=1,
+    )
+
+    assert outcome.spoken == "hello"
+
+
+def test_a_tool_that_does_not_speak_reports_nothing(registry):
+    """The negative control: eight of the nine say nothing."""
+    @registry.tool("nod", "Nod once.")
+    def nod(args: HeadArgs, ctx: ToolContext):
+        return {"ok": True}
+
+    outcome = dispatch(
+        registry, "nod", {"pitch": 0}, a_context(), a_journal(), turn=1
+    )
+
+    assert outcome.spoken is None
+
+
+def test_declaring_an_argument_that_does_not_exist_is_refused(registry):
+    """Caught at registration, where the author is, rather than at run time as
+    an `AttributeError` from inside `dispatch`."""
+    with pytest.raises(ValueError, match="not one of its arguments"):
+        @registry.tool("announce", "Announce something.", speaks="wording")
+        def announce(args: HeadArgs, ctx: ToolContext):
+            return {"ok": True}

@@ -95,6 +95,12 @@ class Tool:
     args_model: Type[BaseModel]
     handler: Callable[[BaseModel, ToolContext], Mapping[str, Any]]
     ends_episode: bool
+    #: Which of this Tool's arguments, if any, is words the robot says aloud.
+    #: Declared rather than inferred, for the same reason `ends_episode` is
+    #: (`PLAN.md` §15.9): the alternative is the ReAct loop checking for a
+    #: Tool named `speak` and reading a key called `text`, and then memory
+    #: quietly stops recording the moment either name changes.
+    speaks: Optional[str] = None
 
     def schema(self) -> Dict[str, Any]:
         """What the model is told, generated from the argument type.
@@ -142,6 +148,10 @@ class Dispatched:
     #: Drive commands this call issued, for `episode_finished.steps`. Zero for
     #: every Tool that does not move the base, which is eight of the nine.
     steps: int = 0
+    #: What the robot said aloud, if this call said anything. Memory's half of
+    #: an Exchange (`CONTEXT.md`), and the validated text rather than the raw
+    #: request — so what is remembered is what was spoken.
+    spoken: Optional[str] = None
 
 
 class ToolRegistry:
@@ -151,7 +161,12 @@ class ToolRegistry:
         self._tools: Dict[str, Tool] = {}
 
     def tool(
-        self, name: str, description: str, *, ends_episode: bool = False
+        self,
+        name: str,
+        description: str,
+        *,
+        ends_episode: bool = False,
+        speaks: Optional[str] = None,
     ) -> Callable[[Callable[..., Mapping[str, Any]]], Callable[..., Mapping[str, Any]]]:
         def register(handler):
             if not TOOL_NAME.fullmatch(name):
@@ -162,6 +177,11 @@ class ToolRegistry:
             if name in self._tools:
                 raise ValueError(f"a Tool named {name!r} is already registered")
             args_model = _argument_type(handler)
+            if speaks is not None and speaks not in args_model.model_fields:
+                raise ValueError(
+                    f"Tool {name!r} says it speaks {speaks!r}, but that is not "
+                    f"one of its arguments ({', '.join(args_model.model_fields) or 'none'})"
+                )
             refuse_control_parameters(
                     f"Tool {name!r}", _declared_names(args_model), commanded=True
                 )
@@ -171,6 +191,7 @@ class ToolRegistry:
                 args_model=args_model,
                 handler=handler,
                 ends_episode=ends_episode,
+                speaks=speaks,
             )
             return handler
 
@@ -293,6 +314,7 @@ def dispatch(
         ends_episode=tool.ends_episode,
         result=result,
         steps=_steps_in(result),
+        spoken=getattr(arguments, tool.speaks) if tool.speaks else None,
     )
 
 
@@ -561,7 +583,7 @@ def build_registry() -> ToolRegistry:
     def done(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         return {}
 
-    @registry.tool("speak", "Say something out loud.")
+    @registry.tool("speak", "Say something out loud.", speaks="text")
     def speak(args: SpeakArgs, ctx: ToolContext) -> Mapping[str, Any]:
         ctx.robot.speak(text=args.text)
         return {"ok": True, "estimated_speech_ms": estimate_speech_ms(

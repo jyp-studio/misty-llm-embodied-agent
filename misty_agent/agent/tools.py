@@ -40,6 +40,7 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Protocol,
     Tuple,
     Type,
     get_type_hints,
@@ -54,6 +55,16 @@ from misty_agent.agent.layering import (
     refuse_control_parameters,
 )
 from misty_agent.control.approach import approach as run_approach
+
+
+class Ears(Protocol):
+    """Whatever is listening, seen from a Tool that is about to make noise.
+
+    One method, because one is all `speak` needs: the microphone has to be
+    told before the speaker starts, not after (`PLAN.md` §15.29).
+    """
+
+    def mute_for(self, seconds: float) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -77,6 +88,10 @@ class ToolContext:
     readings: Any
     config: Any = None
     clock: Any = None
+    #: What must not hear the robot talk to itself. Optional because eight of
+    #: the nine Tools make no sound and an Episode with no microphone wired is
+    #: still a valid Episode; `speak` checks before using it.
+    ears: Optional[Ears] = None
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -540,6 +555,16 @@ class PlayAudioArgs(BaseModel):
     )
 
 
+#: Characters that are a syllable rather than a letter, and that are written
+#: without spaces between words: CJK punctuation and ideographs, kana, and
+#: Hangul. Counting these as words is what made the estimate wrong for the
+#: language this robot is actually spoken to in.
+_CJK = re.compile(
+    "[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    "\uac00-\ud7af\uff00-\uffef]"
+)
+
+
 def estimate_speech_ms(text: str, config: Any) -> int:
     """How long that will take to say, near enough to suppress our own voice.
 
@@ -548,13 +573,26 @@ def estimate_speech_ms(text: str, config: Any) -> int:
     constant is UNCALIBRATED and lives in `Settings` rather than here — the
     old main script hard-coded them, which made a guess look like a fact.
 
-    **This under-reads CJK badly.** `split()` counts whitespace-separated
-    words, and a whole Chinese sentence is one of them. Ticket 10 opens the
-    suppression window on this number, so that is where it has to be dealt
-    with; `PLAN.md` §15.13 records it rather than leaving it to be discovered.
+    **Two rates, because two writing systems.** `split()` counts
+    whitespace-separated words, and a whole Chinese sentence is one of them:
+    「你好，我過來一點」 came out as 0.95 s, so the suppression window reopened
+    while Misty was still talking and she transcribed herself — which is the
+    exact defect ticket 10 exists to fix, returning in a new form. CJK
+    characters are therefore counted separately and at their own rate, and
+    removed before the words are counted so a Chinese sentence does not also
+    bill for one Latin word (`PLAN.md` §15.28).
+
+    Latin text is unaffected, which four golden Journals depend on.
     """
-    words = max(1, len(text.split()))
-    seconds = words / config.speech_words_per_second + config.speech_overhead_s
+    characters = len(_CJK.findall(text))
+    words = len(_CJK.sub(" ", text).split())
+    if not characters and not words:
+        words = 1
+    seconds = (
+        characters / config.speech_cjk_chars_per_second
+        + words / config.speech_words_per_second
+        + config.speech_overhead_s
+    )
     return int(round(min(config.speech_estimate_cap_s, seconds) * 1000))
 
 
@@ -585,10 +623,24 @@ def build_registry() -> ToolRegistry:
 
     @registry.tool("speak", "Say something out loud.", speaks="text")
     def speak(args: SpeakArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        """Say it, and stop listening for exactly as long as saying it takes.
+
+        The window is shut **before** the request goes out, not after it
+        returns: `POST /tts/speak` is one round trip and Misty starts talking
+        at the far end of it, so muting afterwards leaves a gap in which she
+        can hear herself begin.
+
+        And it covers the playback only. The script this replaces also
+        `sleep`-ed for the same duration, so the whole action was deaf and
+        anything the person said while the robot talked was lost — including
+        "stop". That is the defect, and the fix is to mute without waiting
+        (`PLAN.md` §15.29).
+        """
+        estimated_ms = estimate_speech_ms(args.text, ctx.config)
+        if ctx.ears is not None:
+            ctx.ears.mute_for(estimated_ms / 1000.0)
         ctx.robot.speak(text=args.text)
-        return {"ok": True, "estimated_speech_ms": estimate_speech_ms(
-            args.text, ctx.config
-        )}
+        return {"ok": True, "estimated_speech_ms": estimated_ms}
 
     @registry.tool("display_image", "Change the face on the screen.")
     def display_image(args: DisplayImageArgs, ctx: ToolContext) -> Mapping[str, Any]:

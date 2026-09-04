@@ -277,6 +277,17 @@ class Settings(BaseSettings):
             "PLAN.md §15.13."
         ),
     )
+    speech_cjk_chars_per_second: float = Field(
+        default=5.0, gt=0.0,
+        description=(
+            "Speaking rate for Chinese, Japanese and Korean, which have no "
+            "spaces to count words with. UNCALIBRATED, like every other "
+            "figure here: Misty's TTS returns no timing (PLAN.md §15.4). "
+            "The word rate cannot stand in — a whole Chinese sentence is one "
+            "whitespace token, so counting words under-reads it by several "
+            "times over (PLAN.md §15.28)."
+        ),
+    )
     speech_overhead_s: float = Field(
         default=0.5, ge=0.0,
         description="Fixed start-up added to the estimate. UNCALIBRATED.",

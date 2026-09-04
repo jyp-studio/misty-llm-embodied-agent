@@ -1154,3 +1154,38 @@ def test_memory_is_derived_after_the_episode_has_already_ended():
 
     assert NotesWhenItRan.calls == 1
     assert seen_at_close["records"][-1] == "episode_finished"
+
+
+def test_an_episode_that_speaks_shuts_the_microphone_for_that_long():
+    """The whole path, not just `dispatch`: the microphone reaches `speak`
+    through the same `ToolContext` everything else does."""
+    class RecordingEars:
+        def __init__(self):
+            self.muted_for = []
+
+        def mute_for(self, seconds):
+            self.muted_for.append(seconds)
+
+    ears = RecordingEars()
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-mute", clock=clock, wall_clock=lambda: WALL_CLOCK)
+
+    run_episode(
+        "speech",
+        said="are you there?",
+        model=ScriptedModel(
+            clock,
+            ("speak", {"text": "Coming over."}, 10, 1, 1),
+            ("done", {}, 10, 1, 1),
+        ),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock, ears=ears,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(120)),
+    )
+
+    observed = next(r for r in journal.records if isinstance(r, Observation))
+    assert ears.muted_for == [observed.result["estimated_speech_ms"] / 1000.0]

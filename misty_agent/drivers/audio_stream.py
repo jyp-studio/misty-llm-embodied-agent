@@ -23,7 +23,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -185,7 +185,14 @@ class AudioStream:
     * ``flush()`` discards utterances already recognised but not yet read.
     * ``mute_for(seconds)`` drops utterances that end within the next
       ``seconds`` — used so Misty does not transcribe her own text-to-speech.
-      Calls do not stack; the later deadline wins.
+      Calls do not stack; the later deadline wins. This is the whole of the
+      suppression window: it covers **playback and nothing else**, so someone
+      interrupting the moment Misty stops talking is heard. The old script
+      deafened perception for the entire action sequence, which lost whatever
+      was said during it (`PLAN.md` §15.29).
+
+    The clock is injectable so that window can be tested without waiting for
+    it. Nothing here calls ``time`` directly.
 
     Transcription runs on the voice-detection thread, so a slow round trip
     lets decoded audio queue up behind it. That matches the behaviour of the
@@ -199,11 +206,13 @@ class AudioStream:
         *,
         sample_rate: int = settings.audio_sample_rate_hz,
         detector: Optional[UtteranceDetector] = None,
+        monotonic: Optional[Callable[[], float]] = None,
     ) -> None:
         self._session = session
         self._transcriber = transcriber
         self._sample_rate = sample_rate
         self._detector = detector or UtteranceDetector(sample_rate=sample_rate)
+        self._monotonic = monotonic or time.monotonic
 
         self._blocks: "queue.Queue[tuple[float, np.ndarray]]" = queue.Queue()
         self._utterances: "queue.Queue[Utterance]" = queue.Queue()
@@ -245,8 +254,17 @@ class AudioStream:
                 return
 
     def mute_for(self, seconds: float) -> None:
-        """Ignore anything heard for the next ``seconds``."""
-        self._muted_until = max(self._muted_until, time.monotonic() + seconds)
+        """Ignore anything heard for the next ``seconds``.
+
+        Deadlines do not stack — the later one wins — because two overlapping
+        utterances should end the window when the *last* of them does, not at
+        the sum of both.
+        """
+        self._muted_until = max(self._muted_until, self._monotonic() + seconds)
+
+    def muted(self) -> bool:
+        """Whether the window is currently shut. For tests and diagnostics."""
+        return self._monotonic() < self._muted_until
 
     # ---------- implementation ----------
 
@@ -281,7 +299,7 @@ class AudioStream:
                     block = frame.to_ndarray()
                     if block.ndim > 1 and block.shape[0] > 1:
                         block = np.mean(block, axis=0)  # downmix to mono
-                    self._blocks.put((time.monotonic(), block.flatten()))
+                    self._blocks.put((self._monotonic(), block.flatten()))
         except Exception as exc:
             log.exception("RTSP audio decoder crashed: %s", exc)
         finally:
@@ -293,7 +311,7 @@ class AudioStream:
             try:
                 arrived_at, block = self._blocks.get(timeout=1.0)
             except queue.Empty:
-                segment = self._detector.timed_out(time.monotonic())
+                segment = self._detector.timed_out(self._monotonic())
             else:
                 segment = self._detector.push(arrived_at, block)
 
@@ -301,7 +319,7 @@ class AudioStream:
                 self._publish(segment)
 
     def _publish(self, segment: Segment) -> None:
-        if time.monotonic() < self._muted_until:
+        if self.muted():
             log.debug("dropping utterance heard while muted")
             return
         text = self._transcriber.transcribe(segment.pcm, self._sample_rate)

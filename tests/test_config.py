@@ -125,3 +125,12 @@ def test_the_speech_estimate_cap_cannot_be_zero():
     would close and reopen before Misty made a sound."""
     with pytest.raises(ValidationError):
         Settings(speech_estimate_cap_s=0.0)
+
+
+def test_the_cjk_speaking_rate_cannot_be_zero():
+    """Zero characters per second is a division by zero inside the speech
+    estimate, and that estimate is what the TTS suppression window is opened
+    on — so the failure would land on the path that stops Misty transcribing
+    herself."""
+    with pytest.raises(ValidationError):
+        Settings(speech_cjk_chars_per_second=0.0)

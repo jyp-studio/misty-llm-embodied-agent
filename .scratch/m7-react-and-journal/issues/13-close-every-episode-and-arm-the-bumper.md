@@ -16,7 +16,7 @@
 - [x] 沒有 event stream 的 Session 行為不變
 - [x] 既有四份 golden Journal 不變
 - [x] 新增 `error` outcome 的第五份 golden，不削弱 spec 的完整覆蓋
-- [ ] M7 單檔測試綠；全套測試在可建立 MediaPipe context 的環境下零 skip
+- [x] M7 單檔測試綠；全套測試在可建立 MediaPipe context 的環境下零 skip
 
 ## Scope boundary
 
@@ -36,5 +36,10 @@ Session 共用 EventStream 時固定訂閱名稱會讓第二個 callback 被拒�
 
 最終 M7 相關 14 個測試檔為 **663 passed**；`.venv` 完整 suite 為 **945 passed、13 failed、
 38 errors、7 deselected、零 skip**。51 個失敗／錯誤都在需要 MediaPipe context 的測試，原因是
-目前 headless 執行環境無法建立 macOS `NSOpenGLPixelFormat`／`kGpuService`；因此不冒稱「全套
-全綠」，上方最後一項仍保持未勾。這個專案沒有實機，bumper 與 halt 仍只由 contract/fake 驗證。
+目前 headless 執行環境無法建立 macOS `NSOpenGLPixelFormat`／`kGpuService`；因此當時沒有冒稱
+「全套全綠」，先保持最後一項未勾。這個專案沒有實機，bumper 與 halt 仍只由 contract/fake 驗證。
+
+同日由使用者在一般 macOS Terminal、同一份專案 `.venv` 執行完整 suite：**996 passed、
+7 deselected、零 skip，25.17s**。測試總數恰好等於 Codex headless 執行的 945 passed 加上
+13 failed／38 errors，確認那 51 項是 Codex 執行環境無法建立 MediaPipe macOS OpenGL context，
+不是程式或測試案例失敗。最後一項據此勾選；無實機邊界仍不變。

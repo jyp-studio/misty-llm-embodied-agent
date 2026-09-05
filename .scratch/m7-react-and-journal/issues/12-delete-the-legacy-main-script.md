@@ -47,3 +47,14 @@
 - 新入口要把 Journal、`ToolContext`、`EmergencyStop`、`AudioStream` 用**同一個時鐘**建起來。
 - 舊的 e-stop 是 `full_robot_v3.py:756` 的 `register_foot_bumper_stop`，用
   `_thread.interrupt_main()` —— KeyboardInterrupt 會落在任何地方，而且不保證馬達停下來。
+
+
+## Notes（來自 #11）
+
+- **`OAI_CONFIG_LIST.json` 的讀取程式只存在於 `full_robot_v3.py:81-88`**（`load_api_key()`）。
+  刪掉那個檔案就等於刪掉那條路徑，而 `README.md:93` 和 `.env.example` 都還在講它。這張票要嘛
+  把它搬進新入口，要嘛從 README / .env.example 拿掉 —— **兩邊都不做的話 README 會說謊**。
+- **`openai` 不只 `model.py` 用**：`misty_agent/perception/asr.py:87` 也 import。刪掉舊腳本
+  之後還有兩個生產消費端，兩個都是在函式內 lazy import（HANDOFF §4 要求的性質）。
+- live 套件目前傳 `ears=HEARS_NOTHING`、不傳 `stop=` —— 也就是**入口接線這件事沒有任何
+  live 覆蓋**，全部是這張票的。

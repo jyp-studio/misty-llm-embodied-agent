@@ -1412,3 +1412,48 @@ said2–said7 —— **模型在同一份 prompt 裡把同兩筆讀了兩次**�
 一個把全形拉丁字母當成音節的正規表達式、一條會把全形 `Ｈｅｌｌｏ　ｗｏｒｌｄ` 估成 2.7 秒的
 路徑、`CONTEXT.md` 裡一個已經不存在的設定名、以及 §15.21 那段誤導性的描述。這些都是四張票
 自審沒看見的。
+
+### 15.32 真模型測試：不變量當 gate，行為只報告（M7 #11）
+
+根目錄那份 `test_llm_live.py` 呼叫真模型、印出每個決策與硬體呼叫、**零斷言** —— 它證明不了
+任何事，也進不了 CI。刪除，換成 `tests/test_llm_live.py`（掛 `llm_live` marker、預設排除）。
+
+**gate 的是不變量，不是模型講了什麼。** 七條檢查放在 `tests/episode_invariants.py`：
+Episode 一定結束一次、Turn 上限成立、模型沒收到物理參數、Tool 參數都在範圍內、每一次驅動
+都來自控制器、Journal 寫得下也讀得回、被拒絕的呼叫不會同時算成成功。模型**選了什麼**不是
+gate —— 先看一圈再回話的模型不是 bug —— 那些另外計數、印成通過率。
+
+**marker 註冊在 `pytest.ini`。** `tests/conftest.py` 是受保護檔案不能改；`pyproject.toml`
+會讓這個沒有打包設定的 repo 看起來像要打包。`addopts = -m "not llm_live"` 讓預設執行**排除**
+而不是 **skip** —— M6 #08 示範過 skip 會怎麼侵蝕「全綠零 skip」。有測試直接讀 `pytest.ini`
+釘住這兩行，因為刪掉任何一行都是無聲的：live 測試會開始跑，第一個發現的人是帳單。
+
+**每條 gate 都在離線證明過會紅**（`tests/test_episode_invariants.py`）。這是關鍵：一條空洞的
+檢查在一套沒人跑的付費測試裡會永遠綠，而那正是這張票要終結的「印出來給人看」。
+
+### 15.33 那套付費測試的兩個坑，都是 review 抓到的（M7 #11）
+
+**一、`approach` 的檢查在 live 是空的。** 我給 live 用的 reading source 把
+`frame_arrived_at` 標成 0.0，而注入時鐘也在 0.0 —— 每一筆讀數都是過期的，`approach` 永遠
+回 `lost_user`、0 個 Step，於是「每次驅動都來自控制器」永遠只是在比 `0 == 0`。**離線有牙齒、
+上線沒有**，而那是最糟的位置。改用 M5 驗證時的同一個 `MovingWorld`，並補一條
+「至少有一個情境真的動了」當陰性對照。
+
+**二、沒有 key 時的訊息叫人去做一件沒有用的事。** 我寫「把 key 放進專案的 `.env`」——
+`Settings` 只讀 `.env` 裡 `MISTY_` 開頭的欄位，而且**從不匯出到環境變數**，而
+`api_key_available()` 讀的是環境變數。`.env.example` 第 6 行本來就寫著「不要把 OpenAI key
+放這裡」。更糟的是我寫了一條 `assert ".env" in message` 把錯誤建議**鎖了起來**。正確答案是
+`export OPENAI_API_KEY=sk-...`，而且補了一條測試實際建一個 `.env` 去證明它真的沒用。
+
+**成本也順手砍半。** 行為報告原本把三個情境**再跑一次**，58 次模型呼叫裡有 24 次只是為了印
+一份報告。改成共用 gate 已經跑過的 Episode，worst case 58 → **34 次**（約 0.09 美元）。
+
+**還有一條 §15.20 的違規是我自己犯的**：`every_drive_came_from_approach` 又去挖
+`result["steps"]` 這個字串鍵 —— 而 §15.20 正是為了「不要再有人去挖它」才把它收進
+`tools.py` 的 `STEPS_KEY` 並給出型別化的欄位。改用 `EpisodeFinished.steps`。
+
+**以及一份「第二意見」清單其實是有損的拷貝。** `FORBIDDEN_IN_PROMPT` 刻意不從 `layering.py`
+import（審計者共用被審計者的定義就沒有意義了），但第一版漏了 `speed`、`driveSpeed`、
+`cmPerSec`、`driveDuration`，而且 `cm_per_sec` 用底線寫、`layering.py` 卻會正規化 camelCase
+—— 也就是 Misty API 真正用的那個拼法會溜過去。§10 的「兩份拷貝會默默分歧」發生在那個專門
+用來抓這件事的檔案裡。改成先攤平再比對，並加一條 meta 測試斷言它**至少和守衛一樣嚴**。

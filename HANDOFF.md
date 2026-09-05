@@ -131,9 +131,9 @@ harness/                       # M4：量測台
 ├── report.py                  # 組兩份報告（純函式：列進、文字出）
 └── __main__.py                # python -m harness —— 一次產出 M5 與 M6 兩份
 docs/measurements/             # M4 歷史基準 + M5/M6 正式證據 + M6 覆蓋盤點，產物納入版控
-tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip（329 passed）
+tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip（933 passed，7 deselected）
 full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
-test_llm_live.py               # M7 加 marker 與斷言，改斷言 Journal 不變量
+pytest.ini                     # marker 註冊 + 預設排除 llm_live（M7 #11）
 legacy/                        # 舊素材，已從版控移除（.gitignore）
 ```
 
@@ -174,8 +174,13 @@ schema 要**從 spec 推導，不從 `react.py` 推導**。
 先 `/grill-with-docs` 壓 M7 的邊界（Journal 的 schema、tool 集的分層、step cap 的
 observability），再 `/to-spec` → `/to-tickets`。`PLAN.md` §4 已有 ReAct 的設計定案
 （function calling、12 個工具、註冊表、`MAX_REACT_STEPS = 5`、分層開放原則），grill 的
-重點應該是**還沒定案的部分**：Journal 的欄位、TTS 抑制窗怎麼觀測、以及 `test_llm_live.py`
+重點應該是**還沒定案的部分**：Journal 的欄位、TTS 抑制窗怎麼觀測、以及那份真模型腳本
 怎麼從「印出來給人看」變成「斷言 Journal 上的不變量」。
+
+> **M7 #11 已完成這件事**：根目錄的 `test_llm_live.py` 已刪除，取而代之的是
+> `tests/test_llm_live.py`（掛 `llm_live` marker、預設排除）加上
+> `tests/episode_invariants.py`（不變量本身）與 `tests/test_episode_invariants.py`
+> （離線證明每條不變量都會紅）。
 
 `full_robot_v3.py` 繼續是**唯讀參考**。prompt 與 memory 搬出後才刪 —— 那是 M7 的最後一步，
 不是第一步。

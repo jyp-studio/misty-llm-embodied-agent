@@ -118,14 +118,18 @@ It exercises the real closed-loop `approach()` through its public interface — 
 
 Two things it does **not** cover, both recorded rather than hidden: reading noise, and losing the user *after* the robot has already moved. `docs/measurements/m6-coverage-audit.md` itemises every check the previous simulation runner carried and where it went.
 
-**Live pipeline test (real GPT-4o, fake robot, ~a few cents):**
+**Live model suite (real GPT-4o, fake robot, ~a few cents):**
 
 ```bash
 export OPENAI_API_KEY=sk-...
-python test_llm_live.py
+.venv/bin/python -m pytest -m llm_live
 ```
 
-Four scripted scenarios (the crying demo, a self-introduction, a memory-recall probe, a dance request) run through the real planner; every hardware call is logged, and the closed loop converges on simulated kinematics. Scenario 3's reply containing the name from Scenario 2 is direct evidence the memory system works.
+Deselected from the default run, so an ordinary `pytest` never reaches the network and never reports a skip.
+
+It asserts **invariants, not answers**: the Episode terminates, the Turn cap holds, no velocity or drive duration ever reaches the model, every Tool call is in range, and every drive came from the closed-loop controller. What the model *chose* is deliberately not a gate — a model that looks around before replying is not a bug — so behavioural observations are counted and reported as a rate instead.
+
+Every one of those gates is proven able to fail in `tests/test_episode_invariants.py`, which runs offline for free. Without that, a vacuous check in a suite nobody runs in CI would pass forever.
 
 ---
 
@@ -148,7 +152,6 @@ Four scripted scenarios (the crying demo, a self-introduction, a memory-recall p
 ├── RobotCommands.py          # Low-level Misty REST commands
 ├── code/mistyPy/             # AutoMisty's sandbox: generated scripts run here
 │                             #   (contains its own driver copies — keep in sync)
-├── test_llm_live.py          # Real-LLM pipeline test on a fake robot
 ├── Mistydemo/                # Example task scripts
 └── assets/                   # Architecture figure & demo photos
 ```

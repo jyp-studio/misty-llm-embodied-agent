@@ -132,7 +132,6 @@ harness/                       # M4：量測台
 └── __main__.py                # python -m harness —— 一次產出 M5 與 M6 兩份
 docs/measurements/             # M4 歷史基準 + M5/M6 正式證據 + M6 覆蓋盤點，產物納入版控
 tests/                         # fixtures/ 有兩張人臉 + PROVENANCE；.venv 下零 skip（933 passed，7 deselected）
-full_robot_v3.py               # 唯讀參考，不再執行（PLAN.md §12.3）
 pytest.ini                     # marker 註冊 + 預設排除 llm_live（M7 #11）
 legacy/                        # 舊素材，已從版控移除（.gitignore）
 ```
@@ -182,8 +181,10 @@ observability），再 `/to-spec` → `/to-tickets`。`PLAN.md` §4 已有 ReAct
 > `tests/episode_invariants.py`（不變量本身）與 `tests/test_episode_invariants.py`
 > （離線證明每條不變量都會紅）。
 
-`full_robot_v3.py` 繼續是**唯讀參考**。prompt 與 memory 搬出後才刪 —— 那是 M7 的最後一步，
-不是第一步。
+> **M7 #12 已刪除 `full_robot_v3.py`。** prompt 與 memory 搬進 `misty_agent/` 之後它就沒有
+> 存在的理由了 —— 一份「看起來能跑但沒人維護」的完整實作，是下一個接手的人最容易誤用的東西。
+> 入口現在是 `misty_agent/app.py` 的 `Session.episode()`。`PLAN.md` 裡對舊實作的分析段落
+> 是**紀錄**，刻意保留。
 
 ### M6 留給 M7 的五條實測約束
 
@@ -230,8 +231,6 @@ observability），再 `/to-spec` → `/to-tickets`。`PLAN.md` §4 已有 ReAct
 
 ### 刻意沒修的（不要以為是漏掉）
 
-- `full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派的 Middle Man。
-  它會在 M7 搬完 prompt / memory 並刪除舊主腳本時整個消失，現在改是做兩次工。
 - `config.py` 的控制欄位仍是一組 Data Clump。M5 刻意保留 frozen `Settings` 作 config 入口，
   只用 `StepPolicyConfig` protocol 縮窄依賴；`PLAN.md` §13.3 已記錄這個決定。
 - **`AudioStream` 的轉錄跑在 VAD 同一條 thread 上**，網路慢時解碼音訊會堆在後面。與 A 同類（延遲），但不在 visual harness 或 M5 範圍；等 M7 語音工具前另開 ticket。

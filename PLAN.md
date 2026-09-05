@@ -340,6 +340,7 @@ repo 無自訂規範文件，故 Standards 軸只適用 Fowler smell baseline，
 ### 已知未修（刻意）
 
 - **Middle Man / Shotgun Surgery**：`full_robot_v3.py` 的 alias 區塊（`ROBOT_IP = settings.robot_ip` …）是純委派，留下同一份資料的兩條存取路徑。**刻意保留**——`full_robot_v3.py` 會在 M3–M8 被拆進 `misty_agent/`，屆時整個區塊消失。現在改只是把同一份工作做兩次。
+  > **已解除（M7 #12）**：`full_robot_v3.py` 已刪除，這個區塊隨它消失。
 - **Data Clumps**：控制律欄位仍在 frozen `Settings` 中一起旅行。M5 刻意用窄的 `StepPolicyConfig` protocol 隔離依賴，沒有再引入一層 `ApproachPolicy` 公開模型；理由見 §13.3。
 - **import 時凍結的預設值**：`get_distance(max_age_sec=settings.distance_max_age_s)` 在 import 時綁定。`settings` 是 frozen 且 process-global，目前無害。
 
@@ -1457,3 +1458,39 @@ import（審計者共用被審計者的定義就沒有意義了），但第一�
 `cmPerSec`、`driveDuration`，而且 `cm_per_sec` 用底線寫、`layering.py` 卻會正規化 camelCase
 —— 也就是 Misty API 真正用的那個拼法會溜過去。§10 的「兩份拷貝會默默分歧」發生在那個專門
 用來抓這件事的檔案裡。改成先攤平再比對，並加一條 meta 測試斷言它**至少和守衛一樣嚴**。
+
+### 15.34 舊主腳本刪除，入口換成 `misty_agent/app.py`（M7 #12）
+
+`full_robot_v3.py` 從 M5 起就是唯讀參考（§12.3），留著只是因為 prompt 與 memory 還沒搬出來。
+M7 做完之後它沒有理由存在，而**留著一份「看起來能跑但沒人維護」的完整實作，是下一個接手的人
+最容易誤用的東西**。
+
+**分成兩支 commit。** 票面要求刪除的 diff 不要混在其他改動裡 —— 一千多行的刪除混著改動，
+review 看不出刪掉的是不是正確的東西（M6 #02 刪舊 runner 時就是這樣做的，那次也確實靠 review
+抓到漏改）。所以：先一支只加入口，再一支只刪。
+
+**入口是「一個觸發，一次 Episode」**，不做外層迴圈 —— §15.1 的理由沒有改變：外層依賴
+`AudioStream`，而它的轉錄與 VAD 擠在同一條 thread 上是 HANDOFF §4 記著的未修缺陷。
+
+**這裡才是 M7 兩個「造好卻沒接線」的機制第一次有生產呼叫端**：`EmergencyStop` 與
+`ToolContext.ears`。兩個都完整測過、完全沒接上 —— 一個忘記接線的 session 會通過專案裡其他
+每一條測試，同時讓機器人停不下來、而且對自己的聲音充耳不聞。寫測試時抓到我自己的兩個接線
+bug：`ears` 預設 `None` 會讓 `speak` 炸掉（#11 拿掉了 `None` 檢查改用空物件），以及同一秒內
+的兩個 Episode 會共用 id。
+
+**保險桿訂閱一次並保持存活**，因為在兩個 Episode 之間踩下去的人一樣是認真的：那時沒有東西可
+記錄、沒有 Episode 可中止，但馬達一樣是真的，所以兩種情況都會 halt。Episode 進行中則走那個
+Episode 自己的 `EmergencyStop`。**單一個長命的 `EmergencyStop` 做不到** —— 它設計上是一次性
+的（§15.24），第二次踩就會被吞掉，而且它在建構時就綁死一個 Journal。
+
+**一個時鐘交給四個協作者。** `Journal`、`run_episode`、`approach`、`AudioStream` 各自預設用
+自己的 `time.monotonic`。不統一的話，Episode 的時間戳、量到的模型延遲與抑制窗來自四個**剛好
+一致**的時鐘，而沒有任何測試說得出差別。
+
+**`OAI_CONFIG_LIST.json` 的讀取搬進入口而不是砍掉。** 那段程式只存在於被刪的檔案裡，而
+`.env.example`（受保護檔案，不能改）與 README 都還在承諾這個管道 —— 砍掉會讓一個我改不到的
+檔案說謊。環境變數優先於檔案：明確 `export` 的東西不該被一個別人忘記的檔案默默蓋掉。
+
+**README 的 Project structure 原本列了六個不存在的檔案**（`AutoMisty.py`、`Agents/`、
+`CUBS_Misty.py`、`RobotCommands.py`、`code/mistyPy/`、`Mistydemo/`），它們在 M1 就移出版控了。
+票面只要求更新指向舊主腳本的指涉，但那整塊已經是現況描述而且大半是錯的，一併修正。

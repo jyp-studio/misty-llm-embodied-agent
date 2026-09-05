@@ -91,13 +91,16 @@ pip install -r requirements.txt
 
 # Configure (never commit the real file — it is gitignored)
 cp OAI_CONFIG_LIST.json.example OAI_CONFIG_LIST.json
-#   -> fill in your api_key and your robot's misty_ip
+#   -> fill in your api_key
+export OPENAI_API_KEY=sk-...        # or leave it to the file above
 
-# Set the robot IP in full_robot_v3.py (ROBOT_IP), then:
-python full_robot_v3.py
+cp .env.example .env
+#   -> set MISTY_ROBOT_IP to your robot's address
 ```
 
-Look at Misty or start talking — the loop takes it from there. Press Misty's foot bumper at any time for an emergency stop.
+An Episode is one trigger and the decisions that follow it: `misty_agent.app.Session.episode("speech", "come here")` runs one and hands back the Journal it produced. There is no "wait until somebody speaks" loop yet, and that is a decision rather than an omission — the audio stream's transcription and voice detection still share a thread (`HANDOFF.md` §4), and building the outer loop on that would be building on a known defect.
+
+Press Misty's foot bumper at any time: the motors halt, the Episode ends as `aborted`, and the moment it happened is on the Journal.
 
 ---
 
@@ -145,16 +148,24 @@ Every one of those gates is proven able to fail in `tests/test_episode_invariant
 
 ```
 .
-├── full_robot_v3.py          # Main entry: FSM, memory, brain, executor, closed loop
-├── AutoMisty.py              # AutoMisty entry point (complex_action)
-├── Agents/                   # AutoMisty multi-agent framework (plan/action/event/perception)
-├── CUBS_Misty.py             # Misty II Python driver (AV stream, Whisper, events)
-├── RobotCommands.py          # Low-level Misty REST commands
-├── code/mistyPy/             # AutoMisty's sandbox: generated scripts run here
-│                             #   (contains its own driver copies — keep in sync)
-├── Mistydemo/                # Example task scripts
-└── assets/                   # Architecture figure & demo photos
+├── misty_agent/
+│   ├── app.py                # Entry: wires drivers, agent and memory into one Episode
+│   ├── config.py             # Every tunable, with UNCALIBRATED ones marked as such
+│   ├── agent/                # journal, react, tools, memory, stop, layering, model
+│   ├── control/              # approach() and the step policy — the closed loop
+│   ├── drivers/              # Misty REST, RTSP audio/video, websocket events
+│   ├── perception/           # face, distance, speech
+│   └── fakes/                # stand-ins: no Misty II was available to this project
+├── harness/                  # python -m harness — regenerates the M5 and M6 reports
+├── tests/                    # goldens/ holds four Journals committed before the loop
+├── docs/measurements/        # the evidence those reports produce, under version control
+├── PLAN.md                   # every decision and why, including the reversed ones
+├── CONTEXT.md                # the glossary; Turn, Step and Episode are not synonyms
+├── HANDOFF.md                # what the next person needs, including what is still broken
+└── assets/                   # architecture figure & demo photos
 ```
+
+The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py`, `Mistydemo/`) was removed from version control at M1 and lives in `legacy/`, which is gitignored. `PLAN.md` §2–§3 records what was excised and why.
 
 Note: `CUBS_Misty.py` / `RobotCommands.py` exist both at the root (imported by the main program) and inside `code/mistyPy/` (imported by AutoMisty-generated scripts, which execute in that working directory). If you modify the driver, update both copies.
 

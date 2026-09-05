@@ -1523,3 +1523,42 @@ Session 共用同一個 EventStream 時，各自都有自己的 callback，不�
 
 這仍然只有契約測試與 fake robot 驗證。`halt` 請求是否真的停住 Misty、bumper websocket 是否
 符合實機行為，仍屬 §8 的未驗證邊界。
+
+### 15.35 保險桿在 Episode 剛結束的空隙被踩下去，什麼都不會發生（M7 #12 補跑 review）
+
+`Session.bumper_pressed` 原本長這樣：
+
+```python
+running = self._running
+if running is not None:
+    running.request("foot_bumper")   # ← try 之外
+    return
+try:
+    self.robot.halt()
+except Exception:
+    pass
+```
+
+`EmergencyStop.request()` 會往 Journal 寫一筆 `stop_requested`，而**已經結束的 Journal 拒絕
+任何紀錄**（那是 §15.24 刻意要的性質：「一個 Episode 只結束一次」要能用數的）。所以在
+Episode 收尾之後、`_running` 被清掉之前踩保險桿 → `ValueError` 從 `request()` 拋出來 →
+`except` 包不到它 → **沒有紀錄、也沒有 halt**。
+
+**那個空隙不是幾微秒。** `react.py` 記完 `EpisodeFinished` 之後還要做 `memory.remember()` 和
+`memory.close_episode()`，而 `close_episode()` **會呼叫模型**（§15.26 刻意把它排在結束之後，
+理由是不要把沒人在等的工作折進延遲量測裡）。要等那趟網路來回結束、`run_episode` 回傳，
+`Session.episode` 的 `finally` 才清掉 `_running`。**整個記憶整理階段踩保險桿，機器人不會停。**
+
+修法是讓它**掉下去**而不是回傳：Journal 拒絕紀錄是對的，但馬達不在乎紀錄寫到哪裡去了。
+
+**測試走真實順序，不用手去設 `_running`** —— 順序本身就是那個 bug。用一個會在 `extract()`
+裡踩保險桿的 extractor，那正好落在窗內。
+
+**一個經過驗證的等價變異**：把 `finally: self._running = None` 拿掉，測試全綠。這次不是測試
+沒牙齒 —— `_running` 是 `None` 就直接去 halt，是過期的 stop 就 `request()` 拋例外、掉下去、
+一樣 halt，**兩條路可觀察的結果完全相同**。清掉仍然是對的衛生習慣，但它現在沒有可觀察的後果。
+（§15.17 的教訓：宣稱等價要先驗證。這次跑過了。）
+
+**順帶補強一條原本測不到東西的測試。** `test_pressing_the_bumper_between_episodes_still_halts_the_robot`
+在一個從沒跑過 Episode 的 session 上按 —— 也就是它測的是「之前」不是「之間」，一個永遠不清
+`_running` 的實作照樣會過。和 §15.25 那條 race 測試是同一個形狀，這是第三次了。

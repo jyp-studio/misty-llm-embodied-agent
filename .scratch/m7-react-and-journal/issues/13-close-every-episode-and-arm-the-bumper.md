@@ -43,3 +43,19 @@ Session 共用 EventStream 時固定訂閱名稱會讓第二個 callback 被拒�
 7 deselected、零 skip，25.17s**。測試總數恰好等於 Codex headless 執行的 945 passed 加上
 13 failed／38 errors，確認那 51 項是 Codex 執行環境無法建立 MediaPipe macOS OpenGL context，
 不是程式或測試案例失敗。最後一項據此勾選；無實機邊界仍不變。
+
+
+## Notes（來自 #12 補跑的兩軸 review）
+
+- **修掉一個安全缺陷**：Episode 收尾之後、`Session._running` 被清掉之前踩保險桿，
+  `EmergencyStop.request()` 會因為 Journal 已結束而拋 `ValueError`，而它在 `try` 之外 ——
+  **沒有紀錄也沒有 halt**。那個空隙涵蓋整個記憶整理階段（含一次模型呼叫）。見 `PLAN.md` §15.35。
+- **留給 M8/M9 的四項**（review 抓到、刻意不在這裡處理）：
+  1. `JsonlFile` 沒有生產呼叫端 —— Journal 從沒寫進磁碟。
+  2. `load_api_key` 沒有呼叫端 —— `OAI_CONFIG_LIST.json` 這條路仍是空頭支票。
+  3. 沒有 `main()` / `__main__.py` —— 沒有一條指令能對著機器人跑。M8（部署）要處理。
+  4. **系統提示沒有搬過來** —— 舊腳本的 `SYSTEM_PROMPT`（身分 + 「語音轉錄有雜訊，不要照
+     字面理解」）沒有繼承者，而 `HANDOFF` 原本寫的條件是「prompt 與 memory 搬出後才刪」，
+     memory 在 #09 搬了、prompt 沒有。**這是一個需要決定內容的項目，不只是搬程式碼。**
+  5. README 第 29/38/53/57 行仍在描述已刪除的 FSM / `back_up` / `complex_task` 架構。
+     M9（文件）本來就要重寫 README。

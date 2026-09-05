@@ -291,15 +291,142 @@ def test_the_stop_lands_in_the_journal_of_the_episode_that_was_running():
 
 def test_pressing_the_bumper_between_episodes_still_halts_the_robot():
     """There is nothing to record and nothing to abort, but the motors are
-    just as real."""
+    just as real.
+
+    An Episode runs first, because "between" is not "before". The earlier
+    version pressed on a session that had never run anything, so a `_running`
+    that was never cleared would have satisfied it — the same shape as
+    `PLAN.md` §15.25's race test that could not see the race.
+    """
     robot = RecordingCommands()
     events = Events()
     session = a_session(events=events, robot=robot)
-    session.watch_the_bumper()
+    session.episode("speech", "hello", render=False)
+    robot.clear()
 
     events.subscriptions[0][1]["on_event"]({})
 
     assert "halt" in robot.endpoints
+
+
+def test_a_press_while_memory_is_consolidating_still_stops_the_robot():
+    """The window that made the emergency stop do nothing at all.
+
+    `run_episode` records `EpisodeFinished` and *then* consolidates memory —
+    `close_episode` may call a model, so this is a network round trip, not a
+    microsecond. Through all of it `Session._running` still points at the
+    Episode that just closed, and its Journal refuses anything after its
+    ending. The first version of `bumper_pressed` called `request()` outside
+    its `try`, so the `ValueError` escaped before the halt: **no record and no
+    halt, for as long as consolidation took** (`PLAN.md` §15.35).
+
+    Driven through the real ordering rather than by setting `_running` by
+    hand, because the ordering is the bug.
+    """
+    robot = RecordingCommands()
+    events = Events()
+    session = a_session(events=events, robot=robot)
+    press = events.subscriptions[0][1]["on_event"]
+    pressed = []
+
+    class PressesWhileConsolidating:
+        def extract(self, known, exchanges):
+            pressed.append(True)
+            press({})
+            return {}
+
+    session.memory = Memory(
+        summariser=None, extractor=PressesWhileConsolidating(), window=6
+    )
+
+    _, journal = session.episode("speech", "hello", render=False)
+
+    assert pressed, "the press never happened, so this tested nothing"
+    assert "halt" in robot.endpoints, (
+        "the bumper was pressed and the robot was never told to stop"
+    )
+    assert journal.records[-1].type == "episode_finished"
+
+
+def test_a_live_episode_is_halted_once_not_twice():
+    """`EmergencyStop.request` halts on its way to recording.
+
+    So delegating and *then* halting again would send two `POST /halt` for one
+    foot. Harmless on a good day, but it means the two paths are not exclusive
+    — and once they overlap, the fall-through added for the closed-Journal
+    window would start firing on the ordinary path too.
+    """
+    robot = RecordingCommands()
+    events = Events()
+    session = a_session(events=events, robot=robot)
+    press = events.subscriptions[0][1]["on_event"]
+
+    class PressesMidEpisode:
+        def decide(self, working_context, tools):
+            press({})
+            return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
+
+    session.model = PressesMidEpisode()
+    session.episode("speech", render=False)
+
+    assert robot.endpoints.count("halt") == 1
+
+
+def test_a_press_in_a_later_episode_aborts_that_episode():
+    """`_running` has to be *cleared*, not just set.
+
+    Left pointing at the previous Episode, a press would be delivered to a
+    Journal that has already closed — and the fall-through added above would
+    quietly halt the robot, so the motors stopping is no longer evidence that
+    anything worked. What it would not do is end the Episode that is actually
+    running. That is the difference this asserts.
+    """
+    robot = RecordingCommands()
+    events = Events()
+    session = a_session(events=events, robot=robot)
+    press = events.subscriptions[0][1]["on_event"]
+
+    session.episode("speech", "the first one", render=False)
+
+    class PressesMidEpisode:
+        def decide(self, working_context, tools):
+            press({})
+            return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
+
+    session.model = PressesMidEpisode()
+    outcome, journal = session.episode("speech", "the second one", render=False)
+
+    assert outcome.outcome == "aborted"
+    assert any(r.type == "stop_requested" for r in journal.records)
+
+
+def test_a_press_after_the_episode_closed_does_not_forge_a_record():
+    """Halting is the right thing to do; rewriting a closed Journal is not.
+
+    "An Episode ends exactly once" is a property a reader checks by counting
+    (`journal.py`), and a `stop_requested` appearing after the ending would
+    make it something they had to reason about instead.
+    """
+    robot = RecordingCommands()
+    events = Events()
+    session = a_session(events=events, robot=robot)
+    press = events.subscriptions[0][1]["on_event"]
+    journals = []
+
+    class PressesWhileConsolidating:
+        def extract(self, known, exchanges):
+            press({})
+            return {}
+
+    session.memory = Memory(
+        summariser=None, extractor=PressesWhileConsolidating(), window=6
+    )
+    _, journal = session.episode("speech", "hello", render=False)
+
+    kinds = [record.type for record in journal.records]
+    assert kinds.count("episode_finished") == 1
+    assert kinds[-1] == "episode_finished"
+    assert "stop_requested" not in kinds
 
 
 def test_a_session_with_no_event_stream_still_runs():

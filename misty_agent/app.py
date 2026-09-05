@@ -183,8 +183,16 @@ class Session:
         """
         running = self._running
         if running is not None:
-            running.request("foot_bumper")
-            return
+            try:
+                running.request("foot_bumper")
+                return
+            except Exception:
+                # The Episode closed while the foot was on its way down. Its
+                # Journal has already recorded an ending and refuses anything
+                # after it, so there is nowhere to write this — but the motors
+                # do not care where the record went. Fall through and stop
+                # them (`PLAN.md` §15.35).
+                pass
         try:
             self.robot.halt()
         except Exception:

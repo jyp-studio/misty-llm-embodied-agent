@@ -3,12 +3,12 @@
 One file per way an Episode can end. Each is a Journal that ticket 07's ReAct
 loop must be able to produce.
 
-**These were written before the loop existed.** That is the point of them, and
-`git log` is the evidence: they are derived from
+**The original four were written before the loop existed.** That is the point
+of them, and `git log` is the evidence: they are derived from
 `.scratch/m7-react-and-journal/spec.md`, not from whatever the implementation
-turned out to do. A schema written alongside its only producer ends up
-describing the producer, and the assertions built on it end up agreeing with
-the code by construction.
+turned out to do. The fifth was added when M7 #13 introduced runtime `error`
+as a named outcome; it pins that closure path while leaving all four original
+files byte-for-byte unchanged.
 
 ## The rule
 
@@ -59,7 +59,7 @@ are zero in any deterministic run. §15.21 has the full argument, including
 what this costs — "byte-for-byte comparable" is now "equal in structure and
 every non-timing field, with `t` following a rule you can check on paper".
 
-## The four
+## The five
 
 | File | Ends because | `outcome` |
 |---|---|---|
@@ -67,10 +67,15 @@ every non-timing field, with `t` following a rule you can check on paper".
 | `episode_ends_after_several_turns.jsonl` | the model chose to stop after composing an action out of several Tools | `done` |
 | `episode_hits_the_turn_limit.jsonl` | the model never chose to stop and the cap did it | `turn_limit` |
 | `episode_is_aborted.jsonl` | someone pressed the foot bumper | `aborted` |
+| `episode_fails_during_model_call.jsonl` | the model collaborator raised before returning a decision | `error` |
 
-**Four files, three outcomes.** Ending on the first Turn and ending after
+**Five files, four outcomes.** Ending on the first Turn and ending after
 several are both the model choosing to stop; they are separate files because
 they are separate *paths* through the loop, not separate endings.
+
+The error file was added by M7 #13 after `error` became a named outcome. The
+original four still predate the loop and remain byte-for-byte unchanged; the
+fifth closes the spec's requirement that every current outcome has a golden.
 
 ## Decisions these files pin
 

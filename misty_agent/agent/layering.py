@@ -150,9 +150,15 @@ def mentions_control_parameter(text: str) -> Optional[str]:
     `commanded=True` throughout: anything appearing in a message *to* the
     model is on the side of the boundary where the model does the choosing.
     """
-    for word in _WORD.findall(text):
-        if control_parameter(word, commanded=True) is not None:
-            return word
+    words = _WORD.findall(text)
+    # Transports may render one identifier as camelCase, snake_case, words,
+    # or hyphenated words. Flatten short adjacent spans so punctuation cannot
+    # turn a forbidden parameter into an apparently harmless sentence.
+    for width in (1, 2, 3):
+        for start in range(len(words) - width + 1):
+            phrase = words[start : start + width]
+            if control_parameter("".join(phrase), commanded=True) is not None:
+                return " ".join(phrase)
     return None
 
 

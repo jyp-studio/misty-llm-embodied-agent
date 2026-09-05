@@ -1,16 +1,16 @@
-"""The four golden Journals, and the helper that compares against them.
+"""The five golden Journals, and the helper that compares against them.
 
-These files were written before the loop that will produce them, which is the
-whole point (`PLAN.md` §15.6): a schema written alongside its only producer
-ends up describing the producer, and assertions built on it agree with the
-code by construction.
+The original four files were written before the loop that produces them
+(`PLAN.md` §15.6). The fifth accompanies the later closure decision that
+runtime failure is a named outcome; it keeps outcome coverage complete
+without rewriting the historical four.
 
-So nothing here can check a golden against an implementation — there isn't
-one. What it checks instead is that each golden is a *coherent* Journal: it
-parses, its records are internally consistent, and between them the four cover
-every way an Episode can end. Plus that the comparison helper says something
-useful when they do not match, because a helper that only says "different" is
-one nobody will use on a twenty-record file.
+This module deliberately checks each golden as a *coherent* Journal rather
+than running the implementation; `test_react.py` owns that comparison. Here
+the records must be internally consistent, and between them the five cover
+every way an Episode can end. The comparison helper must also say something
+useful when they differ, because a helper that only says "different" is one
+nobody will use on a twenty-record file.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ EXPECTED_GOLDENS = {
     "episode_ends_after_several_turns.jsonl": "done",
     "episode_hits_the_turn_limit.jsonl": "turn_limit",
     "episode_is_aborted.jsonl": "aborted",
+    "episode_fails_during_model_call.jsonl": "error",
 }
 
 
@@ -69,8 +70,8 @@ def test_there_is_a_golden_for_every_way_an_episode_can_end():
     assert on_disk == set(EXPECTED_GOLDENS)
 
 
-def test_between_them_the_goldens_cover_every_intentional_outcome():
-    """Four files, three intentional outcomes — and that asymmetry is deliberate.
+def test_between_them_the_goldens_cover_every_outcome():
+    """Five files cover all four outcomes; two files exercise `done` paths.
 
     Ending on the first Turn and ending after several are both the model
     choosing to stop. They are separate files because they are separate paths
@@ -80,7 +81,7 @@ def test_between_them_the_goldens_cover_every_intentional_outcome():
         load(name)[-1].outcome for name in EXPECTED_GOLDENS
     }
 
-    assert covered == set(OUTCOMES) - {"error"}
+    assert covered == set(OUTCOMES)
 
 
 def test_each_golden_ends_the_way_its_name_says():

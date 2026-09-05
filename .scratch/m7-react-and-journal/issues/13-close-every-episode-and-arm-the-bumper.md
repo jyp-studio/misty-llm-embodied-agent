@@ -1,7 +1,5 @@
 # 13 — 每條執行路徑都關閉 Episode，bumper 接線不可遺忘
 
-Status: claimed
-
 **What to build:** 讓模型、Tool 或 Snapshot 在一次 Episode 中失敗時，公開入口仍回傳結構化結果、Journal 仍恰好以一筆 `episode_finished` 結束，並在離開前要求機器人停止；有 event stream 的 Session 則從建構完成起就已訂閱 foot bumper，不靠呼叫端記得補做。
 
 這是 M7 的 closure，不擴大成新的外層語音迴圈。測試 seam 沿用 M7 spec：一次 `run_episode()`／`Session.episode()` 的公開結果與 Journal；bumper 只從 Session 的公開建構與 event subscription 觀察。
@@ -17,6 +15,7 @@ Status: claimed
 - [x] 有 event stream 的 `Session` 建構後就已訂閱 bumper；重複呼叫 wiring 方法不會重複訂閱
 - [x] 沒有 event stream 的 Session 行為不變
 - [x] 既有四份 golden Journal 不變
+- [x] 新增 `error` outcome 的第五份 golden，不削弱 spec 的完整覆蓋
 - [ ] M7 單檔測試綠；全套測試在可建立 MediaPipe context 的環境下零 skip
 
 ## Scope boundary
@@ -29,3 +28,13 @@ Status: claimed
 
 以 `run_episode()`／`Session` 公開 seam 做逐條 red → green。M7 相關 14 個測試檔目前
 `643 passed`；完整 suite 與兩軸 review 留到 commit 後的驗收階段。
+
+兩軸 review 找到並修正：錯誤訊息以空白／連字號寫出 drive duration 時原本可繞過遮罩；兩個
+Session 共用 EventStream 時固定訂閱名稱會讓第二個 callback 被拒絕；新增 `error` outcome 後應
+新增第五份 golden，而不是從完整性斷言排除。錯誤收尾的五份重複程式也已收斂成單一 helper。
+`Status: claimed` 是 wayfinder child 的狀態，這張一般 implementation issue 依既有 M7 慣例不冒用。
+
+最終 M7 相關 14 個測試檔為 **663 passed**；`.venv` 完整 suite 為 **945 passed、13 failed、
+38 errors、7 deselected、零 skip**。51 個失敗／錯誤都在需要 MediaPipe context 的測試，原因是
+目前 headless 執行環境無法建立 macOS `NSOpenGLPixelFormat`／`kGpuService`；因此不冒稱「全套
+全綠」，上方最後一項仍保持未勾。這個專案沒有實機，bumper 與 halt 仍只由 contract/fake 驗證。

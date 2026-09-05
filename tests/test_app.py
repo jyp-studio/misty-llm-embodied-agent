@@ -82,6 +82,20 @@ class Events:
         return object()
 
 
+class NameUniqueEvents:
+    """The production stream's duplicate-name behaviour, without sockets."""
+
+    def __init__(self):
+        self.subscriptions = {}
+
+    def subscribe(self, event_type, **kwargs):
+        name = kwargs["name"]
+        if name in self.subscriptions:
+            return None
+        self.subscriptions[name] = (event_type, kwargs)
+        return object()
+
+
 def a_session(*, model=None, ears=None, events=None, readings=None, robot=None):
     return Session(
         robot=robot or RecordingCommands(),
@@ -202,6 +216,32 @@ def test_arming_the_bumper_again_does_not_open_a_second_subscription():
     session.watch_the_bumper()
 
     assert len(events.subscriptions) == 1
+
+
+def test_sessions_sharing_an_event_stream_each_arm_their_own_bumper():
+    events = NameUniqueEvents()
+
+    first = a_session(events=events)
+    second = a_session(events=events)
+
+    assert len(events.subscriptions) == 2
+    assert len(set(events.subscriptions)) == 2
+    callbacks = [
+        kwargs["on_event"] for _, kwargs in events.subscriptions.values()
+    ]
+    callbacks[0]({})
+    callbacks[1]({})
+    assert "halt" in first.robot.endpoints
+    assert "halt" in second.robot.endpoints
+
+
+def test_a_session_cannot_finish_construction_with_an_unarmed_bumper():
+    class RejectsSubscriptions:
+        def subscribe(self, event_type, **kwargs):
+            return None
+
+    with pytest.raises(RuntimeError, match="bumper subscription"):
+        a_session(events=RejectsSubscriptions())
 
 
 def test_pressing_the_bumper_during_an_episode_aborts_it():

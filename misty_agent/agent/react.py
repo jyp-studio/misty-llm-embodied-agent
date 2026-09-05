@@ -23,9 +23,9 @@ disqualifying.
 ## Where each record comes from
 
 The Journal is the deliverable, not a log. Everything the loop learns is
-written through it, and `tests/goldens/` is four Journals this loop has to be
-able to produce — written before it existed, which is the only way they can
-be evidence of anything.
+written through it, and `tests/goldens/` is five Journals this loop has to be
+able to produce. The original four predate the loop; the fifth pins the later
+closure decision that runtime failure is a named ending.
 
 Three shapes are decided here rather than in a Tool:
 
@@ -66,8 +66,8 @@ from misty_agent.agent.journal import (
     Snapshot,
     TurnStarted,
 )
-from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
 from misty_agent.agent.layering import mentions_control_parameter
+from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.agent.tools import (
     Dispatched,
@@ -148,16 +148,7 @@ def run_episode(
     try:
         remembered = memory.as_prompt_block()
     except Exception as error:
-        journal.record(
-            ExecutionFailed,
-            phase="memory",
-            error_type=type(error).__name__,
-            message=_error_message(error),
-        )
-        try:
-            ctx.robot.halt()
-        except Exception:
-            pass
+        _record_failure_and_halt(journal, ctx.robot, "memory", error)
         journal.record(EpisodeFinished, outcome="error", turns=0, steps=0)
         return EpisodeOutcome(outcome="error", turns=0, steps=0)
     if remembered:
@@ -186,16 +177,7 @@ def run_episode(
         try:
             decision = model.decide(tuple(working_context), registry.schemas())
         except Exception as error:
-            journal.record(
-                ExecutionFailed,
-                phase="model",
-                error_type=type(error).__name__,
-                message=_error_message(error),
-            )
-            try:
-                ctx.robot.halt()
-            except Exception:
-                pass
+            _record_failure_and_halt(journal, ctx.robot, "model", error)
             outcome = "error"
             break
         journal.record(
@@ -220,16 +202,7 @@ def run_episode(
                 registry, decision.tool, decision.args, ctx, journal, turn=turn
             )
         except Exception as error:
-            journal.record(
-                ExecutionFailed,
-                phase="tool",
-                error_type=type(error).__name__,
-                message=_error_message(error),
-            )
-            try:
-                ctx.robot.halt()
-            except Exception:
-                pass
+            _record_failure_and_halt(journal, ctx.robot, "tool", error)
             outcome = "error"
             break
         steps += dispatched.steps
@@ -250,16 +223,7 @@ def run_episode(
         try:
             snapshot = perception.snapshot()
         except Exception as error:
-            journal.record(
-                ExecutionFailed,
-                phase="perception",
-                error_type=type(error).__name__,
-                message=_error_message(error),
-            )
-            try:
-                ctx.robot.halt()
-            except Exception:
-                pass
+            _record_failure_and_halt(journal, ctx.robot, "perception", error)
             outcome = "error"
             break
         try:
@@ -270,16 +234,7 @@ def run_episode(
                 snapshot=snapshot,
             )
         except Exception as error:
-            journal.record(
-                ExecutionFailed,
-                phase="tool",
-                error_type=type(error).__name__,
-                message=_error_message(error),
-            )
-            try:
-                ctx.robot.halt()
-            except Exception:
-                pass
+            _record_failure_and_halt(journal, ctx.robot, "tool", error)
             outcome = "error"
             break
         working_context.append(_observed(observation))
@@ -354,3 +309,19 @@ def _error_message(error: Exception) -> str:
     if mentions_control_parameter(message) is not None:
         return "details withheld by the control-layer boundary"
     return message
+
+
+def _record_failure_and_halt(
+    journal: Journal, robot: Any, phase: str, error: Exception
+) -> None:
+    """Record one collaborator failure and make leaving motion best-effort."""
+    journal.record(
+        ExecutionFailed,
+        phase=phase,
+        error_type=type(error).__name__,
+        message=_error_message(error),
+    )
+    try:
+        robot.halt()
+    except Exception:
+        pass

@@ -460,14 +460,18 @@ def test_the_leak_guard_reaches_into_nested_arguments():
         )
 
 
-def test_an_execution_failure_cannot_repeat_a_drive_parameter():
+@pytest.mark.parametrize(
+    "message",
+    ["driveDuration failed", "drive duration failed", "drive-duration failed"],
+)
+def test_an_execution_failure_cannot_repeat_a_drive_parameter(message):
     with pytest.raises(ValueError, match="failure may not say"):
         ExecutionFailed(
             t=0.0,
             episode_id="ep-1",
             phase="tool",
             error_type="RuntimeError",
-            message="driveDuration failed",
+            message=message,
         )
 
 
@@ -561,11 +565,10 @@ def test_an_episode_ends_with_one_of_the_named_outcomes():
 
 
 def test_the_named_outcomes_cover_the_goldens_and_involuntary_failure():
-    """Four golden scenarios share three intentional outcomes; errors add one.
+    """Five golden scenarios cover three intentional outcomes and error.
 
-    Worth writing down, because "four ways an Episode ends" reads like four
-    outcomes and ticket 03 names four files. Runtime failure is deliberately
-    not retrofitted into a golden that predates the closure work.
+    Ticket 03's original four files stay unchanged; closure adds a fifth
+    rather than weakening the spec's one-golden-per-outcome rule.
     """
     assert set(OUTCOMES) == {"done", "turn_limit", "aborted", "error"}
 

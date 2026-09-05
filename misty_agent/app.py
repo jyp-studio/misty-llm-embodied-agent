@@ -144,11 +144,15 @@ class Session:
     _running: Optional[EmergencyStop] = None
     _episodes: int = 0
     _bumper_watched: bool = field(default=False, init=False, repr=False)
+    _bumper_name: str = field(default="", init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.clock = self.clock or SystemClock()
         if self.ears is None:
             self.ears = HEARS_NOTHING
+        # EventStream names are unique within a stream. The callback belongs
+        # to this Session, so shared streams need one name per Session.
+        self._bumper_name = f"EmergencyFootStop-{id(self)}"
         self.watch_the_bumper()
 
     # ---------- the bumper ----------
@@ -159,14 +163,15 @@ class Session:
             return
         subscription = self.events.subscribe(
             "BumpSensor",
-            name="EmergencyFootStop",
+            name=self._bumper_name,
             condition=[event_condition("isContacted", "=", True)],
             debounce_ms=1000,
             keep_alive=True,
             on_event=lambda payload: self.bumper_pressed(),
         )
-        if subscription is not None:
-            self._bumper_watched = True
+        if subscription is None:
+            raise RuntimeError("bumper subscription was not created")
+        self._bumper_watched = True
 
     def bumper_pressed(self) -> None:
         """Stop everything, and tell the Episode if there is one.

@@ -1513,7 +1513,13 @@ Memory 的摘要／事實衍生依 §15.26 發生在 `episode_finished` **之後
 
 **bumper 不再靠第二個動作上膛。** 傳入 event stream 的 `Session` 在 `__post_init__` 就訂閱，
 `watch_the_bumper()` 保留為冪等的 lifecycle 操作：重複呼叫不開第二條 websocket。沒有 event
-stream 的 mock／測試 Session 行為不變。
+stream 的 mock／測試 Session 行為不變。訂閱名稱屬於 Session 而不是全域固定字串，因此兩個
+Session 共用同一個 EventStream 時，各自都有自己的 callback，不會讓第二個 Session 表面建構
+成功、實際卻仍由第一個 Session 接收緊急停止；若 event stream 沒有建立訂閱，Session 建構直接
+失敗，不留下「可執行 Episode 但沒有 e-stop」的半接線物件。
+
+`error` 成為新的 outcome 後也新增第五份 golden；既有四份保持逐位元不變。這保留 spec
+「每一種結束方式都有對照」的原始約束，而不是把 error 排除後讓測試變綠。
 
 這仍然只有契約測試與 fake robot 驗證。`halt` 請求是否真的停住 Misty、bumper websocket 是否
 符合實機行為，仍屬 §8 的未驗證邊界。

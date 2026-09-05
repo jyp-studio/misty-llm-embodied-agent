@@ -1,0 +1,4 @@
+{"episode_id": "ep-model-error", "schema": "0.1.0-unstable", "started_at_wall_clock": "2026-08-25T09:14:03+08:00", "t": 0.0, "trigger": "speech", "type": "episode_started"}
+{"episode_id": "ep-model-error", "t": 0.0, "turn": 1, "type": "turn_started"}
+{"episode_id": "ep-model-error", "error_type": "RuntimeError", "message": "model connection failed", "phase": "model", "t": 0.0, "type": "execution_failed"}
+{"episode_id": "ep-model-error", "outcome": "error", "steps": 0, "t": 0.0, "turns": 1, "type": "episode_finished"}

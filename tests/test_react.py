@@ -1,9 +1,10 @@
 """One Episode, end to end, against the Journals that were written first.
 
-`tests/goldens/` holds four Journals this loop has to be able to produce. They
-were committed before the loop existed — that is the whole of their evidence
-value, and it is why the interesting assertions here are equality against a
-file rather than a list of properties someone thought of afterwards.
+`tests/goldens/` holds five Journals this loop has to be able to produce. The
+original four were committed before the loop existed; the fifth was added
+when closure made runtime failure a named outcome. In either case, the useful
+assertion is equality against the declared artefact rather than a loose list
+of properties.
 
 ## What "matches the golden" means, exactly
 
@@ -216,10 +217,42 @@ def hits_the_turn_limit():
     )
 
 
+def fails_during_model_call():
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-model-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+
+    class ModelFails:
+        def __init__(self):
+            self.asked = []
+
+        def decide(self, working_context, tools):
+            self.asked.append((tuple(working_context), tuple(tools)))
+            raise RuntimeError("model connection failed")
+
+    model = ModelFails()
+    outcome = run_episode(
+        "speech",
+        model=model,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+    return outcome, journal, model
+
+
 GOLDEN_EPISODES = [
     ("episode_ends_on_the_first_turn.jsonl", ends_on_the_first_turn),
     ("episode_ends_after_several_turns.jsonl", ends_after_several_turns),
     ("episode_hits_the_turn_limit.jsonl", hits_the_turn_limit),
+    ("episode_fails_during_model_call.jsonl", fails_during_model_call),
 ]
 
 
@@ -227,8 +260,9 @@ GOLDEN_EPISODES = [
 def test_the_loop_reproduces_the_golden_journal(name, episode):
     """The assertion this whole milestone is arranged around.
 
-    Not "the Journal looks plausible" — equal, record for record, field for
-    field, to a file `git log` shows was committed before this loop existed.
+    Not "the Journal looks plausible" — equal, record for record and field for
+    field, to the declared file. Git history separately shows the original
+    four preceded this loop and the error file accompanied closure hardening.
     """
     expected = list(from_jsonl((GOLDENS / name).read_text()))
     _, journal, _ = episode()
@@ -478,7 +512,15 @@ def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
     assert "halt" in robot.endpoints
 
 
-def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal():
+@pytest.mark.parametrize(
+    "leak",
+    [
+        "driveDuration was rejected by the transport",
+        "drive duration was rejected by the transport",
+        "drive-duration was rejected by the transport",
+    ],
+)
+def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal(leak):
     """Failure diagnostics live on the same side of the layering boundary."""
     clock = FakeClock()
     journal = Journal(
@@ -487,7 +529,7 @@ def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal():
 
     class LeakyFailure:
         def decide(self, working_context, tools):
-            raise RuntimeError("driveDuration was rejected by the transport")
+            raise RuntimeError(leak)
 
     outcome = run_episode(
         "speech",
@@ -507,7 +549,7 @@ def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal():
     assert outcome.outcome == "error"
     assert failed.error_type == "RuntimeError"
     assert failed.message == "details withheld by the control-layer boundary"
-    assert "driveDuration" not in journal.to_jsonl()
+    assert leak not in journal.to_jsonl()
 
 
 def test_a_failed_error_halt_cannot_reopen_the_episode():

@@ -52,7 +52,6 @@ durable unit memory is made of, and this is deliberately not that.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
@@ -265,13 +264,3 @@ def _observed(observation: Observation) -> Dict[str, Any]:
             },
         },
     }
-
-
-def as_text(working_context: Sequence[Mapping[str, Any]]) -> str:
-    """Everything the model is handed, as one string.
-
-    Exists so a test can assert on the whole of it at once — `PLAN.md` §4's
-    layering claim is about what reaches the model, and checking the parameter
-    lists of nine Tools is not the same thing as checking that.
-    """
-    return json.dumps(list(working_context), sort_keys=True, default=str)

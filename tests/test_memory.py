@@ -169,23 +169,20 @@ def test_remembering_asks_no_model_either():
     assert extractor.calls == 0
 
 
-def test_asking_for_fewer_than_the_window_gives_fewer():
-    memory = a_memory(window=6)
+def test_a_narrower_window_shows_fewer():
+    """The window is the only thing that sets how many are shown.
+
+    `recent()` used to take a `count` nothing called, which is the
+    Speculative Generality `PLAN.md` §15.23 deleted `instructions=` for.
+    """
+    wide, narrow = a_memory(window=6), a_memory(window=2)
 
     for exchange in some(6):
-        memory.remember(exchange)
+        wide.remember(exchange)
+        narrow.remember(exchange)
 
-    assert len(memory.recent(2)) == 2
-
-
-def test_asking_for_none_gives_none():
-    """The negative control: a slice that ignored its argument would pass
-    every other test here."""
-    memory = a_memory(window=6)
-    for exchange in some(6):
-        memory.remember(exchange)
-
-    assert memory.recent(0) == ()
+    assert len(wide.recent()) == 6
+    assert len(narrow.recent()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -516,18 +513,118 @@ def test_the_null_memory_remembers_nothing_and_says_nothing():
     NO_MEMORY.close_episode()
 
     assert NO_MEMORY.as_prompt_block() == ""
-    assert NO_MEMORY.recent() == ()
+
+
+def test_the_null_memory_is_exactly_the_protocol_and_no_more():
+    """It carried a `recent()` the protocol does not declare — an extra the
+    loop could never call and nothing kept true."""
+    from misty_agent.agent.memory import Remembers
+
+    declared = {
+        name for name in vars(Remembers)
+        if not name.startswith("_") and callable(getattr(Remembers, name, None))
+    }
+    offered = {
+        name for name in vars(type(NO_MEMORY)) if not name.startswith("_")
+    }
+
+    assert offered == declared, f"extra: {offered - declared}"
 
 
 # ---------------------------------------------------------------------------
 # Guardrails
 # ---------------------------------------------------------------------------
 
-def test_folding_more_than_the_window_holds_is_refused():
-    """Otherwise the summary would cover Exchanges the prompt still shows
-    verbatim, and the model would read the same thing twice."""
-    with pytest.raises(ValueError, match="cannot exceed"):
-        Memory(window=2, fold_size=3)
+def test_a_fold_that_folds_nothing_is_refused():
+    """A summary that never grew while the record did."""
+    with pytest.raises(ValueError, match="never summarise"):
+        Memory(window=2, fold_size=0)
+
+
+@pytest.mark.parametrize("window,fold_size", [(6, 3), (6, 1), (2, 2), (4, 3)])
+def test_the_summary_never_covers_what_the_prompt_still_shows(window, fold_size):
+    """`PLAN.md` §15.4 refuses to put one fact in front of the model twice,
+    and this is the way it happened anyway.
+
+    The first version folded `fold_size` at a time the moment the window
+    overflowed — so **at the shipped default** (`window=6, fold_size=3`) two
+    Exchanges sat in the summary while `[Recently]` was still printing them
+    verbatim. Every configuration, at every length, or the guard means
+    nothing.
+    """
+    summariser = CountingSummariser()
+
+    class Recording:
+        def __init__(self):
+            self.folded = []
+
+        def summarise(self, existing, exchanges):
+            self.folded.extend(e.said for e in exchanges)
+            return " ".join(self.folded)
+
+    recording = Recording()
+    memory = Memory(
+        summariser=recording, extractor=None, window=window, fold_size=fold_size
+    )
+
+    for index, exchange in enumerate(some(20)):
+        memory.remember(exchange)
+        memory.close_episode()
+
+        shown = {e.said for e in memory.recent()}
+        overlap = set(recording.folded) & shown
+        assert not overlap, (
+            f"after {index + 1} Exchanges with window={window} "
+            f"fold_size={fold_size}, {sorted(overlap)} is both summarised "
+            f"and printed verbatim"
+        )
+
+
+def test_a_batch_of_several_is_folded_as_a_batch():
+    """`_folded` advances by what was actually folded, not by one.
+
+    Under the ReAct loop one Episode adds one Exchange, so `foldable` and the
+    fold position advance together and a batch is nearly always a single
+    Exchange — which makes `+= 1` and `+= len(batch)` indistinguishable there.
+    `Memory` is not private to that loop, and a caller that records several
+    before closing gets a real batch; then the two differ, and the wrong one
+    re-summarises what it already summarised.
+    """
+    folded = []
+
+    class Recording:
+        def summarise(self, existing, exchanges):
+            folded.extend(e.said for e in exchanges)
+            return " ".join(folded)
+
+    memory = Memory(summariser=Recording(), extractor=None, window=2, fold_size=3)
+    for exchange in some(8):
+        memory.remember(exchange)
+    memory.close_episode()
+
+    assert folded == ["said 0", "said 1", "said 2"]
+    assert memory.as_data()["folded"] == 3
+
+    memory.close_episode()
+    assert folded == ["said 0", "said 1", "said 2", "said 3", "said 4", "said 5"]
+
+
+def test_everything_that_leaves_the_window_is_eventually_summarised():
+    """The negative control for the test above: never folding at all would
+    satisfy it perfectly."""
+    recording = []
+
+    class Recording:
+        def summarise(self, existing, exchanges):
+            recording.extend(e.said for e in exchanges)
+            return " ".join(recording)
+
+    memory = Memory(summariser=Recording(), extractor=None, window=3, fold_size=2)
+    for exchange in some(12):
+        memory.remember(exchange)
+        memory.close_episode()
+
+    assert recording == [f"said {i}" for i in range(9)]
 
 
 def test_nothing_here_reaches_for_a_vector_store():
@@ -541,3 +638,42 @@ def test_nothing_here_reaches_for_a_vector_store():
     for forbidden in ("embedding", "faiss", "chroma", "pinecone", "numpy",
                       "sentence_transformers", "cosine"):
         assert f"import {forbidden}" not in source, forbidden
+
+
+def test_the_same_thing_said_twice_is_remembered_twice():
+    """Append-only is the module's entire thesis.
+
+    A `remember` that skipped a repeat would look like a tidy-up and would
+    quietly make the record a summary of itself — and someone saying "hello"
+    in two separate Episodes is two interactions, not one.
+    """
+    memory = a_memory(window=6)
+    twice = Exchange(said="hello", replied="hi")
+
+    memory.remember(twice)
+    memory.remember(twice)
+
+    assert len(memory.exchanges) == 2
+
+
+def test_the_prompt_block_puts_the_oldest_context_first():
+    """Facts, then the summary, then what was just said.
+
+    Ordering is not decoration: the model reads this top to bottom, and
+    burying the last thing the person said under a paragraph of history is
+    how it ends up answering the wrong question. Asserted by position, since
+    a substring check passes for any arrangement.
+    """
+    memory = Memory(
+        summariser=CountingSummariser("EARLIER"),
+        extractor=CountingExtractor({"name": "Ana"}),
+        window=1, fold_size=1,
+    )
+    memory.remember(Exchange(said="I am Ana", replied="Hello Ana"))
+    memory.close_episode()
+    memory.remember(Exchange(said="LATEST", replied="ok"))
+    memory.close_episode()
+
+    block = memory.as_prompt_block()
+
+    assert block.index("Ana") < block.index("EARLIER") < block.index("LATEST")

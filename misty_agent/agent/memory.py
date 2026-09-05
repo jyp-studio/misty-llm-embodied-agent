@@ -95,9 +95,6 @@ class RemembersNothing:
     instead of a `None` check at each end of the Episode.
     """
 
-    def recent(self, count: Optional[int] = None) -> Tuple[Exchange, ...]:
-        return ()
-
     def as_prompt_block(self) -> str:
         return ""
 
@@ -123,11 +120,10 @@ class Memory:
         fold_size: int = 3,
         path: Optional[str] = None,
     ) -> None:
-        if fold_size > window:
+        if fold_size < 1:
             raise ValueError(
-                f"fold_size={fold_size} cannot exceed window={window}: "
-                f"folding more than the window holds would summarise "
-                f"Exchanges the prompt is still showing verbatim"
+                f"fold_size={fold_size} would never summarise anything, so "
+                f"the summary would stay empty while the record grew"
             )
         self._summariser = summariser
         self._extractor = extractor
@@ -167,12 +163,14 @@ class Memory:
 
     # ---------- reading ----------
 
-    def recent(self, count: Optional[int] = None) -> Tuple[Exchange, ...]:
-        """The last few Exchanges, verbatim. A slice and nothing else."""
-        limit = self._window if count is None else count
-        if limit <= 0:
-            return ()
-        return tuple(self._exchanges[-limit:])
+    def recent(self) -> Tuple[Exchange, ...]:
+        """The last window of Exchanges, verbatim. A slice and nothing else.
+
+        No `count` argument: the window is the window, and a parameter with no
+        caller is the Speculative Generality `PLAN.md` §15.23 deleted
+        `instructions=` for.
+        """
+        return tuple(self._exchanges[-self._window :])
 
     @property
     def exchanges(self) -> Tuple[Exchange, ...]:
@@ -282,13 +280,24 @@ class Memory:
             )
 
     def _fold(self) -> None:
-        """Summarise what has fallen out of the window — without deleting it."""
+        """Summarise what has fallen out of the window — without deleting it.
+
+        Only what has *actually* fallen out. The first version folded
+        `fold_size` at a time as soon as the window overflowed, which at the
+        default `window=6, fold_size=3` put two Exchanges in the summary while
+        `[Recently]` was still printing them verbatim — the model reading the
+        same thing twice, which is what `PLAN.md` §15.4 refuses. `fold_size`
+        is therefore a *maximum* batch, not an exact one (`PLAN.md` §15.30).
+        """
         if self._summariser is None:
             return
-        unfolded = len(self._exchanges) - self._folded
-        if unfolded <= self._window:
+        # Everything before this index is outside the window `recent()` shows.
+        foldable = len(self._exchanges) - self._window - self._folded
+        if foldable <= 0:
             return
-        batch = self._exchanges[self._folded : self._folded + self._fold_size]
+        batch = self._exchanges[
+            self._folded : self._folded + min(self._fold_size, foldable)
+        ]
         if not batch:
             return
         try:

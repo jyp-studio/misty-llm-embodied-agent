@@ -19,9 +19,7 @@ Quietly editing a golden so the code passes is the failure this whole
 arrangement exists to prevent. Editing one is allowed; editing one without
 saying so is not.
 
-**It has been invoked three times, all in ticket 07** (`PLAN.md` §15.19,
-§15.21, §15.22), and once before it in ticket 04 (§15.7, where the
-implementation gave way instead):
+**It has been invoked five times**, across tickets 04 to 08:
 
 | What | Which side gave way |
 |---|---|
@@ -35,10 +33,13 @@ All four files are now on the timing rule below. The aborted one came last
 because only ticket 08 can produce a `stop_requested`, and retiming a golden
 nobody can yet regenerate would have been a change nobody could check.
 
-Ticket 03 wrote sixty assertions about these files' *content*. Fifty-nine of
-them passed unchanged across those edits, and the sixtieth was a renamed
-config field — which is the check that the edits were to timing and shape,
-not to meaning.
+Ticket 03 wrote sixty assertions about these files' *content*, and
+fifty-nine held across those edits. **That is a weaker check than it sounds**
+and it is not what verified them: every `t` assertion in `test_goldens.py` is
+relational — time never goes backwards, the ending follows the stop — so a
+wholesale retiming passes it by construction, and nothing there looks at a
+`look_around` result at all. What actually checked the edits was a
+field-by-field diff against the committed originals (`PLAN.md` §15.21).
 
 ## How the timestamps work
 

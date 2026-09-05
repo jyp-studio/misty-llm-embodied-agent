@@ -33,3 +33,17 @@
   是 idempotent 的，所以 debounce 失效也不會產生第二筆 `stop_requested`。
 - 新入口要把 Journal、`ToolContext`、`EmergencyStop` 用**同一個時鐘**建起來 ——
   `run_episode` 量的延遲和 Journal 寫的時間戳必須來自同一個時鐘，否則描述的是兩次不同的執行。
+
+
+## Notes（來自 07–10 補跑的 review）
+
+- **⚠️ `EmergencyStop` 是一次性的，而且在建構時就綁死一個 Journal。** 但舊腳本的 BumpSensor
+  訂閱是 `keep_alive=True`、**跨 Episode 存活**的。所以這張票不能「訂閱一次然後忘記」——
+  每個 Episode 都要有自己的 `EmergencyStop`（新的 Journal、新的單次狀態），callback 必須能
+  重新指向當前那一個。這件事之前沒有記在任何地方。
+- **`ToolContext.ears` 同樣還沒有生產呼叫端。** `AudioStream` 已經滿足 `Ears` protocol
+  （`mute_for(seconds)`），入口要把它接進 `ToolContext(ears=audio_stream)`，否則 §15.29 的
+  抑制窗在真實執行時等於沒有。
+- 新入口要把 Journal、`ToolContext`、`EmergencyStop`、`AudioStream` 用**同一個時鐘**建起來。
+- 舊的 e-stop 是 `full_robot_v3.py:756` 的 `register_foot_bumper_stop`，用
+  `_thread.interrupt_main()` —— KeyboardInterrupt 會落在任何地方，而且不保證馬達停下來。

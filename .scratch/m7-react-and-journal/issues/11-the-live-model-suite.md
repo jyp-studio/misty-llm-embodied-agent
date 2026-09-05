@@ -33,3 +33,15 @@
   tools) -> Decision`。這張票要做的是一個真的實作，加上 `@pytest.mark.llm_live`。
 - `tests/test_react.py::ScriptedModel` 是離線那一側，斷言的是 Journal 上的不變量 ——
   這張票要斷言的也是同一批不變量，不是模型說了什麼。
+
+
+## Notes（來自 07–10 補跑的 review）
+
+- **`llm_live` marker 還沒在任何地方註冊。** `tests/conftest.py` 是受保護檔案，不能改，
+  所以 marker 要註冊在哪裡是這張票的第一個決定（`pyproject.toml` 的
+  `[tool.pytest.ini_options] markers` 是最可能的位置）。沒註冊的話 pytest 會發
+  `PytestUnknownMarkWarning`，而且 `-m "not llm_live"` 過濾不會如預期。
+- 窄介面是 `misty_agent/agent/react.py` 的 `Model` protocol：
+  `decide(working_context, tools) -> Decision`。
+- 離線那一側是 `tests/test_react.py::ScriptedModel`，斷言的是 Journal 上的不變量 ——
+  這張票要斷言的是同一批不變量，不是模型說了什麼。

@@ -67,15 +67,30 @@ class Ears(Protocol):
     def mute_for(self, seconds: float) -> None: ...
 
 
+class HearsNothing:
+    """Ears for an Episode with no microphone wired.
+
+    A null object, to match `NEVER_STOPS` and `NO_MEMORY` — those two exist so
+    the caller reads one shape instead of a `None` check, and an `Optional`
+    here would have been exactly the check they avoid.
+    """
+
+    def mute_for(self, seconds: float) -> None:
+        return None
+
+
+HEARS_NOTHING = HearsNothing()
+
+
 @dataclass(frozen=True)
 class ToolContext:
     """What a Tool is given besides its own arguments.
 
-    Four fields, and each is one that a Tool named in `PLAN.md` §15.2 already
+    Five fields, and each is one that a Tool named in `PLAN.md` §15.2 already
     needs: seven of the nine drive the robot, `approach` also reads distances,
     and M5's `approach(readings, robot, *, config, clock)` is the signature
-    this has to be able to call. `speak` needs the clock too, for §15.4's
-    suppression window. Defining the calling convention is this ticket's job,
+    this has to be able to call. `speak` needs the config for its speech
+    estimate and the ears to shut them before it talks (§15.29). Defining the calling convention is this ticket's job,
     and a convention that could not call the Tools already specified would
     have to be changed by every one of them in the next ticket.
 
@@ -88,10 +103,10 @@ class ToolContext:
     readings: Any
     config: Any = None
     clock: Any = None
-    #: What must not hear the robot talk to itself. Optional because eight of
-    #: the nine Tools make no sound and an Episode with no microphone wired is
-    #: still a valid Episode; `speak` checks before using it.
-    ears: Optional[Ears] = None
+    #: What must not hear the robot talk to itself. Eight of the nine Tools
+    #: make no sound, and an Episode with no microphone is still an Episode —
+    #: hence a null object rather than a `None` every caller has to test.
+    ears: Ears = HEARS_NOTHING
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -556,12 +571,26 @@ class PlayAudioArgs(BaseModel):
 
 
 #: Characters that are a syllable rather than a letter, and that are written
-#: without spaces between words: CJK punctuation and ideographs, kana, and
-#: Hangul. Counting these as words is what made the estimate wrong for the
-#: language this robot is actually spoken to in.
+#: without spaces between words. Counting these as words is what made the
+#: estimate wrong for the language this robot is actually spoken to in.
+#:
+#: Spelled out rather than taken as whole blocks, because the obvious whole
+#: block is wrong: Halfwidth and Fullwidth Forms (U+FF00–FFEF) holds the
+#: fullwidth Latin alphabet as well as the fullwidth comma, so
+#: `Ｈｅｌｌｏ　ｗｏｒｌｄ` billed eleven syllables. The alphanumeric runs
+#: (FF10–FF19, FF21–FF3A, FF41–FF5A) are therefore left out, and U+3000 with
+#: them — the ideographic space is whitespace, and `str.split` already treats
+#: it as a word boundary.
 _CJK = re.compile(
-    "[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
-    "\uac00-\ud7af\uff00-\uffef]"
+    "["
+    "\u3001-\u303f"      # CJK punctuation, less the ideographic space
+    "\u3040-\u30ff"      # hiragana and katakana
+    "\u3400-\u4dbf"      # CJK ideographs, extension A
+    "\u4e00-\u9fff"      # CJK ideographs
+    "\uac00-\ud7af"      # Hangul syllables
+    "\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65"  # fullwidth punctuation
+    "\uff66-\uff9f"      # halfwidth katakana
+    "]"
 )
 
 
@@ -637,8 +666,7 @@ def build_registry() -> ToolRegistry:
         (`PLAN.md` §15.29).
         """
         estimated_ms = estimate_speech_ms(args.text, ctx.config)
-        if ctx.ears is not None:
-            ctx.ears.mute_for(estimated_ms / 1000.0)
+        ctx.ears.mute_for(estimated_ms / 1000.0)
         ctx.robot.speak(text=args.text)
         return {"ok": True, "estimated_speech_ms": estimated_ms}
 

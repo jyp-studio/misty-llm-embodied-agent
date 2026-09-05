@@ -18,7 +18,7 @@ _Avoid_: session, conversation, interaction, cycle
 
 **Turn**:
 One iteration of the ReAct loop — a single model decision and the tool call it
-produces. Bounded by `max_react_steps`.
+produces. Bounded by `max_turns_per_episode`.
 _Avoid_: step, iteration, round
 
 **Step**:

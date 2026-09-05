@@ -49,7 +49,7 @@ from misty_agent.agent.journal import (
     from_jsonl,
     to_jsonl,
 )
-from misty_agent.agent.react import Decision, EpisodeOutcome, as_text, run_episode
+from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.memory import Exchange, Memory
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import ToolContext, build_registry
@@ -59,6 +59,16 @@ from misty_agent.perception.distance import DistanceReading
 
 from test_approach import MovingWorld, WorldThatLosesTheUserAfterAStep
 from test_memory import CountingExtractor, CountingSummariser
+
+def as_text(working_context):
+    """Everything the model was handed, as one string.
+
+    Lives here rather than in `react.py`: its only caller is
+    `test_no_text_the_model_receives_mentions_a_drive_parameter`, and a
+    production module is not where test scaffolding belongs.
+    """
+    return json.dumps(list(working_context), sort_keys=True, default=str)
+
 
 GOLDENS = pathlib.Path(__file__).parent / "goldens"
 WALL_CLOCK = "2026-08-25T09:14:03+08:00"
@@ -754,19 +764,31 @@ def test_an_abort_ends_the_episode():
 def test_the_stop_arrives_in_the_middle_of_a_turn_not_at_its_edge():
     """The requirement this ticket exists for.
 
-    An abort that only worked between Turns would be a loop that checks a flag,
-    not a robot that stops. This asserts the stop landed strictly between the
-    `tool_called` and the `observation` of the same Turn — i.e. while a
-    physical action was in progress.
+    An abort that only worked between Turns would be a loop that checks a
+    flag, not a robot that stops.
+
+    "In the middle" needs saying carefully, and the first version of this test
+    did not: `called.t <= stopped.t < observed.t` is satisfied by a stop that
+    lands at the very instant the Tool was called, which is a Turn boundary
+    wearing a disguise. What actually makes this mid-Turn is that **the robot
+    had already driven** when the bumper was pressed, and the Tool went on
+    running for seconds afterwards — so the pin is on the drive, not on the
+    timestamps alone.
     """
-    _, journal, _, _, _ = is_aborted()
+    _, journal, _, _, world = is_aborted()
     records = list(journal.records)
 
     called = next(r for r in records if isinstance(r, ToolCalled))
     stopped = next(r for r in records if isinstance(r, StopRequested))
     observed = next(r for r in records if isinstance(r, Observation))
 
-    assert called.t <= stopped.t < observed.t
+    drives = [r for r in world.requests if r.endpoint == "drive/time"]
+    assert drives, "nothing was moving, so nothing was interrupted"
+    assert called.t < stopped.t, "the stop landed on the Turn boundary"
+    assert observed.t - stopped.t > 1.0, (
+        "the Tool returned almost immediately, so this says nothing about "
+        "interrupting one that was still running"
+    )
     assert called.turn == observed.turn
 
 

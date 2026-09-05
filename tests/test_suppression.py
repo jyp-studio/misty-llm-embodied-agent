@@ -25,6 +25,7 @@ from __future__ import annotations
 import pytest
 
 from misty_agent.agent.tools import (
+    _CJK,
     ToolContext,
     build_registry,
     dispatch,
@@ -277,7 +278,9 @@ def test_speaking_does_not_wait_out_its_own_window():
 def test_speaking_without_a_microphone_still_works():
     """An Episode with nothing listening is still a valid Episode, and
     `speak` must not require one to exist."""
-    outcome = spoke("Coming over.", ears=None)
+    from misty_agent.agent.tools import HEARS_NOTHING
+
+    outcome = spoke("Coming over.", ears=HEARS_NOTHING)
 
     assert outcome.accepted
 
@@ -399,3 +402,86 @@ def test_nothing_looks_for_a_spoken_ms_return_value():
     package = pathlib.Path(__file__).parent.parent / "misty_agent"
     for source in package.rglob("*.py"):
         assert "spoken_ms" not in source.read_text(), source
+
+
+def test_the_estimate_is_rounded_not_truncated():
+    """Every fixture above happens to land on a whole millisecond, so
+    `int(round(x))` and `int(x)` agree on all of them — which means neither is
+    actually pinned by any of them.
+    """
+    settings = Settings()
+
+    # 3 words: 3/2.2 + 0.5 = 1.86363... s, which is 1864 ms rounded and 1863
+    # truncated.
+    assert estimate_speech_ms("one two three", settings) == 1864
+
+
+@pytest.mark.parametrize(
+    "mark,name",
+    [("\u3001", "ideographic comma"), ("\u3002", "ideographic full stop"),
+     ("\u300c", "corner bracket"), ("\u301c", "wave dash")],
+)
+def test_cjk_punctuation_counts_as_a_character(mark, name):
+    """That whole punctuation range was untested: the Chinese fixture's comma
+    is the *fullwidth* one at U+FF0C, so dropping the CJK-punctuation range
+    left every test green.
+
+    Four marks spread across the range, because one of them is its first
+    character — a range narrowed to just that one would pass a test written
+    with only that mark.
+    """
+    settings = Settings()
+    text = f"\u4f60\u597d{mark}\u6211\u4f86\u4e86"
+
+    assert len(_CJK.findall(text)) == 6, name
+    assert estimate_speech_ms(text, settings) == estimate_speech_ms(
+        "\u4f60\u597d\u4f60\u6211\u4f86\u4e86", settings
+    )
+
+
+def test_fullwidth_latin_is_not_billed_as_syllables():
+    """Halfwidth and Fullwidth Forms holds the fullwidth alphabet as well as
+    the fullwidth comma. Taking the whole block made `Ｈｅｌｌｏ ｗｏｒｌｄ`
+    eleven syllables — nearly three seconds for two words.
+    """
+    settings = Settings()
+
+    assert estimate_speech_ms("Ｈｅｌｌｏ　ｗｏｒｌｄ", settings) == estimate_speech_ms(
+        "Hello world", settings
+    )
+
+
+def test_a_tool_that_makes_no_sound_leaves_the_microphone_open():
+    """Only `speak` should ever shut the ears.
+
+    Structurally true — it is the one Tool that touches `ctx.ears` — but
+    nothing said so, and a `dispatch` that muted on every call would leave the
+    robot deaf for most of an Episode.
+    """
+    ears = RecordingEars()
+    registry = build_registry()
+    ctx = ToolContext(
+        robot=RecordingCommands(), readings=None, config=Settings(),
+        clock=FakeClock(), ears=ears,
+    )
+
+    for name, args in (
+        ("move_head", {"pitch": 0}),
+        ("change_led", {"red": 1}),
+        ("display_image", {"expression": "happy"}),
+        ("done", {}),
+    ):
+        dispatch(registry, name, args, ctx, Journal(episode_id="ep-1"), turn=1)
+
+    assert ears.muted_for == []
+
+
+def test_an_episode_with_no_microphone_needs_no_none_check():
+    """`HEARS_NOTHING` matches `NEVER_STOPS` and `NO_MEMORY`: the caller reads
+    one shape rather than testing for `None`."""
+    from misty_agent.agent.tools import HEARS_NOTHING
+
+    ctx = ToolContext(robot=RecordingCommands(), readings=None, config=Settings())
+
+    assert ctx.ears is HEARS_NOTHING
+    ctx.ears.mute_for(1.0)

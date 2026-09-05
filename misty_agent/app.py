@@ -37,7 +37,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, Tuple
 
 from misty_agent.agent.journal import Journal, Snapshot, TerminalRenderer
@@ -143,19 +143,21 @@ class Session:
     #: Set while an Episode is running, so the bumper knows where to report.
     _running: Optional[EmergencyStop] = None
     _episodes: int = 0
+    _bumper_watched: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.clock = self.clock or SystemClock()
         if self.ears is None:
             self.ears = HEARS_NOTHING
+        self.watch_the_bumper()
 
     # ---------- the bumper ----------
 
     def watch_the_bumper(self) -> None:
         """Subscribe once, for as long as the session lasts."""
-        if self.events is None:
+        if self.events is None or self._bumper_watched:
             return
-        self.events.subscribe(
+        subscription = self.events.subscribe(
             "BumpSensor",
             name="EmergencyFootStop",
             condition=[event_condition("isContacted", "=", True)],
@@ -163,6 +165,8 @@ class Session:
             keep_alive=True,
             on_event=lambda payload: self.bumper_pressed(),
         )
+        if subscription is not None:
+            self._bumper_watched = True
 
     def bumper_pressed(self) -> None:
         """Stop everything, and tell the Episode if there is one.

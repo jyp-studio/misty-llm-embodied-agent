@@ -23,6 +23,7 @@ import json
 import pytest
 
 from misty_agent.agent.journal import (
+    ExecutionFailed,
     JOURNAL_SCHEMA,
     OUTCOMES,
     RECORD_TYPES,
@@ -98,6 +99,13 @@ def one_of_each():
             reason="pitch 999 is outside the permitted range",
         ),
         StopRequested(t=7.4, episode_id="ep-1", source="foot_bumper"),
+        ExecutionFailed(
+            t=7.42,
+            episode_id="ep-1",
+            phase="tool",
+            error_type="RuntimeError",
+            message="the motor controller did not answer",
+        ),
         SubscriberFailed(
             t=7.45,
             episode_id="ep-1",
@@ -452,6 +460,17 @@ def test_the_leak_guard_reaches_into_nested_arguments():
         )
 
 
+def test_an_execution_failure_cannot_repeat_a_drive_parameter():
+    with pytest.raises(ValueError, match="failure may not say"):
+        ExecutionFailed(
+            t=0.0,
+            episode_id="ep-1",
+            phase="tool",
+            error_type="RuntimeError",
+            message="driveDuration failed",
+        )
+
+
 def test_an_observation_result_cannot_carry_a_drive_command_either():
     with pytest.raises(ValueError, match="control parameter"):
         Observation(
@@ -541,13 +560,14 @@ def test_an_episode_ends_with_one_of_the_named_outcomes():
         )
 
 
-def test_the_named_outcomes_cover_the_four_golden_scenarios():
-    """Four scenarios, three outcomes: two of them are the model choosing to stop.
+def test_the_named_outcomes_cover_the_goldens_and_involuntary_failure():
+    """Four golden scenarios share three intentional outcomes; errors add one.
 
     Worth writing down, because "four ways an Episode ends" reads like four
-    outcomes and ticket 03 will name four files.
+    outcomes and ticket 03 names four files. Runtime failure is deliberately
+    not retrofitted into a golden that predates the closure work.
     """
-    assert set(OUTCOMES) == {"done", "turn_limit", "aborted"}
+    assert set(OUTCOMES) == {"done", "turn_limit", "aborted", "error"}
 
 
 def test_there_is_exactly_one_kind_of_terminal_record():

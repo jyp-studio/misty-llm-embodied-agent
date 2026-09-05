@@ -1494,3 +1494,26 @@ Episode 自己的 `EmergencyStop`。**單一個長命的 `EmergencyStop` 做不�
 **README 的 Project structure 原本列了六個不存在的檔案**（`AutoMisty.py`、`Agents/`、
 `CUBS_Misty.py`、`RobotCommands.py`、`code/mistyPy/`、`Mistydemo/`），它們在 M1 就移出版控了。
 票面只要求更新指向舊主腳本的指涉，但那整塊已經是現況描述而且大半是錯的，一併修正。
+
+### 15.35 M7 closure：失敗也是一種有界結束，bumper 在 Session 建構時上膛（M7 #13）
+
+M7 #12 完成後重新從 code 而不是勾選稽核，找到兩個會讓「每個 Episode 有界結束」只在 happy
+path 成立的洞：模型、直接 Tool 或 Snapshot 拋例外時，`run_episode()` 直接把例外丟出去，Journal
+停在半途；而 bumper 雖然已有 production wiring，呼叫端仍必須另外記得呼叫
+`Session.watch_the_bumper()`。兩者都能讓票面全綠、實際保證不成立。
+
+**失敗路徑現在也是公開結果。** `EpisodeFinished.outcome` 增加 `error`；失敗原因先寫成一筆
+非 terminal 的 `execution_failed`，帶 `phase`、例外型別與可安全公開的訊息，最後仍由唯一一筆
+`episode_finished` 關閉。模型、Tool handler／result、Snapshot 與 Episode 開始時讀 Memory 的
+失敗都走這條路，並在結束前 best-effort 呼叫 `halt()`；halt 自己失敗不得連終止保證一起賠掉。
+例外訊息若含控制參數名稱會被隱去，因為 Journal 仍是 §4 分層主張的稽核標的。
+
+Memory 的摘要／事實衍生依 §15.26 發生在 `episode_finished` **之後**，所以它失敗時不回頭改寫
+已完成 Episode 的 outcome；它會留下 error log，但公開呼叫仍拿得到已完成的 outcome 與 Journal。
+
+**bumper 不再靠第二個動作上膛。** 傳入 event stream 的 `Session` 在 `__post_init__` 就訂閱，
+`watch_the_bumper()` 保留為冪等的 lifecycle 操作：重複呼叫不開第二條 websocket。沒有 event
+stream 的 mock／測試 Session 行為不變。
+
+這仍然只有契約測試與 fake robot 驗證。`halt` 請求是否真的停住 Misty、bumper websocket 是否
+符合實機行為，仍屬 §8 的未驗證邊界。

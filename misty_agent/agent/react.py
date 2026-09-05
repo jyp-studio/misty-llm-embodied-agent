@@ -52,10 +52,12 @@ durable unit memory is made of, and this is deliberately not that.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.journal import (
+    ExecutionFailed,
     EpisodeFinished,
     EpisodeStarted,
     Journal,
@@ -65,6 +67,7 @@ from misty_agent.agent.journal import (
     TurnStarted,
 )
 from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
+from misty_agent.agent.layering import mentions_control_parameter
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.agent.tools import (
     Dispatched,
@@ -72,6 +75,8 @@ from misty_agent.agent.tools import (
     ToolRegistry,
     dispatch,
 )
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -140,7 +145,21 @@ def run_episode(
     # block of prose (`memory.py` builds it); everything after it is this
     # Episode's own working context and dies with the Episode.
     working_context: List[Dict[str, Any]] = []
-    remembered = memory.as_prompt_block()
+    try:
+        remembered = memory.as_prompt_block()
+    except Exception as error:
+        journal.record(
+            ExecutionFailed,
+            phase="memory",
+            error_type=type(error).__name__,
+            message=_error_message(error),
+        )
+        try:
+            ctx.robot.halt()
+        except Exception:
+            pass
+        journal.record(EpisodeFinished, outcome="error", turns=0, steps=0)
+        return EpisodeOutcome(outcome="error", turns=0, steps=0)
     if remembered:
         working_context.append({"role": "system", "content": remembered})
     working_context.append(
@@ -164,7 +183,21 @@ def run_episode(
         journal.record(TurnStarted, turn=turn)
 
         began = clock.monotonic()
-        decision = model.decide(tuple(working_context), registry.schemas())
+        try:
+            decision = model.decide(tuple(working_context), registry.schemas())
+        except Exception as error:
+            journal.record(
+                ExecutionFailed,
+                phase="model",
+                error_type=type(error).__name__,
+                message=_error_message(error),
+            )
+            try:
+                ctx.robot.halt()
+            except Exception:
+                pass
+            outcome = "error"
+            break
         journal.record(
             ModelCalled,
             turn=turn,
@@ -182,9 +215,23 @@ def run_episode(
             outcome = "aborted"
             break
 
-        dispatched = dispatch(
-            registry, decision.tool, decision.args, ctx, journal, turn=turn
-        )
+        try:
+            dispatched = dispatch(
+                registry, decision.tool, decision.args, ctx, journal, turn=turn
+            )
+        except Exception as error:
+            journal.record(
+                ExecutionFailed,
+                phase="tool",
+                error_type=type(error).__name__,
+                message=_error_message(error),
+            )
+            try:
+                ctx.robot.halt()
+            except Exception:
+                pass
+            outcome = "error"
+            break
         steps += dispatched.steps
         if dispatched.spoken:
             spoken.append(dispatched.spoken)
@@ -200,12 +247,41 @@ def run_episode(
             working_context.append(_refused(decision, dispatched))
             continue
 
-        observation = journal.record(
-            Observation,
-            turn=turn,
-            result=dispatched.result,
-            snapshot=perception.snapshot(),
-        )
+        try:
+            snapshot = perception.snapshot()
+        except Exception as error:
+            journal.record(
+                ExecutionFailed,
+                phase="perception",
+                error_type=type(error).__name__,
+                message=_error_message(error),
+            )
+            try:
+                ctx.robot.halt()
+            except Exception:
+                pass
+            outcome = "error"
+            break
+        try:
+            observation = journal.record(
+                Observation,
+                turn=turn,
+                result=dispatched.result,
+                snapshot=snapshot,
+            )
+        except Exception as error:
+            journal.record(
+                ExecutionFailed,
+                phase="tool",
+                error_type=type(error).__name__,
+                message=_error_message(error),
+            )
+            try:
+                ctx.robot.halt()
+            except Exception:
+                pass
+            outcome = "error"
+            break
         working_context.append(_observed(observation))
 
         # The stop may have arrived while the Tool was running. Python cannot
@@ -226,8 +302,14 @@ def run_episode(
     # It is also once per Episode rather than once per Turn: under ReAct the
     # subject spoke once, and re-extracting each Turn asks about a record that
     # has not changed (`PLAN.md` §15.5).
-    memory.remember(Exchange(said=said, replied=" ".join(spoken)))
-    memory.close_episode()
+    try:
+        memory.remember(Exchange(said=said, replied=" ".join(spoken)))
+        memory.close_episode()
+    except Exception:
+        # The Episode is already closed and its timing intentionally excludes
+        # memory derivation. A post-Episode failure must not make the caller
+        # lose the completed outcome and Journal it already produced.
+        log.exception("post-Episode memory update failed")
 
     return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
 
@@ -264,3 +346,11 @@ def _observed(observation: Observation) -> Dict[str, Any]:
             },
         },
     }
+
+
+def _error_message(error: Exception) -> str:
+    """Keep diagnostics useful without teaching the model drive vocabulary."""
+    message = str(error)
+    if mentions_control_parameter(message) is not None:
+        return "details withheld by the control-layer boundary"
+    return message

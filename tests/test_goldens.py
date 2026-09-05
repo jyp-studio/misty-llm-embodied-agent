@@ -69,8 +69,8 @@ def test_there_is_a_golden_for_every_way_an_episode_can_end():
     assert on_disk == set(EXPECTED_GOLDENS)
 
 
-def test_between_them_the_goldens_cover_every_outcome():
-    """Four files, three outcomes — and that asymmetry is deliberate.
+def test_between_them_the_goldens_cover_every_intentional_outcome():
+    """Four files, three intentional outcomes — and that asymmetry is deliberate.
 
     Ending on the first Turn and ending after several are both the model
     choosing to stop. They are separate files because they are separate paths
@@ -80,7 +80,7 @@ def test_between_them_the_goldens_cover_every_outcome():
         load(name)[-1].outcome for name in EXPECTED_GOLDENS
     }
 
-    assert covered == set(OUTCOMES)
+    assert covered == set(OUTCOMES) - {"error"}
 
 
 def test_each_golden_ends_the_way_its_name_says():

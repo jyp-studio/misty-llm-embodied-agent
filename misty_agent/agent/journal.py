@@ -80,10 +80,14 @@ JOURNAL_SCHEMA = "0.1.0-unstable"
 #: than let a reader take a 0.0 for an instantaneous abort.
 TIME_PLACES = 3
 
-#: Outcomes an Episode may end with. Three, not four: the spec names four
+#: Outcomes an Episode may end with. The original three cover intentional
+#: endings; ``error`` is the involuntary close used when an external
+#: collaborator raises inside the bounded loop.
+#:
+#: Three, not four, *intentional* outcomes: the spec names four
 #: *scenarios* to keep goldens for, and two of them — ending on the first Turn
 #: and ending after several — are both the model choosing to stop.
-OUTCOMES = ("done", "turn_limit", "aborted")
+OUTCOMES = ("done", "turn_limit", "aborted", "error")
 
 #: What a mapping field may contain. Anything else does not survive JSON: a
 #: tuple comes back as a list and quietly breaks equality against a golden.
@@ -294,6 +298,29 @@ class StopRequested(Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class ExecutionFailed(Record):
+    """An external collaborator failed while an Episode was running.
+
+    This is evidence about the failure, not a second terminal record. The
+    following :class:`EpisodeFinished` remains the one record a reader counts
+    to decide whether the Episode closed.
+    """
+
+    phase: str
+    error_type: str
+    message: str
+    type: str = "execution_failed"
+
+    def __post_init__(self) -> None:
+        offending = mentions_control_parameter(self.message)
+        if offending is not None:
+            raise ValueError(
+                f"an execution failure may not say {offending!r}: failure "
+                f"diagnostics share the Journal's control-layer boundary"
+            )
+
+
+@dataclass(frozen=True, kw_only=True)
 class EpisodeFinished(Record):
     """The Episode ended, however it ended.
 
@@ -353,6 +380,7 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
         ToolRejected,
         Observation,
         StopRequested,
+        ExecutionFailed,
         SubscriberFailed,
         EpisodeFinished,
     )
@@ -648,6 +676,11 @@ def _describe(record: Record) -> str:
         return f"  -> {outcome}, {seen}"
     if isinstance(record, StopRequested):
         return f"stop requested by {record.source}"
+    if isinstance(record, ExecutionFailed):
+        return (
+            f"  ! {record.phase} failed ({record.error_type}): "
+            f"{record.message}"
+        )
     if isinstance(record, EpisodeFinished):
         return (
             f"episode {record.outcome} after {record.turns} turn(s), "

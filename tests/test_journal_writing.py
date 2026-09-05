@@ -20,6 +20,7 @@ import time
 import pytest
 
 from misty_agent.agent.journal import (
+    ExecutionFailed,
     EpisodeFinished,
     EpisodeStarted,
     Journal,
@@ -405,6 +406,25 @@ def test_the_terminal_renderer_shows_how_the_episode_ended():
     a_few_records(journal)
 
     assert any("done" in line for line in lines)
+
+
+def test_the_terminal_renderer_explains_an_execution_failure():
+    lines = []
+    renderer = TerminalRenderer(lines.append)
+
+    renderer.receive(
+        ExecutionFailed(
+            t=1.25,
+            episode_id="ep-1",
+            phase="perception",
+            error_type="RuntimeError",
+            message="camera pipeline failed",
+        )
+    )
+
+    assert lines == [
+        "   1.25s    ! perception failed (RuntimeError): camera pipeline failed"
+    ]
 
 
 # ---------------------------------------------------------------------------

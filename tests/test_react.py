@@ -46,13 +46,14 @@ from misty_agent.agent.journal import (
     ToolCalled,
     ToolRejected,
     TurnStarted,
+    ExecutionFailed,
     from_jsonl,
     to_jsonl,
 )
 from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.memory import Exchange, Memory
 from misty_agent.agent.stop import EmergencyStop
-from misty_agent.agent.tools import ToolContext, build_registry
+from misty_agent.agent.tools import NoArguments, ToolContext, ToolRegistry, build_registry
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.perception.distance import DistanceReading
@@ -289,6 +290,257 @@ def test_a_model_that_never_stops_still_ends_the_episode():
 
     assert outcome.outcome == "turn_limit"
     assert outcome.turns == Settings().max_turns_per_episode
+
+
+def test_a_model_failure_ends_the_episode_records_why_and_halts():
+    """A broken network/model call must not strand a half-open Episode."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-model-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+    robot = RecordingCommands()
+
+    class ModelFails:
+        def decide(self, working_context, tools):
+            raise RuntimeError("model connection failed")
+
+    outcome = run_episode(
+        "speech",
+        model=ModelFails(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot,
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    failures = [record for record in journal.records if isinstance(record, ExecutionFailed)]
+    endings = [record for record in journal.records if isinstance(record, EpisodeFinished)]
+    assert outcome == EpisodeOutcome(outcome="error", turns=1, steps=0)
+    assert [(record.phase, record.error_type) for record in failures] == [
+        ("model", "RuntimeError")
+    ]
+    assert failures[0].message == "model connection failed"
+    assert len(endings) == 1
+    assert endings[0].outcome == "error"
+    assert journal.records[-1] is endings[0]
+    assert "halt" in robot.endpoints
+
+
+def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-memory-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+    robot = RecordingCommands()
+
+    class MemoryFails:
+        def as_prompt_block(self):
+            raise RuntimeError("memory could not be read")
+
+        def remember(self, exchange):
+            raise AssertionError("a failed setup must not append memory")
+
+        def close_episode(self):
+            raise AssertionError("a failed setup must not derive memory")
+
+    outcome = run_episode(
+        "speech",
+        model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot,
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+        memory=MemoryFails(),
+    )
+
+    failed = next(record for record in journal.records if isinstance(record, ExecutionFailed))
+    assert outcome == EpisodeOutcome(outcome="error", turns=0, steps=0)
+    assert (failed.phase, failed.error_type) == ("memory", "RuntimeError")
+    assert isinstance(journal.records[-1], EpisodeFinished)
+    assert "halt" in robot.endpoints
+
+
+def test_a_tool_failure_ends_the_episode_records_why_and_halts():
+    """A direct Tool is an untrusted robot boundary just like approach."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-tool-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+
+    class MotorFails(RecordingCommands):
+        def move_head(self, *args, **kwargs):
+            raise RuntimeError("head motor failed")
+
+    robot = MotorFails()
+    outcome = run_episode(
+        "speech",
+        model=ScriptedModel(clock, ("move_head", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot,
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    failures = [record for record in journal.records if isinstance(record, ExecutionFailed)]
+    endings = [record for record in journal.records if isinstance(record, EpisodeFinished)]
+    assert outcome == EpisodeOutcome(outcome="error", turns=1, steps=0)
+    assert [(record.phase, record.error_type, record.message) for record in failures] == [
+        ("tool", "RuntimeError", "head motor failed")
+    ]
+    assert len(endings) == 1
+    assert journal.records[-1] is endings[0]
+    assert "halt" in robot.endpoints
+
+
+def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-tool-result-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+    robot = RecordingCommands()
+    registry = ToolRegistry()
+
+    @registry.tool("bad_result", "Return something a Journal cannot store.")
+    def bad_result(args: NoArguments, ctx: ToolContext):
+        return {"not_json": object()}
+
+    outcome = run_episode(
+        "speech",
+        model=ScriptedModel(clock, ("bad_result", {}, 10, 1, 1)),
+        registry=registry,
+        ctx=ToolContext(
+            robot=robot,
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    failed = next(record for record in journal.records if isinstance(record, ExecutionFailed))
+    assert outcome.outcome == "error"
+    assert failed.phase == "tool"
+    assert isinstance(journal.records[-1], EpisodeFinished)
+    assert "halt" in robot.endpoints
+
+
+def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
+    """A successful Tool followed by broken perception still closes cleanly."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-perception-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+    robot = RecordingCommands()
+
+    class PerceptionFails:
+        def snapshot(self):
+            raise RuntimeError("camera pipeline failed")
+
+    outcome = run_episode(
+        "visual",
+        model=ScriptedModel(clock, ("move_head", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=robot,
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=PerceptionFails(),
+    )
+
+    failures = [record for record in journal.records if isinstance(record, ExecutionFailed)]
+    endings = [record for record in journal.records if isinstance(record, EpisodeFinished)]
+    assert outcome == EpisodeOutcome(outcome="error", turns=1, steps=0)
+    assert [(record.phase, record.error_type, record.message) for record in failures] == [
+        ("perception", "RuntimeError", "camera pipeline failed")
+    ]
+    assert len(endings) == 1
+    assert journal.records[-1] is endings[0]
+    assert "head" in robot.endpoints
+    assert "halt" in robot.endpoints
+
+
+def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal():
+    """Failure diagnostics live on the same side of the layering boundary."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-secret-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+
+    class LeakyFailure:
+        def decide(self, working_context, tools):
+            raise RuntimeError("driveDuration was rejected by the transport")
+
+    outcome = run_episode(
+        "speech",
+        model=LeakyFailure(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    failed = next(record for record in journal.records if isinstance(record, ExecutionFailed))
+    assert outcome.outcome == "error"
+    assert failed.error_type == "RuntimeError"
+    assert failed.message == "details withheld by the control-layer boundary"
+    assert "driveDuration" not in journal.to_jsonl()
+
+
+def test_a_failed_error_halt_cannot_reopen_the_episode():
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-halt-error", clock=clock, wall_clock=lambda: WALL_CLOCK
+    )
+
+    class RefusesToHalt(RecordingCommands):
+        def halt(self, motorMask=None):
+            raise RuntimeError("halt transport failed")
+
+    class ModelFails:
+        def decide(self, working_context, tools):
+            raise RuntimeError("model failed")
+
+    outcome = run_episode(
+        "speech",
+        model=ModelFails(),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RefusesToHalt(),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    assert outcome.outcome == "error"
+    assert isinstance(journal.records[-1], EpisodeFinished)
+    assert sum(isinstance(record, EpisodeFinished) for record in journal.records) == 1
 
 
 def test_the_cap_is_read_from_config_not_written_into_the_loop():
@@ -1176,6 +1428,44 @@ def test_memory_is_derived_after_the_episode_has_already_ended():
 
     assert NotesWhenItRan.calls == 1
     assert seen_at_close["records"][-1] == "episode_finished"
+
+
+def test_post_episode_memory_failure_cannot_hide_the_completed_journal():
+    """Memory derives after the Episode; its failure cannot reopen the run."""
+    clock = FakeClock()
+    journal = Journal(
+        episode_id="ep-memory-close-error",
+        clock=clock,
+        wall_clock=lambda: WALL_CLOCK,
+    )
+
+    class FailsAfterTheEnding:
+        def as_prompt_block(self):
+            return ""
+
+        def remember(self, exchange):
+            pass
+
+        def close_episode(self):
+            raise RuntimeError("fact extractor failed")
+
+    outcome = run_episode(
+        "speech",
+        model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+        memory=FailsAfterTheEnding(),
+    )
+
+    assert outcome.outcome == "done"
+    assert isinstance(journal.records[-1], EpisodeFinished)
 
 
 def test_an_episode_that_speaks_shuts_the_microphone_for_that_long():

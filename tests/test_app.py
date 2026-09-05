@@ -181,11 +181,10 @@ def test_the_default_clock_is_a_real_one():
 # The bumper — the wiring `EmergencyStop` never had
 # ---------------------------------------------------------------------------
 
-def test_the_bumper_is_subscribed_the_way_the_old_script_subscribed_it():
+def test_a_session_arms_the_bumper_as_part_of_construction():
+    """A safety path that needs a second remembered call is not wired."""
     events = Events()
-    session = a_session(events=events)
-
-    session.watch_the_bumper()
+    a_session(events=events)
 
     (event_type, kwargs), = events.subscriptions
     assert event_type == "BumpSensor"
@@ -194,6 +193,15 @@ def test_the_bumper_is_subscribed_the_way_the_old_script_subscribed_it():
     assert kwargs["condition"] == [
         {"Property": "isContacted", "Inequality": "=", "Value": True}
     ]
+
+
+def test_arming_the_bumper_again_does_not_open_a_second_subscription():
+    events = Events()
+    session = a_session(events=events)
+
+    session.watch_the_bumper()
+
+    assert len(events.subscriptions) == 1
 
 
 def test_pressing_the_bumper_during_an_episode_aborts_it():

@@ -36,12 +36,12 @@ what this skill would normally propose. Issues stay local for two reasons
 recorded in `PLAN.md`:
 
 - **§1** makes "local changes only, do not touch GitHub" a non-negotiable
-  premise; `origin/main` stays untouched until M11.
-- **§7 M11** replaces this repository with a fresh one imported with clean
+  premise; `origin/main` stays untouched until M10.
+- **§7 M10** replaces this repository with a fresh one imported with clean
   history. Issues filed against the current remote would be orphaned by that
   move.
 
-Revisit at M11. Switching means re-running `/setup-matt-pocock-skills` and
+Revisit at M10. Switching means re-running `/setup-matt-pocock-skills` and
 choosing GitHub — which also needs the `gh` CLI installed and authenticated
 (it is not, as of this writing).
 

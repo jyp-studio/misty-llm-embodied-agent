@@ -289,13 +289,17 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 | **M5** | 重寫感知→控制管線 | latest-value 距離管線 + fresh post-move readings + bounded public `approach()` + 條件式安全與 M5 證據，見 §13 ✅ |
 | **M6** | 測試套件收斂 | 覆蓋盤點 + 刪除 `test_sim.py` + 距離相依噪音 Sweep，見 §14 |
 | **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗）**＋ §14.6 的重建清單** |
-| **M8** | 部署 | Docker multi-stage + CI workflows |
+| **M8** | 可執行性與 demo | `main()` + 系統提示 + Journal 落地 + 本機 demo 介面。**不再是「部署」**，理由見 §16 |
 | **M9** | 文件 | README 與架構圖重寫 |
 | **M10** | 收尾 | 開新 repo，乾淨歷史匯入 |
 
+**表上沒有研究方向，那是刻意的。** 使用者想做的「社交機器人如何判斷何時、是否、以及如何主動
+發起互動」不在這張表上 —— 因為這張表是**工程**的順序，而那是一個研究問題，它需要的是文獻、
+假設與實驗設計，不是一個里程碑編號。等它有了形狀再決定要不要進表（2026-09-06 決定）。
+
 ---
 
-## 8. 必須誠實標註的未驗證邊界（寫進 README）
+## 8. 無法驗證的邊界（本專案沒有硬體）
 
 - 驅動層 HTTP / WebSocket 請求格式 —— 只有契約測試，**無實機驗證**
 - `CM_PER_SEC_AT_PERCENT`（實際驅動速度）
@@ -308,7 +312,17 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 - `drive_time` 執行中再下指令的實際行為
 - **`approach_user()` 與 public `approach()` 都從未在真機執行過**（公開 demo 的 planner 輸出是 `movement: "stay"`）
 
-處理原則：不試圖「測」這些，而是 ①隔離成明確標註的校正參數，②用參數掃描證明控制律對其誤差的魯棒範圍，③在 README 誠實區分**已模擬驗證** vs **未實機驗證**。
+**這一節的語氣在 2026-09-06 改過，因為它原本說錯了一件事。**
+
+原標題是「必須誠實標註的**未**驗證邊界」，語氣是「還沒量」—— 暗示總有一天會量。事實不是這樣：
+**這個專案沒有 Misty II，而且不會有。** 上面每一條都不是「還沒驗證」，是「本專案永遠不會驗證」。
+
+那兩句話對讀者的意思完全不同，而後者是更強也更誠實的主張。「還沒量」讀起來像一個半成品；
+「沒有硬體，所以以下每一條都只是文件說的、不是機器做的」則把範圍講清楚了 —— 這是一個在模擬上
+做到極致的系統，它主張的每一件事都停在它能證明的地方。
+
+處理原則不變：①隔離成明確標註的校正參數，②用參數掃描證明控制律對其誤差的魯棒範圍，
+③在 README 誠實區分**已模擬驗證** vs **從未在硬體上執行**。
 
 ---
 
@@ -1562,3 +1576,94 @@ Episode 收尾之後、`_running` 被清掉之前踩保險桿 → `ValueError` �
 **順帶補強一條原本測不到東西的測試。** `test_pressing_the_bumper_between_episodes_still_halts_the_robot`
 在一個從沒跑過 Episode 的 session 上按 —— 也就是它測的是「之前」不是「之間」，一個永遠不清
 `_running` 的實作照樣會過。和 §15.25 那條 race 測試是同一個形狀，這是第三次了。
+
+---
+
+## 16. M8 的定案（grill，2026-09-06）
+
+M7 收尾之後的 `/grill-with-docs`。壓的是一個看似只有一句話的問題 ——「接下來是不是繼續做
+M8？」—— 結果是 **M8 整個換掉**。
+
+### 16.1 M8 不再是「部署」
+
+§7 原本寫「M8 部署：Docker multi-stage + CI workflows」。那是 M0 訂的，當時這個專案的目標是
+「把課堂專案整理乾淨」。
+
+**推翻它的是一個事實：這個專案沒有硬體，而且不會有。** 部署到哪裡？這個 repo 沒有 server、
+沒有 web 服務、沒有長駐程序 —— 它是一個要跑在機器人旁邊那台電腦上的程式。沒有機器人，Docker
+容器裡跑的就是一個永遠收不到真實影像的 agent。**那是為一個不存在的目標做工程。**
+
+CI 同理：它能 gate 的就是那一千條離線測試，而那些測試在本機跑一次 25 秒。把它搬進 GitHub
+Actions 不會讓任何一條斷言變強。
+
+**M8 改成「可執行性與 demo」**：`main()`、系統提示、Journal 落地、本機 demo 介面。
+spec 在 `.scratch/m8-runnable-and-demo/spec.md`。
+
+### 16.2 §12.2 那個「翻轉點」的量測不做
+
+§12.2 說感知管線沒有背壓，consumer 只要比 producer 慢就會無限積壓，而它現在沒出事純粹因為
+這台機器夠快 —— 原本打算靠 M8 的 x86 容器去證實。
+
+沒有容器了，而那句話仍然可以量（量出 consumer/producer 的成本比、指出翻轉點在哪，不需要真的
+跨過去）。**但決定不做**：它是這個專案少數「有數字的真缺陷」，可是它不會變成研究成果，不該
+卡在前面。§12.2 的敘述維持原樣，它本來就已經是正確的說法。
+
+### 16.3 M7 留下三個「造好卻沒接線」的東西
+
+這是 M8 存在的實質理由，而不是「順便加個介面」：
+
+| 東西 | 狀態 |
+|---|---|
+| 系統提示 | **不存在**。`HANDOFF` 訂的條件是「prompt 與 memory 搬出後才刪」舊腳本 —— memory 在 #09 搬了，**prompt 沒有**，而檔案在 #12 刪了 |
+| `JsonlFile` | 造好、測過、**零個生產呼叫端**。Journal 是 M7 一路稱為交付物的東西，卻從來沒被寫到磁碟過 |
+| `load_api_key` | #12 特地搬進來以免 README 說謊，然後**沒有接線** —— 所以 README 與 `.env.example` 承諾的 `OAI_CONFIG_LIST.json` 那條路實際上不通 |
+
+這三個加上 `EmergencyStop` 與 `ToolContext.ears`（#12 才接上）是同一個形狀，已經在 §15.34
+記過一次：**一個造好、測到 mutation 全紅、卻沒有呼叫端的東西，會通過專案裡其他每一條測試。**
+
+### 16.4 Demo 的形狀：零相依、本機、頁面重播
+
+- **零新相依。** 標準庫的 `http.server` 綁 localhost，`webbrowser` 自動開啟，手寫 HTML/CSS/JS。
+  曾考慮 gradio + HF Spaces（公開網址對申請材料有價值），**否決**：它會拉進二十幾個套件，而
+  `requirements.txt` 是一份有論述的文件 —— 每個被移除的套件都寫了理由。為一個 demo 頁面往回加
+  相依會讓那份論述變弱。
+- **頁面重播完整的 Journal，不做串流。** 視覺結果相同（Episode 本來只有幾秒），但它讓**內建
+  範例與真實執行走完全相同的路徑**，省掉一整組串流機制與它的 seam。
+- **Python 產畫面資料，JS 只負責畫。** 這條的理由是付過學費的：`TerminalRenderer` 對 `speak`
+  印出 `-> , 52cm away`（逗號前是空的，因為只有 `approach` 的結果帶 `result` 鍵）。那個 bug
+  不是沒被測到，是**測試蓋不到那一層**。把「顯示什麼」放進 Python，它就落在 pytest 範圍內。
+- **內建範例用 `tests/goldens/` 那四份**，並在畫面上標明它們是**規格、寫在實作之前**。
+  刻意不用「我寫一段劇本冒充跑過的紀錄」—— 那是 §15.17、§15.21 那類問題的同一個形狀，而且
+  會放在最顯眼的地方。
+
+### 16.5 Journal 預設不落地
+
+Journal 裡有人講的話（`tool_called` 帶 `speak` 的文字、Snapshot 帶 `new_speech`）。預設把對話
+寫進磁碟是一個應該由使用者主動開啟的行為。
+
+**而且這個專案至今沒有任何一節談過資料保存** —— 悄悄開啟會是第一個沒有紀錄的決定。
+
+### 16.6 交給 M9 的 README 清單
+
+M9 是「README 與架構圖重寫」。它比表面上大得多：**README 目前大部分在描述 M1 就被移除的系統。**
+盤點如下。**用可 grep 的片語定位，不用行號** —— 我第一版寫了行號，然後在同一張票裡刪掉一行，
+表格當場就過期了；M9 執行時會再偏更多。
+
+| 章節 | 可 grep 的錨點 | 現況描述了什麼 | 事實 |
+|---|---|---|---|
+| 開頭一段 | `falling back to [AutoMisty]` | AutoMisty 是 complex task 的 fallback | **M1 就整個移除了**（§2–§3） |
+| Demo | `"complex_task": null` | planner 輸出的 JSON 形狀 | M7 改成 function calling，那個形狀不存在了 |
+| Highlights | `approach / stay / back_up` | planner 的高階意圖；`approach_user()` | `back_up` 在 §15.2 被砍；後端是 public `approach()` |
+| Highlights | `extracted each turn` | 三層記憶，事實每輪抽取 | §15.26：改成 Episode 邊界做一次，而且折疊不刪除 |
+| Highlights | `route to the AutoMisty *slow path*` | fast path / slow path 雙軌 | 沒有 slow path 了 |
+| Architecture | `The system is a finite-state loop` | `IDLE -> PERCEIVE -> THINK -> ACT` | M7 是 ReAct 迴圈，不是 FSM |
+| Architecture | `strict JSON (` | planner 輸出被 whitelist 消毒 | function calling，結構由模型端保證 |
+| Architecture | ` ```mermaid ` | 架構圖 | 畫的是上面那整套 |
+| Roadmap | `Skill caching` | 重用 AutoMisty 產生的腳本 | AutoMisty 不在了 |
+
+**其中一行在本票中直接刪除**（`exist both at the root`，說 `CUBS_Misty.py` /
+`RobotCommands.py` 同時存在於根目錄與 `code/mistyPy/`），其餘留給 M9。
+
+理由是那一行與正上方那句（M7 #12 寫的「這些檔案在 M1 移出版控」）**直接互相矛盾**，而那個
+矛盾是 #12 改 README 時自己造成的 —— 留著不是「等 M9 重寫」，是留一句自己打自己的話。其餘
+每一項都是 M1–M7 累積下來的、需要重寫整段才能修的，那才是 M9 的工作。

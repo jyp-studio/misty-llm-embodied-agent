@@ -167,8 +167,6 @@ Every one of those gates is proven able to fail in `tests/test_episode_invariant
 
 The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py`, `Mistydemo/`) was removed from version control at M1 and lives in `legacy/`, which is gitignored. `PLAN.md` §2–§3 records what was excised and why.
 
-Note: `CUBS_Misty.py` / `RobotCommands.py` exist both at the root (imported by the main program) and inside `code/mistyPy/` (imported by AutoMisty-generated scripts, which execute in that working directory). If you modify the driver, update both copies.
-
 ---
 
 ## Roadmap

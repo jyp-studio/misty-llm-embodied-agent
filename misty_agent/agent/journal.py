@@ -646,50 +646,132 @@ class TerminalRenderer:
         self._write = write
 
     def receive(self, record: Record) -> None:
-        self._write(f"{record.t:7.2f}s  {_describe(record)}")
+        self._write(f"{record.t:7.2f}s  {describe_line(record)}")
 
 
-def _describe(record: Record) -> str:
-    """One record in a sentence."""
+#: What kind of moment a record is. Not a colour and not an indent — those are
+#: each medium's to choose from this. `refused` and `failed` are deliberately
+#: separate: a refusal is the system working (an argument was out of range and
+#: nothing reached the robot), a failure is the system not working.
+TONES = ("boundary", "action", "result", "refused", "failed")
+
+
+@dataclass(frozen=True)
+class Described:
+    """What one record says, with no decision about how it looks.
+
+    Two media read the Journal — the terminal, and (from M8) a page in a
+    browser — and both have to answer the same question first: *what does this
+    record say?* Answering it twice is how they drift, and this project has
+    already paid for that: `TerminalRenderer` printed `-> , 52cm away` for
+    every Tool except `approach`, because only `approach`'s result carries a
+    `result` key. Nothing went red, because the tests assert on the Journal
+    and not on what is shown.
+
+    **What this is not.** It is a *sentence*, not a field dump — `headline` and
+    `detail` are prose, and `speak(text='hi')` is one phrase rather than a
+    structure a page could lay out as rows. A page that wants the fields reads
+    them off the record, which still has them. Giving this a `facts` mapping
+    with no caller today would be the Speculative Generality `PLAN.md` §15.23
+    deleted `instructions=` for; ticket 07 adds one when it has a use for it.
+    Recorded because the ticket claimed more than that — see its Comments.
+    """
+
+    headline: str
+    detail: str = ""
+    tone: str = "action"
+
+    def __post_init__(self) -> None:
+        if self.tone not in TONES:
+            raise ValueError(f"{self.tone!r} is not one of {TONES}")
+
+
+def describe(record: Record) -> Described:
+    """What one record says. Pure, and exhaustive over the record kinds."""
     if isinstance(record, EpisodeStarted):
-        return f"episode began, woken by {record.trigger}"
+        return Described(
+            "episode began", f"woken by {record.trigger}", tone="boundary"
+        )
     if isinstance(record, TurnStarted):
-        return f"turn {record.turn}"
+        return Described(f"turn {record.turn}", tone="boundary")
     if isinstance(record, ModelCalled):
-        return (
-            f"  thought for {record.latency_ms}ms "
-            f"({record.tokens_in}+{record.tokens_out} tokens)"
+        return Described(
+            f"thought for {record.latency_ms}ms",
+            f"{record.tokens_in}+{record.tokens_out} tokens",
         )
     if isinstance(record, ToolCalled):
         arguments = ", ".join(f"{k}={v!r}" for k, v in sorted(record.args.items()))
-        return f"  {record.tool}({arguments})"
+        return Described(f"{record.tool}({arguments})")
     if isinstance(record, ToolRejected):
-        return f"  {record.tool} refused: {record.reason}"
+        return Described(f"{record.tool} refused", record.reason, tone="refused")
     if isinstance(record, Observation):
-        if not record.snapshot.face_present:
-            seen = "nobody in view"
-        elif record.snapshot.distance_cm is None:
-            seen = "someone there, distance unknown"
-        else:
-            seen = f"{record.snapshot.distance_cm}cm away"
-        outcome = record.result.get("result", "")
-        return f"  -> {outcome}, {seen}"
+        return Described(
+            _came_back(record.result), _in_view(record.snapshot), tone="result"
+        )
     if isinstance(record, StopRequested):
-        return f"stop requested by {record.source}"
+        return Described(f"stop requested by {record.source}", tone="boundary")
     if isinstance(record, ExecutionFailed):
-        return (
-            f"  ! {record.phase} failed ({record.error_type}): "
-            f"{record.message}"
+        return Described(
+            f"{record.phase} failed ({record.error_type})",
+            record.message,
+            tone="failed",
         )
     if isinstance(record, EpisodeFinished):
-        return (
-            f"episode {record.outcome} after {record.turns} turn(s), "
-            f"{record.steps} step(s)"
+        return Described(
+            f"episode {record.outcome} after {record.turns} turn(s)",
+            f"{record.steps} step(s)",
+            tone="boundary",
         )
     if isinstance(record, SubscriberFailed):
-        return f"  ! {record.subscriber} failed on {record.failed_on}: {record.error}"
+        return Described(
+            f"{record.subscriber} failed on {record.failed_on}",
+            record.error,
+            tone="failed",
+        )
     # Deliberately loud rather than silent. `from_jsonl` refuses a kind it does
     # not know because a dropped line makes a truncated Journal look complete;
-    # a renderer that quietly skipped one would be the same lie in a different
-    # medium.
-    return f"?? unrendered {record.type}"
+    # a description that quietly skipped one would be the same lie in a
+    # different medium — so it reads as a failure, because it is one.
+    return Described(f"unrendered record ({record.type})", tone="failed")
+
+
+def _came_back(result: Mapping[str, Any]) -> str:
+    """The Tool's own word for what happened, or the nearest honest thing.
+
+    Only `approach` reports a named outcome; every other Tool answers `ok`.
+    Reading the missing key as an empty string is what produced `-> , 52cm
+    away` — a sentence with a hole where its subject should be. Every branch
+    here returns something, and every branch has a test, because the first
+    version guarded only the `ok: True` path and an empty fallback survived.
+    """
+    named = result.get("result")
+    if named is not None:
+        return str(named)
+    return "ok" if result.get("ok") is True else "returned"
+
+
+def _in_view(snapshot: Snapshot) -> str:
+    if not snapshot.face_present:
+        return "nobody in view"
+    if snapshot.distance_cm is None:
+        return "someone there, distance unknown"
+    return f"{snapshot.distance_cm}cm away"
+
+
+def describe_line(record: Record) -> str:
+    """One record as a line. Punctuation and indentation, nothing else.
+
+    Every choice below is keyed off `tone`, so "how it looks" is derived from
+    "what kind of moment it is" rather than from the record's class a second
+    time.
+    """
+    said = describe(record)
+    indent = "" if said.tone == "boundary" else "  "
+    marker = {"result": "-> ", "failed": "! "}.get(said.tone, "")
+    if not said.detail:
+        return f"{indent}{marker}{said.headline}"
+    # A refusal or a failure reads as a label and its explanation; everything
+    # else reads as one phrase with a qualifier.
+    separator = ": " if said.tone in ("refused", "failed") else ", "
+    return f"{indent}{marker}{said.headline}{separator}{said.detail}"
+

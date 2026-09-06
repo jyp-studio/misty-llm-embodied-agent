@@ -484,7 +484,7 @@ def test_the_state_reads_as_itself_in_the_rendered_journal(
     `PLAN.md` §4 makes that renderer a first-class Journal subscriber, so
     this is a reader of the Journal being lied to, not a cosmetic difference.
     """
-    from misty_agent.agent.journal import _describe
+    from misty_agent.agent.journal import describe_line
 
     outcome = scenario(registry)
     record = Observation(
@@ -495,7 +495,7 @@ def test_the_state_reads_as_itself_in_the_rendered_journal(
         snapshot=Snapshot(distance_cm=60, face_present=True, new_speech=None),
     )
 
-    line = _describe(record)
+    line = describe_line(record)
     assert expected in line
     assert "ApproachStatus" not in line
 

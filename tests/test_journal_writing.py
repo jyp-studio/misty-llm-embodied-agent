@@ -20,19 +20,25 @@ import time
 import pytest
 
 from misty_agent.agent.journal import (
-    ExecutionFailed,
+    TONES,
+    Described,
     EpisodeFinished,
     EpisodeStarted,
+    ExecutionFailed,
     Journal,
     JsonlFile,
     ModelCalled,
     Observation,
+    Record,
     Snapshot,
     StopRequested,
-    ToolRejected,
+    SubscriberFailed,
     TerminalRenderer,
     ToolCalled,
+    ToolRejected,
     TurnStarted,
+    describe,
+    describe_line,
     from_jsonl,
 )
 
@@ -642,7 +648,7 @@ def test_the_renderer_is_loud_about_a_kind_it_does_not_know():
     """
     from misty_agent.agent import journal as module
 
-    line = module._describe(
+    line = module.describe_line(
         module.Record(t=0.0, episode_id="ep-1", type="telepathy")
     )
 
@@ -675,3 +681,344 @@ def test_the_file_is_written_as_utf8_whatever_the_platform_prefers(tmp_path):
     journal.record(ToolCalled, turn=1, tool="speak", args={"text": "你好"})
 
     assert "你好" in path.read_bytes().decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# What a record says, apart from how it looks
+# ---------------------------------------------------------------------------
+#
+# Two media read the Journal now: the terminal, and (from M8) a page. Both have
+# to answer "what does this record say?" first, and answering it twice is how
+# they drift. `describe()` answers it once; `describe_line()` only adds
+# punctuation.
+
+#: One of every record kind. Written out rather than generated, because the
+#: point is to notice a *new* kind — and a generator would invent one for
+#: whatever was added without anybody looking at it.
+SAMPLES = {
+    "episode_started": EpisodeStarted(
+        t=0.0, episode_id="ep-1", trigger="speech",
+        started_at_wall_clock="2026-09-06T10:00:00+08:00",
+    ),
+    "turn_started": TurnStarted(t=0.1, episode_id="ep-1", turn=3),
+    "model_called": ModelCalled(
+        t=0.2, episode_id="ep-1", turn=3,
+        latency_ms=1840, tokens_in=812, tokens_out=11,
+    ),
+    "tool_called": ToolCalled(
+        t=0.3, episode_id="ep-1", turn=3, tool="speak",
+        args={"text": "hello"},
+    ),
+    "tool_rejected": ToolRejected(
+        t=0.4, episode_id="ep-1", turn=3, tool="move_head",
+        reason="pitch 140 is outside the permitted range",
+    ),
+    "observation": Observation(
+        t=0.5, episode_id="ep-1", turn=3, result={"ok": True},
+        snapshot=Snapshot(distance_cm=142, face_present=True, new_speech=None),
+    ),
+    "stop_requested": StopRequested(
+        t=0.6, episode_id="ep-1", source="foot_bumper"
+    ),
+    "execution_failed": ExecutionFailed(
+        t=0.7, episode_id="ep-1", phase="perception",
+        error_type="RuntimeError", message="camera pipeline failed",
+    ),
+    "episode_finished": EpisodeFinished(
+        t=0.8, episode_id="ep-1", outcome="done", turns=3, steps=1
+    ),
+    "subscriber_failed": SubscriberFailed(
+        t=0.9, episode_id="ep-1", subscriber="JsonlFile",
+        failed_on="observation", error="disk full",
+    ),
+}
+
+
+def test_every_record_kind_has_a_sample_here():
+    """The guard that makes the rest of this section mean anything.
+
+    Add a record kind without adding it below and every test here still
+    passes — while the new kind renders as `?? unrendered`, in both media.
+    """
+    from misty_agent.agent.journal import RECORD_TYPES
+
+    assert set(SAMPLES) == set(RECORD_TYPES), (
+        f"no sample for: {sorted(set(RECORD_TYPES) - set(SAMPLES))}"
+    )
+
+
+@pytest.mark.parametrize("kind", sorted(SAMPLES))
+def test_every_record_kind_is_described(kind):
+    said = describe(SAMPLES[kind])
+
+    assert said.headline
+    assert "unrendered" not in said.headline, f"{kind} has no description"
+
+
+def test_an_unknown_kind_is_loud_rather_than_silent():
+    """The negative control for the test above: a `describe` that returned a
+    plausible sentence for anything would satisfy it."""
+    said = describe(Record(t=0.0, episode_id="ep-1", type="telepathy"))
+
+    assert "unrendered" in said.headline
+    assert "telepathy" in said.headline
+
+
+def test_the_kinds_do_not_all_say_the_same_thing():
+    """A `describe` that answered "something happened" for every record would
+    pass every other test in this section."""
+    headlines = {describe(record).headline for record in SAMPLES.values()}
+
+    assert len(headlines) == len(SAMPLES), f"kinds share a headline: {headlines}"
+
+
+#: Exactly what each kind reads as. Written out, because a wording change
+#: should be a deliberate act rather than something that happens.
+#:
+#: The loose version of this test — "no leading space, no leading `!`" —
+#: let fifteen mutations through: swapped headline and detail, a dropped
+#: trigger, a `turn` with no number, `speak()` with the spoken text gone,
+#: swapped token counts, and every possible nesting mistake. A table of
+#: expected lines catches all of them at once, and it is how the golden
+#: Journals already work.
+LINES = {
+    "episode_started": "episode began, woken by speech",
+    "turn_started": "turn 3",
+    "model_called": "  thought for 1840ms, 812+11 tokens",
+    "tool_called": "  speak(text='hello')",
+    "tool_rejected": "  move_head refused: pitch 140 is outside the permitted range",
+    "observation": "  -> ok, 142cm away",
+    "stop_requested": "stop requested by foot_bumper",
+    "execution_failed": "  ! perception failed (RuntimeError): camera pipeline failed",
+    "episode_finished": "episode done after 3 turn(s), 1 step(s)",
+    "subscriber_failed": "  ! JsonlFile failed on observation: disk full",
+}
+
+
+def test_every_kind_has_an_expected_line():
+    assert set(LINES) == set(SAMPLES)
+
+
+@pytest.mark.parametrize("kind", sorted(LINES))
+def test_a_record_reads_exactly_this_way(kind):
+    assert describe_line(SAMPLES[kind]) == LINES[kind]
+
+
+def test_describing_a_record_does_not_format_it():
+    """The structure is a sentence; the indentation, the markers and the
+    punctuation joining its halves belong to whoever is showing it."""
+    for kind, record in sorted(SAMPLES.items()):
+        said = describe(record)
+        assert said.headline == said.headline.strip(), kind
+        assert not said.headline.startswith(("!", "->", "?")), kind
+        assert not said.headline.endswith((":", ",")), kind
+        assert said.detail == said.detail.strip(), kind
+
+
+def test_tool_arguments_read_in_a_fixed_order():
+    """Two Journals of the same Episode must read the same way.
+
+    Argument order in a mapping is insertion order, which is whatever the
+    model happened to emit. The single-argument sample above cannot see this:
+    sorting one item is sorting nothing.
+    """
+    said = describe(
+        ToolCalled(
+            t=1.0, episode_id="ep-1", turn=1, tool="change_led",
+            args={"red": 255, "blue": 0, "green": 128},
+        )
+    )
+
+    assert said.headline == "change_led(blue=0, green=128, red=255)"
+
+
+def test_the_same_arguments_read_the_same_way_however_they_arrived():
+    """The negative control: the test above passes on an unsorted
+    implementation whenever the model happens to emit them alphabetically."""
+    forwards = describe(
+        ToolCalled(
+            t=1.0, episode_id="ep-1", turn=1, tool="change_led",
+            args={"blue": 0, "green": 128, "red": 255},
+        )
+    )
+    backwards = describe(
+        ToolCalled(
+            t=1.0, episode_id="ep-1", turn=1, tool="change_led",
+            args={"red": 255, "green": 128, "blue": 0},
+        )
+    )
+
+    assert forwards == backwards
+
+
+def test_a_record_with_nothing_to_qualify_ends_cleanly():
+    """`turn 3`, not `turn 3, `.
+
+    Deleting the empty-detail branch left a trailing separator on every record
+    that has no detail — the same shape as the hole this ticket exists to fix,
+    at the other end of the line.
+    """
+    for kind, record in sorted(SAMPLES.items()):
+        if describe(record).detail:
+            continue
+        line = describe_line(record)
+        assert not line.endswith((", ", ": ", ",", ":")), (kind, line)
+
+
+@pytest.mark.parametrize("tone", TONES)
+def test_every_tone_is_used_by_some_record(tone):
+    """A tone nothing produces is a distinction nobody is making."""
+    produced = {describe(record).tone for record in SAMPLES.values()}
+    produced.add(describe(Record(t=0.0, episode_id="ep-1", type="telepathy")).tone)
+
+    assert tone in produced
+
+
+def test_a_tone_that_is_not_a_tone_is_refused():
+    """The values are a closed set, like `OUTCOMES`. An int for nesting depth
+    invited a `depth=2` that nothing noticed."""
+    with pytest.raises(ValueError, match="not one of"):
+        Described("something", tone="interesting")
+
+
+def test_a_refusal_is_not_a_failure():
+    """A refusal is the system working — an argument was out of range and
+    nothing reached the robot. A failure is the system not working. A page
+    should be able to tell them apart without re-deriving the record's class.
+    """
+    assert describe(SAMPLES["tool_rejected"]).tone == "refused"
+    assert describe(SAMPLES["execution_failed"]).tone == "failed"
+
+
+# ---------------------------------------------------------------------------
+# The hole in the sentence
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "tool,result",
+    [
+        ("speak", {"ok": True, "estimated_speech_ms": 1409}),
+        ("change_led", {"ok": True}),
+        ("move_head", {"ok": True}),
+        ("look_around", {"ok": True, "found_at_yaw": -60.0}),
+    ],
+)
+def test_a_tool_with_no_named_outcome_still_reads_as_a_sentence(tool, result):
+    """The defect this whole section exists for.
+
+    Only `approach` reports a named outcome. Reading the missing key as an
+    empty string printed `-> , 52cm away` — a sentence with a hole where its
+    subject should be. Nothing went red, because the tests assert on the
+    Journal and not on what is shown.
+    """
+    line = describe_line(
+        Observation(
+            t=1.0, episode_id="ep-1", turn=1, result=result,
+            snapshot=Snapshot(distance_cm=52, face_present=True, new_speech=None),
+        )
+    )
+
+    assert ", 52cm away" in line
+    assert ",  " not in line
+    assert not line.strip().startswith(","), line
+    assert "ok" in line
+
+
+@pytest.mark.parametrize("outcome", ["arrived", "lost_user", "timeout", "drive_error"])
+def test_approach_still_reads_its_own_four_states(outcome):
+    """The negative control: answering "ok" for everything would fix the hole
+    and lose the one Tool that has something to say."""
+    line = describe_line(
+        Observation(
+            t=1.0, episode_id="ep-1", turn=1,
+            result={"result": outcome, "steps": 1},
+            snapshot=Snapshot(distance_cm=97, face_present=True, new_speech=None),
+        )
+    )
+
+    assert outcome in line
+    assert "97cm away" in line
+
+
+@pytest.mark.parametrize(
+    "result,expected",
+    [
+        ({"result": "arrived", "steps": 1}, "arrived"),
+        ({"ok": True}, "ok"),
+        ({"ok": True, "estimated_speech_ms": 1409}, "ok"),
+        ({"ok": False}, "returned"),
+        ({}, "returned"),
+        ({"steps": 0}, "returned"),
+    ],
+)
+def test_every_shape_of_result_still_says_something(result, expected):
+    """The headline defect, guarded on every path rather than one.
+
+    The first version tested only `ok: True`, so replacing the fallback with
+    an empty string survived — and rendered `  -> , 52cm away`, byte for byte
+    the bug this ticket exists to fix. `ok: False` and a result with neither
+    key are the paths that were open.
+    """
+    said = describe(
+        Observation(
+            t=1.0, episode_id="ep-1", turn=1, result=result,
+            snapshot=Snapshot(distance_cm=52, face_present=True, new_speech=None),
+        )
+    )
+
+    assert said.headline == expected
+
+
+def test_no_result_ever_leaves_a_hole_in_the_sentence():
+    """Whatever comes back, the line has a subject."""
+    for result in ({"ok": True}, {"ok": False}, {}, {"steps": 3}, {"result": "x"}):
+        line = describe_line(
+            Observation(
+                t=1.0, episode_id="ep-1", turn=1, result=result,
+                snapshot=Snapshot(
+                    distance_cm=52, face_present=True, new_speech=None
+                ),
+            )
+        )
+        assert ", 52cm away" in line
+        assert "-> ," not in line, line
+        assert not line.replace("->", "").strip().startswith(","), line
+
+
+@pytest.mark.parametrize(
+    "snapshot,expected",
+    [
+        (Snapshot(distance_cm=142, face_present=True, new_speech=None), "142cm away"),
+        (Snapshot(distance_cm=None, face_present=True, new_speech=None),
+         "someone there, distance unknown"),
+        (Snapshot(distance_cm=None, face_present=False, new_speech=None),
+         "nobody in view"),
+    ],
+)
+def test_what_was_in_view_is_said_three_different_ways(snapshot, expected):
+    """Three states, three sentences.
+
+    "Nobody there" and "there but I cannot measure them" are different facts
+    and the model is told them differently — so a reader should be told them
+    differently too. Nothing covered the absent case, so a description that
+    never said "nobody in view" passed.
+    """
+    said = describe(
+        Observation(
+            t=1.0, episode_id="ep-1", turn=1, result={"ok": True},
+            snapshot=snapshot,
+        )
+    )
+
+    assert said.detail == expected
+
+
+def test_an_ordinary_record_is_not_marked_as_a_failure():
+    """The negative control for the marker: prefixing every line with `!`
+    would satisfy the failure test and make the whole Journal look broken."""
+    for kind, record in sorted(SAMPLES.items()):
+        line = describe_line(record)
+        if kind in ("execution_failed", "subscriber_failed"):
+            assert "! " in line, kind
+        else:
+            assert "!" not in line, kind

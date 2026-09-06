@@ -1667,3 +1667,53 @@ M9 是「README 與架構圖重寫」。它比表面上大得多：**README 目�
 理由是那一行與正上方那句（M7 #12 寫的「這些檔案在 M1 移出版控」）**直接互相矛盾**，而那個
 矛盾是 #12 改 README 時自己造成的 —— 留著不是「等 M9 重寫」，是留一句自己打自己的話。其餘
 每一項都是 M1–M7 累積下來的、需要重寫整段才能修的，那才是 M9 的工作。
+
+### 16.7 「一筆紀錄怎麼讀」抽出來了，但它比票面宣稱的小（M8 #02）
+
+`describe(record) -> Described(headline, detail, tone)` 是內容，`describe_line()` 只加標點與
+縮排。`TONES`（`boundary` / `action` / `result` / `refused` / `failed`）是一個封閉集合，
+像 `OUTCOMES` 一樣在建構時驗證。
+
+**票面的第一條驗收「不含任何排版」我沒有做到，而且不打算做到。** Spec 軸的盤點是對的：
+`speak(text='hi')` 的括號與引號、`812+11 tokens` 的加號、`2 turn(s)` 的複數形，每一個都是
+顯示選擇。要真的做到，`Described` 得改成攜帶結構化的欄位對映 —— 而那會有兩個後果：
+
+1. 終端機會變成 field dump，而 `test_the_terminal_renderer_is_not_a_field_dump` 存在的理由
+   正是「兩個訂閱者回答不同的問題」。
+2. 那份欄位對映**今天沒有任何呼叫端** —— 它是為 ticket 07 準備的，而這正是 §15.23 刪掉
+   `instructions=` 的那個形狀。
+
+所以定案：**`Described` 是一個句子，不是一份資料。** 頁面要欄位就直接讀紀錄（紀錄上就有），
+要人話就讀 `describe()`。ticket 07 若需要欄位對映，那時它會有呼叫端與測試。
+
+**代價要說清楚：兩軸都指出這個 prefactor 因此比票面小。** 它買到的是那個 bug 的修正、
+一份窮舉的保證、和每種紀錄只有一個地方決定它怎麼讀 —— 不是 §16.4 描述的那個完整 seam。
+07 仍然要為它需要的結構化欄位自己出力。
+
+**`tone` 取代了原本的 `depth: int`。** Standards 軸指出 0/1 兩值用 int 是 Primitive
+Obsession，而且「invited the surviving `depth=2`」—— 確實有一個 `depth=2` 的 mutation 活著。
+換成封閉集合之後，縮排、標記與分隔符全部由 `tone` 推導，而且 `refused` 與 `failed` 分開：
+**拒絕是系統在正常運作**（參數超範圍、沒有東西送到機器人），**失敗是系統壞了**。
+
+### 16.8 那個逗號 bug 的第二個入口（M8 #02 review）
+
+修完之後我寫了四條測試蓋「沒有具名結果的 Tool」，全部用 `ok: True`。Standards 軸把
+`_came_back` 的 fallback 從 `"returned"` 換成 `""` —— **整套測試照樣綠**，而它渲染出
+`  -> , 52cm away`，與這張票要修的 bug 逐字元相同。
+
+原因是我只守了一條路徑。`ok: False`、`{}`、以及只有 `steps` 的結果全都走 fallback，而我一條
+都沒測。第二個入口是同一個形狀的另一端：把「detail 為空就不加分隔符」那個分支刪掉，會渲染出
+`turn 3, ` —— 也沒有測試會紅。
+
+現在 `_came_back` 的每個分支都有 parametrize 過的測試，而且有一條「不論結果長什麼樣，句子
+都有主詞」的全稱斷言。28 個 mutation 全紅。
+
+**教訓與 §15.28 是同一條**：修好一個 bug 之後，要問的不是「我修好了嗎」，是**「同一個洞還有
+幾個入口」**。
+
+### 16.9 平行 review agent 不能共用 scratchpad（M8 #02，流程）
+
+Standards 軸回報：它的 worktree 建在 session 的 scratchpad 裡，**跑到一半被平行的 Spec 軸
+清掉了**，只好換一個私有路徑重跑。那正是 §14（M6 #06）記過的事，隔了兩個里程碑又發生一次。
+
+往後兩軸的 prompt 要明講 worktree 放在各自的私有路徑，不要放共用的 scratchpad。

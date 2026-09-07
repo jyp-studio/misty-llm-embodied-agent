@@ -42,6 +42,7 @@ from typing import Any, Optional, Tuple
 
 from misty_agent.agent.journal import Journal, Snapshot, TerminalRenderer
 from misty_agent.agent.memory import Memory
+from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
@@ -137,6 +138,12 @@ class Session:
     #: `HEARS_NOTHING` rather than `None`: `speak` mutes unconditionally, and
     #: a session with no microphone is still a session.
     ears: Any = HEARS_NOTHING
+    #: What the model is told it is, before anything else. A field rather
+    #: than `run_episode`'s default, because every other seam that function
+    #: takes — `model`, `memory`, `stop`, the `ToolContext` — is passed from
+    #: here explicitly, and the one that was not is the one two reviews found
+    #: had no caller outside its own tests (`PLAN.md` §16.12).
+    instructions: str = PERSONA
     events: Optional[Any] = None
     config: Settings = settings
     clock: Any = None
@@ -245,6 +252,7 @@ class Session:
                 perception=LivePerception(self.readings, self._microphone()),
                 stop=stop,
                 memory=self.memory,
+                instructions=self.instructions,
             )
         finally:
             self._running = None

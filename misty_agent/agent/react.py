@@ -68,6 +68,7 @@ from misty_agent.agent.journal import (
 )
 from misty_agent.agent.layering import mentions_control_parameter
 from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
+from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.agent.tools import (
     Dispatched,
@@ -130,6 +131,7 @@ def run_episode(
     stop: Stop = NEVER_STOPS,
     said: str = "",
     memory: Remembers = NO_MEMORY,
+    instructions: str = PERSONA,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
 
@@ -141,10 +143,17 @@ def run_episode(
     clock = ctx.clock
     journal.record(EpisodeStarted, trigger=trigger)
 
-    # What the model is shown, and only this. Memory goes in at the top as one
-    # block of prose (`memory.py` builds it); everything after it is this
-    # Episode's own working context and dies with the Episode.
+    # What the model is shown, and only this. The persona and memory go in at
+    # the top as blocks of prose; everything after them is this Episode's own
+    # working context and dies with the Episode.
     working_context: List[Dict[str, Any]] = []
+    # Who it is, then what it knows, then what just happened. On by default:
+    # an Episode whose model has not been told what it is is not a
+    # configuration anybody wants, so it has to be asked for rather than
+    # remembered — `PLAN.md` §15.34 is a list of things that were built and
+    # then never wired up.
+    if instructions:
+        working_context.append({"role": "system", "content": instructions})
     try:
         remembered = memory.as_prompt_block()
     except Exception as error:

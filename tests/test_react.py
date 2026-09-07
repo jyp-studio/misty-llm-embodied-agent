@@ -51,8 +51,9 @@ from misty_agent.agent.journal import (
     from_jsonl,
     to_jsonl,
 )
-from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.memory import Exchange, Memory
+from misty_agent.agent.persona import PERSONA
+from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import NoArguments, ToolContext, ToolRegistry, build_registry
 from misty_agent.config import Settings
@@ -793,18 +794,93 @@ def test_the_model_is_handed_every_tool_it_has(name="", episode=None):
 # anything useful. Five mutations survived the first battery because of it,
 # including `as_text` returning "" and the Snapshot arriving as all-None.
 
-def test_the_trigger_is_the_first_thing_the_model_is_told():
+def test_the_trigger_is_what_the_model_is_told_about_this_episode():
     """Otherwise the first Turn is a decision made about nothing.
 
     Both halves: *what kind* of thing started this, and — when it was speech —
     *what was said*. Ticket 09 added the words; before it the model was told
     only that someone had spoken.
+
+    Found by role rather than by position: M8 #03 put the persona in front of
+    it, and a test that indexed `[0]` would have been "fixed" by renumbering
+    instead of by asking what it meant.
     """
     _, _, model = ends_on_the_first_turn()
     first_context, _ = model.asked[0]
 
-    assert first_context[0]["role"] == "user"
-    assert first_context[0]["content"] == {"trigger": "speech", "said": ""}
+    from_the_world = [e for e in first_context if e["role"] == "user"]
+    assert from_the_world == [
+        {"role": "user", "content": {"trigger": "speech", "said": ""}}
+    ]
+
+
+def test_the_model_is_told_what_it_is_before_anything_else():
+    """Who you are, then what you know, then what just happened.
+
+    Order, not just presence: a persona arriving after the trigger is a
+    correction rather than a frame. `react.py` says why it is on by default.
+    """
+    _, _, model = ends_on_the_first_turn()
+    first_context, _ = model.asked[0]
+
+    assert first_context[0] == {"role": "system", "content": PERSONA}
+
+
+def test_the_instructions_the_caller_gave_are_the_ones_the_model_reads():
+    """The parameter has to carry, not just exist.
+
+    Passing `instructions=""` proves only that an empty one is suppressed — a
+    loop that ignored the parameter and appended the constant would pass that
+    and every other test here. `PLAN.md` §15.23 deleted this parameter once
+    for having no caller; a caller whose value is discarded is the same defect
+    wearing a caller.
+    """
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-own", clock=clock, wall_clock=lambda: WALL_CLOCK)
+    scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
+
+    run_episode(
+        "speech",
+        instructions="You are a lamp. You do not move.",
+        model=scripted,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    first_context, _ = scripted.asked[0]
+    assert first_context[0] == {
+        "role": "system", "content": "You are a lamp. You do not move."
+    }
+
+
+def test_an_episode_can_be_run_without_a_persona_but_must_ask():
+    """The negative control: a persona that went in whatever the caller said
+    would make the test above pass on an implementation that ignored the
+    parameter entirely."""
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-bare", clock=clock, wall_clock=lambda: WALL_CLOCK)
+    scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
+
+    run_episode(
+        "speech",
+        instructions="",
+        model=scripted,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(), readings=ScriptedReadings(),
+            config=Settings(), clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(100)),
+    )
+
+    first_context, _ = scripted.asked[0]
+    assert all(entry["role"] != "system" for entry in first_context)
 
 
 def test_the_model_is_shown_what_it_asked_for_last_turn():
@@ -825,7 +901,8 @@ def test_the_context_grows_by_the_turn_and_keeps_its_order():
 
     lengths = [len(context) for context, _ in model.asked]
     assert lengths == sorted(lengths)
-    assert lengths[0] == 1
+    # The persona and the trigger, before the Episode has done anything.
+    assert lengths[0] == 2
     for earlier, later in zip(model.asked, model.asked[1:]):
         assert later[0][: len(earlier[0])] == earlier[0]
 
@@ -931,7 +1008,7 @@ def test_the_model_cannot_edit_the_loops_working_context():
     )
 
     assert outcome.outcome == "done"
-    assert meddler.seen == 1
+    assert meddler.seen == 2  # the persona and the trigger
 
 
 # ---------------------------------------------------------------------------
@@ -1399,8 +1476,12 @@ def test_the_models_message_list_is_never_stored_as_memory(tmp_path):
     assert "come here" in saved and "Coming over." in saved
 
 
-def test_what_memory_knows_is_the_first_thing_the_model_reads():
-    """A memory nobody is shown is a file, not a memory."""
+def test_what_memory_knows_reaches_the_model_after_the_persona():
+    """A memory nobody is shown is a file, not a memory.
+
+    And it comes *after* the persona: who you are does not depend on what you
+    remember, but what you make of a memory depends on who you are.
+    """
     memory = Memory(summariser=None, extractor=None, window=6)
     memory.remember(Exchange(said="I am Ana", replied="Hello Ana"))
     clock = FakeClock()
@@ -1422,17 +1503,20 @@ def test_what_memory_knows_is_the_first_thing_the_model_reads():
     )
 
     first_context, _ = scripted.asked[0]
-    assert first_context[0]["role"] == "system"
-    assert "I am Ana" in first_context[0]["content"]
+    told = [e["content"] for e in first_context if e["role"] == "system"]
+    assert told[0] == PERSONA
+    assert any("I am Ana" in block for block in told[1:])
 
 
-def test_an_episode_with_no_memory_shows_the_model_no_system_block():
+def test_an_episode_with_no_memory_shows_the_model_only_its_persona():
     """The null object again: the ordinary path should not have to know
-    memory exists."""
+    memory exists — and an empty memory must not become an empty block of
+    prose the model has to read past."""
     _, _, model = ends_on_the_first_turn()
     first_context, _ = model.asked[0]
 
-    assert all(entry["role"] != "system" for entry in first_context)
+    told = [entry["content"] for entry in first_context if entry["role"] == "system"]
+    assert told == [PERSONA]
 
 
 def test_memory_is_derived_after_the_episode_has_already_ended():

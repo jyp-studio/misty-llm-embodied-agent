@@ -1717,3 +1717,58 @@ Standards 軸回報：它的 worktree 建在 session 的 scratchpad 裡，**跑�
 清掉了**，只好換一個私有路徑重跑。那正是 §14（M6 #06）記過的事，隔了兩個里程碑又發生一次。
 
 往後兩軸的 prompt 要明講 worktree 放在各自的私有路徑，不要放共用的 scratchpad。
+
+### 16.10 系統提示的測試在測「有沒有提到」，不是「說了哪一邊」（M8 #03 review）
+
+兩軸都跑完，Standards 的結論最刺：**16 個 mutation，9 個活著**。接線的部分（persona 有沒有
+送出、送在哪個位置）8 個死了 7 個；**內容的部分一個都沒死**，包括把整段提示換成 155 個字的
+否定句加 Lorem ipsum —— 全套 1079 條照樣綠。
+
+原因是我把每條內容測試都寫成「某個詞有沒有出現」：
+
+| 改成 | 為什麼還是綠 |
+|---|---|
+| `Do not take an odd word literally` → `Take an odd word literally` | `"literally" in lowered` 仍為真 |
+| `is not yours to choose` → `is entirely yours to choose` | 沒有任何測試讀那個句子 |
+| `Stopping is a choice you make` → `is not a choice you make` | `"stopping"` 仍為真 |
+| `if you cannot do it with a tool, you cannot do it` → `do it some other way` | `"tool"` 仍為真 |
+
+**一個詞活得過它自己的否定，一個句子不會。** 現在每條內容斷言讀的是**片語**，對著把換行攤平的
+`FLAT` 比對。代價是改一句載重的話會弄紅一條測試 —— 那正是要的：這些句子**就是**交付物，改它
+應該是一件要簽名的事。上面六個 mutation 現在各被一條測試殺掉。
+
+順帶刪掉 `< 400 字` 那條。它擋不住任何東西（當時 262 字），而且**成本根本沒有被觀測到**：每個
+假模型的 `tokens_in` 都是寫死的常數，提示再長也不會有任何斷言看見。一條只會在「有人把散文寫成
+兩倍長」時才響的斷言不是行為測試。
+
+### 16.11 提示在解釋一個模型永遠看不到的字串（M8 #03 review）
+
+Spec 軸抓到的：提示裡寫「`"Nobody in view"` 意思是相機找不到臉」。**模型從來沒有讀過那個字串。**
+`react.py:_observed` 只送 JSON —— `{"result": ..., "snapshot": {"distance_cm", "face_present",
+"new_speech"}}` —— 而且 §15.4 明文否決了「並陳一份人話摘要」。`"nobody in view"` 是
+`journal.py` 的 `describe` 產的，走 `TerminalRenderer`，終點是終端機。
+
+**教一個模型去等一個不會到的訊號，比什麼都不說更糟。** 現在提示直接用那三個欄位名解釋，因為那
+三個名字**就是**模型的介面。同一類的第二個錯誤：原本寫「每次呼叫工具之後你會被告知看到什麼」，
+但被拒絕的呼叫只會 append 一個理由就 `continue`，沒有 Snapshot —— 在模型最需要推理的那個情況
+下說錯話。
+
+第三件是**漏掉的**：舊提示的分層規則有兩半，「控制器負責開」搬過來了，「不要講速度、時間、距離」
+沒有。而 `episode_invariants` 稽核的是**送進模型的東西**，從來不看模型**吐出來的** `speak` 文字
+—— 所以「我往前 20 公分」這句話，不是在提示裡擋，就是沒人擋。補回來了。
+
+### 16.12 `instructions=` 這次真的有呼叫端了（M8 #03 review）
+
+兩軸各自獨立指出同一件事：`run_episode` 的 `instructions=` 參數，**除了它自己的測試以外沒有
+任何呼叫端**。`app.py` 的 `Session.episode` 一路用預設值。那正是 §15.23 第一次刪掉它的形狀，
+也是 §16.3 那張「造好卻沒接線」清單的形狀 —— 而票面寫的是「**這次兩者都要有**」。更難看的是
+`react.py` 那段註解一邊引用 §15.34 的未接線清單，一邊生出一個未接線的參數。
+
+修法是 `Session` 拿一個 `instructions: str = PERSONA` 欄位並明確傳下去。理由不是對稱美觀：
+`run_episode` 收的**每一個**接縫（`model`、`memory`、`stop`、`ToolContext`）都是 `app.py`
+明確傳的，唯一沒有傳的那個，就是唯一被抓到沒有呼叫端的那個。
+
+`PERSONA` 因此在兩個地方當預設值。這不是 §10 的「同一件事寫兩遍」——兩處都指向同一個常數，
+不可能各說各話；`run_episode` 的預設是給測試和直接呼叫端的安全值，`Session` 的欄位是應用程式
+的選擇。測試也照 §15.23 的教訓寫了兩條：一條證明 persona 到得了模型，一條**傳一個 fallback
+永遠不會產生的值**（`"You are a lamp."`）—— 因為前者在 `Session` 偷偷不傳的時候仍然會綠。

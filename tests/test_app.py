@@ -17,6 +17,7 @@ import pytest
 
 from misty_agent.agent.journal import EpisodeFinished, Snapshot, StopRequested
 from misty_agent.agent.memory import Memory
+from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import Decision
 from misty_agent.app import (
     API_KEY_FILE,
@@ -37,9 +38,13 @@ class Says:
     def __init__(self, *tools):
         self._tools = list(tools) or ["done"]
         self.asked = 0
+        #: What it was handed, kept: a Session that stopped passing something
+        #: through is invisible to a count of calls.
+        self.contexts = []
 
     def decide(self, working_context, tools):
         self.asked += 1
+        self.contexts.append(list(working_context))
         tool = self._tools[min(self.asked - 1, len(self._tools) - 1)]
         return Decision(
             tool=tool,
@@ -96,7 +101,9 @@ class NameUniqueEvents:
         return object()
 
 
-def a_session(*, model=None, ears=None, events=None, readings=None, robot=None):
+def a_session(
+    *, model=None, ears=None, events=None, readings=None, robot=None, **rest
+):
     return Session(
         robot=robot or RecordingCommands(),
         readings=readings or Readings(150),
@@ -106,6 +113,7 @@ def a_session(*, model=None, ears=None, events=None, readings=None, robot=None):
         events=events,
         config=Settings(),
         clock=FakeClock(),
+        **rest,
     )
 
 
@@ -121,6 +129,36 @@ def test_a_session_runs_one_episode_and_hands_back_its_journal():
 
     assert outcome.outcome == "done"
     assert isinstance(journal.records[-1], EpisodeFinished)
+
+
+def test_the_session_tells_the_model_what_it_is():
+    """M8 #03 gave `run_episode` an `instructions=` parameter; two reviews
+    found nothing outside its own tests passed one, which is the shape
+    `PLAN.md` §15.23 deleted it for the first time. This is the caller.
+    """
+    model = Says()
+    session = a_session(model=model)
+
+    session.episode("speech", "hello", render=False)
+
+    assert model.contexts[0][0] == {"role": "system", "content": PERSONA}
+
+
+def test_the_instructions_a_session_was_built_with_are_the_ones_it_sends():
+    """The default cannot prove the wiring.
+
+    `run_episode` falls back to `PERSONA` on its own, so a `Session` that
+    quietly stopped passing `instructions=` would leave the test above green
+    — the same defect the parameter's own tests were caught by. Only a value
+    the fallback would never produce distinguishes them.
+    """
+    model = Says()
+    session = a_session(model=model, instructions="You are a lamp.")
+
+    session.episode("speech", "hello", render=False)
+
+    told = [e["content"] for e in model.contexts[0] if e["role"] == "system"]
+    assert told == ["You are a lamp."]
 
 
 def test_every_episode_gets_its_own_journal():

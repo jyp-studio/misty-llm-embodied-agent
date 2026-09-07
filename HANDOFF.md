@@ -25,6 +25,9 @@ cd /Users/jyp/dev/misty-embodied-agent
 最後兩條是 M8 #04 加的，也是這個專案**第一條真的能執行 agent 的指令**。沒有 API key
 也會跑：它會先報告感知看到什麼，再告訴你怎麼給 key。
 
+還有一條 `--robot <IP>`，會去組真的驅動（M8 #05）。**它從來沒有在真機上跑過，而且不會**
+——這台專案沒有 Misty II（`PLAN.md` §8）。它每次執行都會先把這句話印在 stderr 上。
+
 ⚠️ **一律用 `.venv`，不要用裸的 `python3`**（`AGENTS.md` 有完整說明）。這台機器的 `python3` 是另一套 miniforge 3.10，沒有 mediapipe 也沒有 opencv，而感知測試在那個環境是 **skip 而不是 fail**——直譯器挑錯了會看起來一片綠。判斷方法是看 skip 數：加 `-rs` 跑，`.venv` 底下 `tests/` 不該有任何一項 skip。
 
 ---

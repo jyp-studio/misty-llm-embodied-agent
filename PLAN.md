@@ -1864,3 +1864,43 @@ Standards 列的八個存活 mutation，六個修掉、一個靠刪程式碼消�
 真正有東西的是它的鄰居：把 `Session._perception()` 的麥克風換成 `None` **也**全綠，而那個
 會讓**每一次** Episode 都聾掉。原因是所有耳朵測試都自己手動組 `LivePerception`，沒有一條
 穿過 `Session`。補了一條，mutation 現在會紅。這正是 §15.34 的形狀。
+
+### 16.18 真驅動路徑：組起來了，而且永遠不會有人執行它（M8 #05）
+
+`RobotCommands` → `AvSession` → `RtspVideoStream` → `DistancePipeline`，加上共用同一個
+`AvSession` 的 `AudioStream`，加上 `EventStream`。`--robot <IP>` 走這條，**預設仍然是模擬**。
+
+**這張票的重點不是「讓它能跑」——沒有人能跑它。重點是讓「線有沒有接上」變成可以被測試的事。**
+§15.34 那份清單就是這個形狀：`EmergencyStop` 與 `ToolContext.ears` 造好、mutation 全紅、
+完全沒接線，一路到 #12 才被發現。一個忘記接線的 session 會通過這個專案裡其他每一條測試，
+同時讓機器人停不下來、而且會聽見自己的聲音再回答它。
+
+所以測試把七個 driver 類別全部換成 recorder，斷言「誰被建出來、拿到什麼、以什麼順序啟動與
+停止」。十個 mutation 全紅，包括把 `events=` 或 `ears=` 從 `Session` 拿掉這兩個 §15.34
+原版的錯誤。**這不是因為沒有硬體才退而求其次**——就算桌上有一台 Misty II，「保險桿有沒有接到
+緊急停止」仍然是接線問題，而接線是在邊界上回答的。
+
+#### 一個不明顯的關停順序
+
+`RtspVideoStream.stop()` 會關掉 `AvSession`，而 `AudioStream` 正在讀同一個 session。先停
+影像，聲音那兩條執行緒就會對著一個已經關掉的串流繼續讀。所以關停不只是「啟動的反序」——
+**影像一定最後停**。`started` 是邊啟動邊追加的，所以啟動失敗到一半時，只會停掉真的起來的那些。
+
+#### 時鐘只傳得到它傳得到的地方
+
+`Session` 和 `AudioStream` 拿得到注入的時鐘。`RtspVideoStream` 和 `DistancePipeline`
+**拿不到**——它們自己呼叫 `time.monotonic()` 蓋時戳，而且沒有參數可以換掉。
+
+這件事有後果：`approach` 是拿讀數的 `frame_arrived_at` 去和 **Session 的**時鐘比對新鮮度。
+在這條路上兩者一致，因為 `SystemClock.monotonic` 就是 `time.monotonic` ——同一個函式，不是
+兩個剛好相等的東西。**在這裡放一個假時鐘會直接弄壞新鮮度判斷**，和 §16.13 記的那個「世界拿到
+第二個時鐘」是同一個故障。
+
+為了讓 docstring 能寫「全部共用一個時鐘」而去替那兩個類別加時鐘參數，會做出一個「只有一個
+呼叫端、只傳一個值」的參數——正是 §15.23 刪掉過的形狀。所以是記在這裡，不是加參數。
+
+#### 沒有 key 就沒有耳朵
+
+`AudioStream` 要一個 `Transcriber`，而 hosted 那個要 key。沒有 key 時這條路拿 `HEARS_NOTHING`
+而不是拒絕連線——**一台沒有耳朵的機器人仍然值得連上去**，它的相機會回答，而那件事本身就告訴
+你連線是通的。

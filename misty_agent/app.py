@@ -43,13 +43,14 @@ swallowed.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import pathlib
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any, Iterator, Optional, Tuple
 
 from misty_agent.agent.journal import (
     Journal,
@@ -75,9 +76,13 @@ from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.config import Settings, settings
-from misty_agent.drivers.events import event_condition
+from misty_agent.drivers.audio_stream import AudioStream
+from misty_agent.drivers.av_stream import AvSession, RtspVideoStream
+from misty_agent.drivers.events import EventStream, event_condition
+from misty_agent.drivers.robot_commands import RobotCommands
 from misty_agent.fakes import MovingWorld, RecordingCommands
-from misty_agent.perception.distance import NOBODY_THERE
+from misty_agent.perception.asr import OpenAITranscriber
+from misty_agent.perception.distance import NOBODY_THERE, DistancePipeline
 
 
 class SystemClock:
@@ -328,6 +333,15 @@ def _parser() -> argparse.ArgumentParser:
         help="what the person said, as speech-to-text would have heard it",
     )
     parser.add_argument(
+        "--robot",
+        metavar="IP",
+        default=None,
+        help=(
+            "attach to a Misty II at this address instead of simulating one. "
+            "NEVER RUN: this project has no robot (PLAN.md section 8)"
+        ),
+    )
+    parser.add_argument(
         "--image",
         type=pathlib.Path,
         default=None,
@@ -367,9 +381,118 @@ def _robot_and_room(image: Optional[pathlib.Path], clock: Any) -> Tuple[Any, Any
     return world, world
 
 
+#: What `--robot` has to say for itself, every time.
+#:
+#: `PLAN.md` §8 rewrote its own heading for this reason. "Not yet verified"
+#: reads like a half-finished project that will get round to it; the truth is
+#: both stronger and simpler, and a command that stayed quiet would let a
+#: reader assume the friendlier version.
+NEVER_RUN_ON_HARDWARE = """\
+--robot has never been run against a Misty II. This project does not have one
+and will not get one (PLAN.md §8), so everything below this line is what the
+robot's documentation says it does — not what a robot did. The request shapes
+have contract tests; the behaviour has nothing.
+"""
+
+
+@contextlib.contextmanager
+def attached_to(
+    ip: str, *, model: Any, clock: Any, transcriber: Optional[Any] = None
+) -> Iterator[Session]:
+    """The real drivers, wired to each other, for as long as the caller needs.
+
+    Five collaborators around one AV session: Misty publishes a single RTSP
+    stream and it carries both the picture and the sound, so a second
+    `AvSession` would reset the first one out from under it.
+
+    ## Started in order, stopped in reverse — and that is load-bearing
+
+    `RtspVideoStream.stop()` closes the `AvSession`, which is the same session
+    `AudioStream` is reading. Stop the video first and the audio threads are
+    left reading a stream that has been shut. `started` is appended to as each
+    part comes up, so a failure half way through start-up stops exactly what
+    started, and nothing else.
+
+    ## The clock reaches as far as it can, and no further
+
+    `Session` and `AudioStream` are told the clock. `RtspVideoStream` and
+    `DistancePipeline` are not — they stamp frames and readings by calling
+    `time.monotonic()` themselves, and neither takes a clock to call instead.
+
+    That matters because `approach` compares a reading's `frame_arrived_at`
+    against the *Session's* clock to decide whether it is fresh. On this path
+    they agree, because `SystemClock.monotonic` is `time.monotonic` — the same
+    function, not two that happen to match. **A fake clock here would break
+    the freshness test**, in exactly the way M8 #04 found a second clock
+    breaks it for the simulated world.
+
+    Adding a clock parameter to those two so this docstring could say "all
+    of them" would be a parameter with one caller passing one value, which is
+    the shape `PLAN.md` §15.23 deleted. Recorded instead (`PLAN.md` §16.18).
+
+    ## Without a key there are no ears
+
+    `AudioStream` needs a `Transcriber`, and the hosted one needs a key. A
+    robot with no ears is still worth attaching to — its camera answers, and
+    that alone tells you the connection works — so this takes `HEARS_NOTHING`
+    rather than refusing.
+
+    **Nothing here has ever run.** See `NEVER_RUN_ON_HARDWARE`.
+    """
+    commands = RobotCommands(ip)
+    stream = AvSession(commands)
+    video = RtspVideoStream(stream)
+    readings = DistancePipeline(video)
+    ears = (
+        HEARS_NOTHING
+        if transcriber is None
+        else AudioStream(stream, transcriber, monotonic=clock.monotonic)
+    )
+    events = EventStream(ip)
+
+    started: list = []
+    try:
+        for part in (video, readings, ears):
+            if part is HEARS_NOTHING:
+                continue
+            part.start()
+            started.append(part)
+        # Built inside the `try`: its constructor subscribes the bumper, and
+        # a subscription that comes back empty raises — at which point four
+        # threads and a websocket are already running.
+        yield Session(
+            robot=commands,
+            readings=readings,
+            model=model,
+            memory=Memory(),
+            ears=ears,
+            events=events,
+            config=settings,
+            clock=clock,
+        )
+    finally:
+        events.close()
+        for part in reversed(started):
+            part.stop()
+
+
 def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -> int:
     args = _parser().parse_args(argv)
     clock = clock or SystemClock()
+    # Both paths, and early: the hosted transcriber needs the same key the
+    # model does, and it is built before the drivers are.
+    key = load_api_key(API_KEY_FILE)
+    asked = model if model is not None else OpenAIModel()
+
+    if args.robot:
+        print(NEVER_RUN_ON_HARDWARE, file=sys.stderr)
+        with attached_to(
+            args.robot,
+            model=asked,
+            clock=clock,
+            transcriber=OpenAITranscriber(key) if key else None,
+        ) as session:
+            return _one_episode(session, args, source=args.robot, model=model)
 
     try:
         robot, readings = _robot_and_room(args.image, clock)
@@ -380,12 +503,22 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
     session = Session(
         robot=robot,
         readings=readings,
-        model=model if model is not None else OpenAIModel(),
+        model=asked,
         memory=Memory(),
         config=settings,
         clock=clock,
     )
+    source = "simulated" if args.image is None else args.image
+    return _one_episode(session, args, source=source, model=model)
 
+
+def _one_episode(session: Session, args: Any, *, source: Any, model: Any) -> int:
+    """Report what can be seen, then run one Episode against it.
+
+    The same six lines whichever world was assembled — which is the point of
+    assembling one before getting here. `source` is what produced the number
+    being reported, because a distance is only as good as where it came from.
+    """
     seen = session.sees()
     # Named by where the number came from. A photograph is perception; the
     # default is `DEFAULT_START_CM` and calling that "perception" would be the
@@ -395,14 +528,11 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
     # Flushed because the next thing written may go to stderr, and stdout is
     # block-buffered whenever this is piped into anything. Without it the
     # no-key guidance appears above the result it is answering.
-    source = "simulated" if args.image is None else args.image
     print(f"{source}: {in_view(seen)}", flush=True)
 
-    if model is None:
-        load_api_key(API_KEY_FILE)
-        if not api_key_available():
-            print(str(MissingApiKey()), file=sys.stderr)
-            return 1
+    if model is None and not api_key_available():
+        print(str(MissingApiKey()), file=sys.stderr)
+        return 1
 
     # The renderer already writes the closing line — `episode done after 3
     # turn(s), 3 step(s)`. Printing the same three facts again underneath it,

@@ -94,3 +94,16 @@ _Avoid_: test, benchmark, experiment
 The boundary a Sweep locates — the parameter value at which the controller
 stops converging, together with how precisely the grid pinned it down.
 _Avoid_: limit, threshold, bound, margin
+
+**Storyboard**:
+One Journal arranged for a screen: an ordered sequence of Moments, plus how
+the Episode began and ended. Derived and never authored — a pure function of a
+Journal, decided in Python so that what a page shows is something a test can
+reach.
+_Avoid_: view, view model, render, timeline, UI state
+
+**Moment**:
+One record of a Journal, ready to draw: what it says, what kind of moment it
+is, the fields behind the sentence, and the whole robot as it stood just
+after. Its unit is one record, not one Turn.
+_Avoid_: frame, entry, item, event

@@ -54,6 +54,7 @@ from typing import Any, Iterator, Optional, Tuple
 
 from misty_agent.agent.journal import (
     Journal,
+    JsonlFile,
     Snapshot,
     TerminalRenderer,
     in_view,
@@ -262,18 +263,37 @@ class Session:
     # ---------- one Episode ----------
 
     def episode(
-        self, trigger: str, said: str = "", *, render: bool = True
+        self,
+        trigger: str,
+        said: str = "",
+        *,
+        render: bool = True,
+        journal_path: Optional[Any] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
-        """Run one Episode from one trigger, and hand back what happened."""
+        """Run one Episode from one trigger, and hand back what happened.
+
+        `journal_path` writes the Journal to disk as it happens. Per Episode
+        rather than per Session, because one file holds one Episode: that is
+        what every golden is and what `from_jsonl` assumes — it returns a flat
+        sequence and does not group, so a file with two beginnings in it reads
+        as one incoherent run.
+
+        A subscriber rather than a `to_jsonl()` at the end, because an Episode
+        that is interrupted should still leave behind what it got through
+        (`JsonlFile`'s whole reason for appending line by line).
+        """
         # Counted as well as stamped: two Episodes inside the same second
         # are ordinary, and two Journals sharing an id would be
         # indistinguishable in a directory of them.
         self._episodes += 1
         episode_id = f"ep-{int(time.time())}-{self._episodes}"
+        subscribers: list = [TerminalRenderer()] if render else []
+        if journal_path is not None:
+            subscribers.append(JsonlFile(journal_path))
         journal = Journal(
             episode_id=episode_id,
             clock=self.clock,
-            subscribers=(TerminalRenderer(),) if render else (),
+            subscribers=tuple(subscribers),
         )
         stop = EmergencyStop(journal, self.robot)
         self._running = stop
@@ -340,6 +360,16 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "attach to a Misty II at this address instead of simulating one. "
             "NEVER RUN: this project has no robot (PLAN.md section 8)"
+        ),
+    )
+    parser.add_argument(
+        "--journal",
+        metavar="PATH",
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "write this Episode's Journal to PATH as JSONL, in the format "
+            "tests/goldens uses. Nothing is written without it"
         ),
     )
     parser.add_argument(
@@ -485,6 +515,15 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
         # the one thing somebody typing `--robot` has told you is that they
         # did not want the simulation.
         parser.error("--robot needs an address")
+    if args.journal is not None and args.journal.exists():
+        # One file, one Episode. Appending a second makes a file the reading
+        # tools parse as a single run with two beginnings, which destroys the
+        # first one by making it unreadable — so the answer is never to write
+        # over evidence, it is to refuse.
+        parser.error(
+            f"{args.journal} already exists, and a Journal file holds one "
+            f"Episode. Choose another path"
+        )
     if args.robot and args.image is not None:
         # Refused rather than ignored. A photograph sets where the person
         # starts in a *simulated* world; a real robot has a camera, and the
@@ -570,6 +609,6 @@ def _one_episode(
     # An Episode that hits its Turn cap or is aborted did what it was built to
     # do, and the one outcome that is a failure — `error` — is already
     # reported, in the Journal and on the terminal, by the thing that saw it.
-    session.episode(args.trigger, args.said)
+    session.episode(args.trigger, args.said, journal_path=args.journal)
     return 0
 

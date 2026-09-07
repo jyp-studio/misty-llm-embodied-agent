@@ -25,6 +25,10 @@ cd /Users/jyp/dev/misty-embodied-agent
 最後兩條是 M8 #04 加的，也是這個專案**第一條真的能執行 agent 的指令**。沒有 API key
 也會跑：它會先報告感知看到什麼，再告訴你怎麼給 key。
 
+`--journal 某個路徑.jsonl` 會把這次 Episode 的 Journal 逐行寫下來，格式與
+`tests/goldens/` 相同，既有的比對工具直接可讀。**不給就完全不寫**——Journal 裡有人講的話，
+保存是使用者要主動開啟的事（`PLAN.md` §16.22）。
+
 還有一條 `--robot <IP>`，會去組真的驅動（M8 #05）。**它從來沒有在真機上跑過，而且不會**
 ——這台專案沒有 Misty II（`PLAN.md` §8）。它每次執行都會先把這句話印在 stderr 上。
 

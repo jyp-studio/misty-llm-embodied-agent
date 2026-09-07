@@ -30,6 +30,7 @@ import sys
 
 import pytest
 
+from misty_agent.agent.journal import from_jsonl, to_jsonl
 from misty_agent.agent.model import API_KEY_VARIABLE
 from misty_agent.app import DEFAULT_START_CM, main
 from misty_agent.config import Settings
@@ -329,6 +330,128 @@ def test_the_whole_episode_is_printed_in_time_order(capsys):
             continue  # the perception line and the summary carry no stamp
     assert len(stamped) > 5
     assert stamped == sorted(stamped)
+
+
+# ---------------------------------------------------------------------------
+# Keeping the evidence
+# ---------------------------------------------------------------------------
+
+def test_a_journal_is_written_only_when_one_is_asked_for(tmp_path, monkeypatch):
+    """The negative control, and the decision it protects.
+
+    A Journal carries what people said — `speak`'s text, and `new_speech` in
+    every Snapshot. Writing that to disk by default would be this project's
+    first unrecorded decision about keeping people's words (`PLAN.md`
+    §16.22), so the default is that nothing is created at all.
+
+    Asserted on the writer, not on a directory. The first version watched an
+    empty `tmp_path` and passed against a mutant that wrote to an absolute
+    path somewhere else entirely — it proved that an unrelated directory
+    stayed empty. Nothing being *constructed* is the claim.
+    """
+    built = []
+    monkeypatch.setattr(
+        "misty_agent.app.JsonlFile", lambda path: built.append(path)
+    )
+    monkeypatch.chdir(tmp_path)
+
+    main(["--said", "hello"], model=Says("speak", "done"), clock=FakeClock())
+
+    assert built == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_journal_that_is_asked_for_is_the_one_that_happened(tmp_path):
+    """Not "a file appeared" — the records in it are the Episode's own."""
+    kept = tmp_path / "run.jsonl"
+    model = Says("speak", "approach", "done")
+
+    code = main(
+        ["--said", "come here", "--journal", str(kept)],
+        model=model,
+        clock=FakeClock(),
+    )
+
+    assert code == 0
+    written = from_jsonl(kept.read_text())
+    assert [record.type for record in written][:2] == [
+        "episode_started",
+        "turn_started",
+    ]
+    assert written[-1].type == "episode_finished"
+    assert written[-1].outcome == "done"
+
+
+def test_what_is_written_is_what_the_golden_tools_already_read(tmp_path):
+    """`tests/goldens/` is one Episode per file, and `from_jsonl` returns a
+    flat sequence — it does not group. So the file has to round-trip through
+    the same two functions the goldens are compared with, byte for byte.
+    """
+    kept = tmp_path / "run.jsonl"
+
+    main(["--said", "hi", "--journal", str(kept)],
+         model=Says("speak", "done"), clock=FakeClock())
+
+    text = kept.read_text()
+    assert to_jsonl(from_jsonl(text)) == text
+    assert text.endswith("\n")
+    assert len([line for line in text.splitlines() if line.strip()]) == len(
+        from_jsonl(text)
+    )
+
+
+def test_an_interrupted_episode_still_leaves_what_it_got_through(tmp_path):
+    """`JsonlFile` appends line by line, and this is the reason it does.
+
+    A `KeyboardInterrupt` is a `BaseException`, so neither the ReAct loop nor
+    the Journal's fan-out catches it — the Episode dies where it stands. What
+    was already written is still on disk, which a file assembled at the end
+    could not manage.
+    """
+    kept = tmp_path / "half.jsonl"
+
+    class StopsDead:
+        """Reads the file on its way past, then dies where it stands."""
+
+        seen_mid_episode = None
+
+        def decide(self, working_context, tools):
+            StopsDead.seen_mid_episode = kept.read_text()
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        main(["--said", "hi", "--journal", str(kept)],
+             model=StopsDead(), clock=FakeClock())
+
+    # Read from *inside* the Episode. Asserting only on the file afterwards
+    # cannot tell appending from a `finally` that dumps everything at the end
+    # — both leave the same bytes behind, and a mutant doing the latter passed
+    # this test. Only a file that already exists mid-run distinguishes them,
+    # and only that survives a process that is killed rather than unwound.
+    during = from_jsonl(StopsDead.seen_mid_episode)
+    assert [record.type for record in during] == [
+        "episode_started",
+        "turn_started",
+    ]
+    assert from_jsonl(kept.read_text()) == during
+
+
+def test_a_journal_will_not_be_written_on_top_of_another_one(tmp_path, capsys):
+    """One file, one Episode — that is what `from_jsonl` assumes and what
+    every golden is. Appending a second Episode makes a file the reading
+    tools parse into one flat run with two beginnings, and destroys the
+    evidence of the first by making it unreadable.
+    """
+    kept = tmp_path / "run.jsonl"
+    kept.write_text("")
+    kept.write_text('{"type": "episode_started"}\n')
+
+    with pytest.raises(SystemExit):
+        main(["--said", "hi", "--journal", str(kept)],
+             model=Says(), clock=FakeClock())
+
+    assert "already exists" in capsys.readouterr().err
+    assert kept.read_text() == '{"type": "episode_started"}\n'
 
 
 # ---------------------------------------------------------------------------

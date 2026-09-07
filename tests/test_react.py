@@ -57,10 +57,10 @@ from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import NoArguments, ToolContext, ToolRegistry, build_registry
 from misty_agent.config import Settings
-from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.fakes import FakeClock, MovingWorld, RecordingCommands
 from misty_agent.perception.distance import DistanceReading
 
-from test_approach import MovingWorld, WorldThatLosesTheUserAfterAStep
+from test_approach import WorldThatLosesTheUserAfterAStep
 from test_memory import CountingExtractor, CountingSummariser
 
 def as_text(working_context):

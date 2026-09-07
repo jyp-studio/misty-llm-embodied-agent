@@ -9,5 +9,12 @@ from misty_agent.fakes.fake_robot import (
     RecordedRequest,
     RecordingCommands,
 )
+from misty_agent.fakes.simulated_world import MovingWorld, a_reading
 
-__all__ = ["FakeClock", "RecordedRequest", "RecordingCommands"]
+__all__ = [
+    "FakeClock",
+    "MovingWorld",
+    "RecordedRequest",
+    "RecordingCommands",
+    "a_reading",
+]

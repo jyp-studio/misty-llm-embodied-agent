@@ -15,7 +15,12 @@ import pytest
 
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
-from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.fakes import (
+    FakeClock,
+    MovingWorld,
+    RecordingCommands,
+    a_reading,
+)
 from misty_agent.perception.distance import DistanceReading
 
 
@@ -50,57 +55,7 @@ class TickReadings:
 
     def latest_reading(self):
         self._clock.sleep(0.001)
-        return _reading(self._distance_cm, self._clock.monotonic())
-
-
-class MovingWorld(RecordingCommands):
-    """A public reading/robot seam with an explicit drive-distance error.
-
-    This models only the adapter boundary: a successful ``drive/time`` request
-    changes the observed distance by the duration-derived commanded distance
-    times ``actual_motion_multiplier``.  It deliberately does not reproduce
-    the controller's step formula.
-    """
-
-    def __init__(
-        self,
-        clock: FakeClock,
-        *,
-        start_cm: float,
-        actual_motion_multiplier: float,
-        config: Settings,
-    ) -> None:
-        super().__init__()
-        self._clock = clock
-        self._distance_cm = start_cm
-        self._actual_motion_multiplier = actual_motion_multiplier
-        self._config = config
-        self.closest_cm = start_cm
-        self.directions: list[int] = []
-
-    @property
-    def distance_cm(self) -> float:
-        return self._distance_cm
-
-    def latest_reading(self):
-        self._clock.sleep(0.001)
-        return _reading(round(self._distance_cm), self._clock.monotonic())
-
-    def drive_time(self, linearVelocity, angularVelocity, timeMs, timeout):
-        response = super().drive_time(
-            linearVelocity=linearVelocity,
-            angularVelocity=angularVelocity,
-            timeMs=timeMs,
-            timeout=timeout,
-        )
-        commanded_cm = timeMs / 1000 * self._config.cm_per_sec_at_percent
-        direction = 1 if linearVelocity > 0 else -1
-        self.directions.append(direction)
-        self._distance_cm -= (
-            direction * commanded_cm * self._actual_motion_multiplier
-        )
-        self.closest_cm = min(self.closest_cm, self._distance_cm)
-        return response
+        return a_reading(self._distance_cm, self._clock.monotonic())
 
 
 class WorldThatLosesTheUserAfterAStep(MovingWorld):
@@ -169,20 +124,12 @@ class NoContentRobot(RecordingCommands):
         return SimpleNamespace(status_code=204)
 
 
-def _reading(distance_cm: int, arrived_at: float) -> DistanceReading:
-    return DistanceReading(
-        distance_cm=distance_cm,
-        frame_arrived_at=arrived_at,
-        detected_at=arrived_at,
-    )
-
-
 def test_startup_waits_for_two_fresh_readings_before_arriving():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.10, _reading(61, 0.10)),
-        ScheduledReading(0.20, _reading(60, 0.20)),
+        ScheduledReading(0.10, a_reading(61, 0.10)),
+        ScheduledReading(0.20, a_reading(60, 0.20)),
     )
     robot = RecordingCommands()
 
@@ -203,14 +150,14 @@ def test_a_move_is_followed_by_two_post_move_readings_before_arrival():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.10, _reading(100, 0.10)),
-        ScheduledReading(0.20, _reading(100, 0.20)),
+        ScheduledReading(0.10, a_reading(100, 0.10)),
+        ScheduledReading(0.20, a_reading(100, 0.20)),
         # This old-world frame only becomes visible after the drive finishes.
         # Its value would command another forward step if timestamp freshness
         # were replaced by settling alone.
-        ScheduledReading(1.48, _reading(100, 0.30)),
-        ScheduledReading(1.49, _reading(72, 1.49)),
-        ScheduledReading(1.50, _reading(70, 1.50)),
+        ScheduledReading(1.48, a_reading(100, 0.30)),
+        ScheduledReading(1.49, a_reading(72, 1.49)),
+        ScheduledReading(1.50, a_reading(70, 1.50)),
     )
     robot = RecordingCommands()
 
@@ -239,10 +186,10 @@ def test_too_close_commands_one_bounded_backward_step_then_arrives():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.10, _reading(30, 0.10)),
-        ScheduledReading(0.20, _reading(30, 0.20)),
-        ScheduledReading(1.17, _reading(50, 1.17)),
-        ScheduledReading(1.18, _reading(51, 1.18)),
+        ScheduledReading(0.10, a_reading(30, 0.10)),
+        ScheduledReading(0.20, a_reading(30, 0.20)),
+        ScheduledReading(1.17, a_reading(50, 1.17)),
+        ScheduledReading(1.18, a_reading(51, 1.18)),
     )
     robot = RecordingCommands()
 
@@ -267,8 +214,8 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.0, _reading(60, -0.20)),
-        ScheduledReading(0.0, _reading(60, -0.10)),
+        ScheduledReading(0.0, a_reading(60, -0.20)),
+        ScheduledReading(0.0, a_reading(60, -0.10)),
     )
     robot = RecordingCommands()
 
@@ -325,9 +272,9 @@ def test_two_readings_must_be_fresh_at_the_same_decision_time():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.10, _reading(60, 0.10)),
+        ScheduledReading(0.10, a_reading(60, 0.10)),
         # By the time this arrives, the first sample is older than max_age_s.
-        ScheduledReading(0.40, _reading(60, 0.40)),
+        ScheduledReading(0.40, a_reading(60, 0.40)),
     )
 
     result = approach(
@@ -452,10 +399,10 @@ def test_readings_arriving_during_settle_count_after_motion():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.01, _reading(100, 0.01)),
-        ScheduledReading(0.02, _reading(100, 0.02)),
-        ScheduledReading(1.32, _reading(70, 1.32)),
-        ScheduledReading(1.34, _reading(70, 1.34)),
+        ScheduledReading(0.01, a_reading(100, 0.01)),
+        ScheduledReading(0.02, a_reading(100, 0.02)),
+        ScheduledReading(1.32, a_reading(70, 1.32)),
+        ScheduledReading(1.34, a_reading(70, 1.34)),
     )
 
     result = approach(
@@ -476,10 +423,10 @@ def test_settle_does_not_consume_the_independent_reading_timeout():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.01, _reading(100, 0.01)),
-        ScheduledReading(0.02, _reading(100, 0.02)),
-        ScheduledReading(1.32, _reading(70, 1.32)),
-        ScheduledReading(1.34, _reading(70, 1.34)),
+        ScheduledReading(0.01, a_reading(100, 0.01)),
+        ScheduledReading(0.02, a_reading(100, 0.02)),
+        ScheduledReading(1.32, a_reading(70, 1.32)),
+        ScheduledReading(1.34, a_reading(70, 1.34)),
     )
 
     result = approach(

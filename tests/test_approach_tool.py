@@ -33,16 +33,19 @@ from misty_agent.agent.journal import Journal, Observation, Snapshot
 from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
-from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.fakes import (
+    FakeClock,
+    MovingWorld,
+    RecordingCommands,
+    a_reading,
+)
 
 from test_approach import (
     ExplodingRobot,
-    MovingWorld,
     ScheduledReading,
     ScheduledReadings,
     TickReadings,
     WorldThatLosesTheUserAfterAStep,
-    _reading,
 )
 
 
@@ -310,10 +313,10 @@ def test_standing_too_close_makes_this_tool_reverse(registry):
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
-        ScheduledReading(0.10, _reading(30, 0.10)),
-        ScheduledReading(0.20, _reading(30, 0.20)),
-        ScheduledReading(1.17, _reading(50, 1.17)),
-        ScheduledReading(1.18, _reading(51, 1.18)),
+        ScheduledReading(0.10, a_reading(30, 0.10)),
+        ScheduledReading(0.20, a_reading(30, 0.20)),
+        ScheduledReading(1.17, a_reading(50, 1.17)),
+        ScheduledReading(1.18, a_reading(51, 1.18)),
     )
     robot = RecordingCommands()
 

@@ -43,9 +43,7 @@ from misty_agent.agent.model import MissingApiKey, OpenAIModel, api_key_availabl
 from misty_agent.agent.react import run_episode
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.config import Settings
-from misty_agent.fakes import FakeClock, RecordingCommands
-
-from test_approach import MovingWorld
+from misty_agent.fakes import FakeClock, MovingWorld, RecordingCommands
 
 pytestmark = pytest.mark.llm_live
 

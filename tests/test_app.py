@@ -161,6 +161,24 @@ def test_the_instructions_a_session_was_built_with_are_the_ones_it_sends():
     assert told == ["You are a lamp."]
 
 
+def test_a_session_will_not_write_an_episode_into_an_existing_journal(tmp_path):
+    """The seam this ticket added, guarded where the format is.
+
+    `main` refuses an existing path with a sentence of explanation, but a
+    caller reaching `Session.episode` directly would otherwise append a second
+    Episode into somebody's file. It raises before the Episode is built, so
+    nothing has moved when it does.
+    """
+    someone_elses = tmp_path / "already.jsonl"
+    someone_elses.write_text("")
+    session = a_session()
+
+    with pytest.raises(FileExistsError):
+        session.episode("speech", "hi", render=False, journal_path=someone_elses)
+
+    assert someone_elses.read_text() == ""
+
+
 def test_every_episode_gets_its_own_journal():
     """Two Episodes are two records, not one growing one — and a `Journal`
     refuses to be written to after it has finished, so sharing would raise on

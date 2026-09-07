@@ -1954,8 +1954,9 @@ Standards 指出：§16.18 說「`RtspVideoStream` 與 `DistancePipeline` 自己
 卻從來沒有被寫到磁碟過。這是 §16.3 那張表上三個「造好卻沒接線」的第二個（系統提示 #03 補了，
 `load_api_key` #04 補了），**表清空了**。現在 `--journal PATH` 會寫，**不給就完全不碰磁碟**。
 
-**預設不寫，是一個決定，不是一個省略。** Journal 裡有人講的話：`tool_called` 帶著 `speak`
-的文字，而每一個 Snapshot 都帶著 `new_speech`。把對話寫進磁碟應該是使用者主動開啟的行為，而
+**預設不寫，是一個決定，不是一個省略。** Journal 裡有兩邊講的話：`tool_called` 帶著 `speak`
+的文字（**機器人自己說的**），而每一個 Snapshot 帶著 `new_speech`（**人說的**，逐字的語音
+轉錄）。第二個才是隱私上要緊的那個，第一版把兩者寫成同一件事了。把對話寫進磁碟應該是使用者主動開啟的行為，而
 這份 `PLAN.md` 到今天為止沒有任何一節談過資料保存 —— 悄悄開啟會是這個專案第一個沒有紀錄的
 決定。所以它記在這裡，而且有一條陰性對照測試證明預設下 `JsonlFile` 根本不會被建構。
 
@@ -1985,3 +1986,66 @@ Episode，讀出來會是「一次有兩個開頭的執行」，等於把第一�
 **根本沒有被建構**。
 
 **和 §16.14 是同一條**：斷言要對著主張本身，不要對著一個剛好也成立的鄰居。
+
+### 16.24 寫不進去的路徑：整場跑完、什麼都沒留下、然後回報成功（M8 #06 review）
+
+兩軸各自獨立跑出同一件事，而且都是真的跑出來的：
+
+```
+--journal /tmp/nope/out.jsonl
+   0.00s    ! JsonlFile failed on episode_started: [Errno 2] No such file...
+   ... 每一筆紀錄都印一次 ...
+   0.00s  episode done after 2 turn(s), 0 steps
+EXIT CODE: 0
+```
+
+**機器人動了、證據沒有了、指令說成功。** 原因是 `Journal` 會接住 subscriber 丟出來的例外、
+記成 `SubscriberFailed`、然後繼續 —— 那對 renderer 是對的，對證據是錯的。一個要求留存的人
+拿到乾淨的 exit code，等於被告知「留下來了」。
+
+修法有兩層，而且兩層都必要：
+
+1. **`JsonlFile` 在建構時就用 `open(path, "x")` 把檔案獨佔建立起來。** 一個呼叫同時買到兩個
+   保證：路徑寫不進去的話**現在**就失敗（在任何東西動之前，而不是每筆紀錄失敗一次），以及那
+   個路徑不是別人的 Journal。
+2. **Episode 結束後檢查 `journal.subscriber_failures`**，有 `JsonlFile` 就回非零並說明。這條
+   蓋的是事前檢查不到的：跑到一半磁碟滿了、目錄被刪掉。
+
+**「一個檔案一次 Episode」原本只寫在 CLI 裡，那是錯的層。** Standards 的說法一針見血：訊息屬於
+`main`，**保證不屬於**。`Session.episode(journal_path=...)` 是這張票新增的接縫，一個直接用它
+的呼叫端照樣會往別人的檔案後面接。現在保證跟著格式走，`main` 只負責把兩個人真的會犯的錯講成
+一句話而不是一個 traceback。
+
+### 16.25 我的陰性對照自己把自己的前提蓋掉了（M8 #06 review）
+
+Standards 抓到的，而且它就在 §16.23 的下一個 commit：
+
+```python
+kept.write_text("")
+kept.write_text('{"type": "episode_started"}\n')
+```
+
+第一行被第二行覆蓋掉了。**「空檔案已經存在」這個情況從來沒有被跑過**，所以把檢查從
+`exists()` 改成「存在**而且**有內容」可以通過全部 1133 條。空檔案不是沒有意義的情況：它是
+別人剛開始的一次執行，或是有人故意放的 —— 兩種都不是我們可以寫進去的。改成 parametrize，
+兩個都跑。
+
+第二個：**§16.22 整段的理由是「Journal 裡有人講的話」，而沒有任何一條測試讀過裡面的一個字。**
+round-trip 測試對一份把每個字都清空的檔案照樣會綠 —— 空字串一樣 round-trip。補了一條直接
+斷言 `speak` 的文字在檔案裡。
+
+**同一條教訓第三次**（§16.10、§16.14、這裡）：一段推理裡的「因為 X」，X 就是要被斷言的東西。
+
+### 16.26 `said` 不在 Journal 裡
+
+Spec 軸順手發現的，記著但這張票不動：**觸發這次 Episode 的那句話沒有被寫進 Journal。**
+`EpisodeStarted` 只帶 `trigger`，`said` 只流向模型的 working context 與 Memory。
+
+不動的理由是它會改 schema：`EpisodeStarted` 加一個欄位，五份 golden 的第一行全部要改，而
+`tests/goldens/README.md` 的規矩是「哪一邊讓步是一個決定，要寫進 `PLAN.md`」。那是一張自己
+的票，不是 #06 順手做掉的事。
+
+順帶澄清 `journal_diff.py`：它讀得了產出的檔案（跑過了），但拿一次真的執行去跟 golden 比一定
+在第 0 筆就停 —— `episode_id` 來自 `int(time.time())`、`started_at_wall_clock` 來自
+`datetime.now()`。那是設計，不是缺陷：goldens 是用釘死的 id 與 wall clock 產生的，而
+`EpisodeStarted` 帶著整份 Journal 唯一的絕對時間本來就是為了讓其他每一筆都可以逐位元組比對。

@@ -268,7 +268,7 @@ class Session:
         said: str = "",
         *,
         render: bool = True,
-        journal_path: Optional[Any] = None,
+        journal_path: Optional[pathlib.Path] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
         """Run one Episode from one trigger, and hand back what happened.
 
@@ -291,9 +291,7 @@ class Session:
         if journal_path is not None:
             subscribers.append(JsonlFile(journal_path))
         journal = Journal(
-            episode_id=episode_id,
-            clock=self.clock,
-            subscribers=tuple(subscribers),
+            episode_id=episode_id, clock=self.clock, subscribers=subscribers
         )
         stop = EmergencyStop(journal, self.robot)
         self._running = stop
@@ -515,15 +513,23 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
         # the one thing somebody typing `--robot` has told you is that they
         # did not want the simulation.
         parser.error("--robot needs an address")
-    if args.journal is not None and args.journal.exists():
-        # One file, one Episode. Appending a second makes a file the reading
-        # tools parse as a single run with two beginnings, which destroys the
-        # first one by making it unreadable — so the answer is never to write
-        # over evidence, it is to refuse.
-        parser.error(
-            f"{args.journal} already exists, and a Journal file holds one "
-            f"Episode. Choose another path"
-        )
+    if args.journal is not None:
+        # `JsonlFile` refuses both of these on its own, by creating the file
+        # exclusively. These are here only so the two mistakes somebody
+        # actually makes arrive as a sentence rather than as a `FileExistsError`
+        # traceback — the guarantee lives with the format, not with the flag.
+        if args.journal.is_dir():
+            parser.error(f"{args.journal} is a directory, not a file to write")
+        if args.journal.exists():
+            parser.error(
+                f"{args.journal} already exists, and a Journal file holds one "
+                f"Episode. Choose another path"
+            )
+        if not args.journal.parent.is_dir():
+            parser.error(
+                f"{args.journal.parent} is not a directory, so "
+                f"{args.journal} cannot be written"
+            )
     if args.robot and args.image is not None:
         # Refused rather than ignored. A photograph sets where the person
         # starts in a *simulated* world; a real robot has a camera, and the
@@ -609,6 +615,22 @@ def _one_episode(
     # An Episode that hits its Turn cap or is aborted did what it was built to
     # do, and the one outcome that is a failure — `error` — is already
     # reported, in the Journal and on the terminal, by the thing that saw it.
-    session.episode(args.trigger, args.said, journal_path=args.journal)
+    _, journal = session.episode(
+        args.trigger, args.said, journal_path=args.journal
+    )
+
+    # A subscriber that raises is caught, recorded and carried on from — which
+    # is right for a renderer and wrong for the evidence. Somebody who asked
+    # for a Journal and got a clean exit code has been told the run was kept.
+    lost = [
+        failure
+        for failure in journal.subscriber_failures
+        if failure.subscriber == "JsonlFile"
+    ]
+    if lost:
+        print(
+            f"the Journal was not written: {lost[0].error}", file=sys.stderr
+        )
+        return 1
     return 0
 

@@ -339,6 +339,37 @@ def test_a_subscriber_failure_is_observable_rather_than_swallowed():
     assert "fell over" in failure.error
 
 
+def test_the_file_subscriber_refuses_a_path_that_is_already_taken(tmp_path):
+    """One file, one Episode — enforced where the format is, not only where
+    the flag is.
+
+    `from_jsonl` returns a flat sequence and does not group, so appending a
+    second Episode makes a file that reads as one run with two beginnings and
+    the first one becomes unrecoverable. `main` says this in a sentence, but
+    `Session.episode(journal_path=...)` is a seam of its own and the promise
+    has to hold there too.
+    """
+    taken = tmp_path / "episode.jsonl"
+    taken.write_text("")
+
+    with pytest.raises(FileExistsError):
+        JsonlFile(taken)
+
+    assert taken.read_text() == ""
+
+
+def test_the_file_subscriber_fails_where_it_cannot_write_rather_than_per_record(
+    tmp_path,
+):
+    """`Journal` catches what a subscriber raises, so a path that can never be
+    written used to produce one `SubscriberFailed` per record and no file at
+    all — while the Episode ran to the end. Failing at construction puts it
+    before anything moves (`PLAN.md` §16.24).
+    """
+    with pytest.raises(OSError):
+        JsonlFile(tmp_path / "no-such-directory" / "episode.jsonl")
+
+
 def test_the_file_subscriber_appends_rather_than_rewrites(tmp_path):
     path = tmp_path / "episode.jsonl"
     journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])

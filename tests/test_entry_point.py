@@ -436,22 +436,107 @@ def test_an_interrupted_episode_still_leaves_what_it_got_through(tmp_path):
     assert from_jsonl(kept.read_text()) == during
 
 
-def test_a_journal_will_not_be_written_on_top_of_another_one(tmp_path, capsys):
+@pytest.mark.parametrize(
+    "already_there",
+    ['{"type": "episode_started"}\n', ""],
+    ids=["a real journal", "an empty file"],
+)
+def test_a_journal_will_not_be_written_on_top_of_another_one(
+    tmp_path, capsys, already_there
+):
     """One file, one Episode — that is what `from_jsonl` assumes and what
     every golden is. Appending a second Episode makes a file the reading
     tools parse into one flat run with two beginnings, and destroys the
     evidence of the first by making it unreadable.
+
+    **The empty case is not padding.** The first version of this test wrote
+    an empty file and then overwrote it with a record, so only one of the two
+    was ever exercised — and a check of "exists *and* has bytes in it" passed
+    the whole suite. An empty file at that path is somebody's run that has
+    only just started, or a file they made on purpose; either way it is not
+    ours to write into.
     """
     kept = tmp_path / "run.jsonl"
-    kept.write_text("")
-    kept.write_text('{"type": "episode_started"}\n')
+    kept.write_text(already_there)
 
     with pytest.raises(SystemExit):
         main(["--said", "hi", "--journal", str(kept)],
              model=Says(), clock=FakeClock())
 
     assert "already exists" in capsys.readouterr().err
-    assert kept.read_text() == '{"type": "episode_started"}\n'
+    assert kept.read_text() == already_there
+
+
+def test_what_was_said_out_loud_is_in_the_file(tmp_path):
+    """The premise the whole default-off decision rests on.
+
+    `PLAN.md` §16.22 justifies the flag by what a Journal carries: the words
+    `speak` was given, and every Snapshot's `new_speech`. Nothing was reading
+    a character of it — the round-trip test passes on a file with every word
+    blanked, because a blank string round-trips too.
+    """
+    kept = tmp_path / "run.jsonl"
+
+    main(["--said", "hi", "--journal", str(kept)],
+         model=Says("speak", "done"), clock=FakeClock())
+
+    said_out_loud = [
+        record.args["text"]
+        for record in from_jsonl(kept.read_text())
+        if record.type == "tool_called" and record.tool == "speak"
+    ]
+    assert said_out_loud == ["hello"]  # what `Says` scripts for `speak`
+
+
+def test_a_journal_that_cannot_be_written_is_refused_before_anything_moves(
+    tmp_path, capsys
+):
+    """It used to run the whole Episode and exit 0.
+
+    `Journal` catches what a subscriber raises and records it, which is right
+    for a renderer and wrong for the evidence: a missing directory printed a
+    failure line per record, produced no file, moved the robot, and reported
+    success. Both review axes found it independently (`PLAN.md` §16.24).
+    """
+    model = Says("speak", "done")
+
+    with pytest.raises(SystemExit):
+        main(
+            ["--said", "hi",
+             "--journal", str(tmp_path / "no-such-dir" / "x.jsonl")],
+            model=model,
+            clock=FakeClock(),
+        )
+
+    assert "is not a directory" in capsys.readouterr().err
+    assert model.asked == 0
+
+
+def test_losing_the_journal_part_way_through_is_not_a_clean_exit(
+    tmp_path, capsys, monkeypatch
+):
+    """The general case of the same thing.
+
+    A path can stop being writable after it was checked — the disk fills, the
+    directory goes away. The `SubscriberFailed` records are already in the
+    Journal; the exit code has to agree with them, or the one thing the
+    person asked to keep is gone and nothing said so.
+    """
+    def falls_over(self, record):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(
+        "misty_agent.agent.journal.JsonlFile.receive", falls_over
+    )
+
+    code = main(
+        ["--said", "hi", "--journal", str(tmp_path / "run.jsonl")],
+        model=Says("speak", "done"),
+        clock=FakeClock(),
+    )
+
+    assert code == 1
+    assert "no space left on device" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

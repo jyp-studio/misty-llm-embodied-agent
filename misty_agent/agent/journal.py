@@ -622,10 +622,29 @@ class JsonlFile:
 
     Appending rather than writing at the end: an Episode that is interrupted
     should still leave behind what it got through.
+
+    ## The file is created here, exclusively, and that is two guarantees
+
+    `open(path, "x")` fails if anything is already there, and fails now if the
+    path cannot be written at all. Both matter before a single record exists:
+
+    * **One file holds one Episode.** `from_jsonl` returns a flat sequence and
+      does not group, so a second beginning appended to somebody else's
+      Journal makes the first one unreadable. Refusing is the only answer that
+      never writes over evidence.
+    * **A path that cannot be written fails before the robot moves.** It used
+      to fail once per record — `Journal` catches what a subscriber raises and
+      turns it into a `SubscriberFailed`, so a missing directory ran the whole
+      Episode, printed a failure line for every record, produced no file and
+      still exited 0 (`PLAN.md` §16.24).
+
+    Callers wanting a friendlier sentence than `FileExistsError` should look
+    before constructing one; this is the guarantee, not the message.
     """
 
     def __init__(self, path: Union[str, "os.PathLike[str]"]) -> None:
         self._path = path
+        open(path, "x", encoding="utf-8").close()
 
     def receive(self, record: Record) -> None:
         with open(self._path, "a", encoding="utf-8") as handle:

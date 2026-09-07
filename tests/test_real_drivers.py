@@ -32,9 +32,9 @@ from __future__ import annotations
 
 import pytest
 
-from misty_agent.agent.tools import HEARS_NOTHING
+from misty_agent.agent.react import Decision
 from misty_agent.app import main
-from misty_agent.fakes import FakeClock
+from misty_agent.fakes import FakeClock, RecordingCommands
 
 from test_app import Says
 
@@ -60,18 +60,20 @@ class Recorder:
         Recorder.log.append(f"stop {type(self).__name__}")
 
 
-class FakeCommands(Recorder):
-    def __init__(self, ip="127.0.0.1"):
+class FakeCommands(RecordingCommands):
+    """The project's own robot double, with the driver log attached.
+
+    Not a hand-rolled stand-in. The first version of this file stubbed
+    `halt` and `stop_moving` and nothing else, so the moment a Tool called
+    anything past those two the Episode ended as `error` and the test that
+    depended on it went quietly empty. `RecordingCommands` answers the whole
+    command surface, so a call this file forgot fails the way it would
+    against a robot rather than the way it would against a stub.
+    """
+
+    def __init__(self, ip: str = "127.0.0.1") -> None:
         super().__init__(ip)
-        self.ip = ip
-
-    def stop_moving(self, **kwargs):
-        Recorder.log.append("stop_moving")
-        return None
-
-    def halt(self, **kwargs):
-        Recorder.log.append("halt")
-        return None
+        Recorder.log.append("built FakeCommands")
 
 
 class FakeAvSession(Recorder):
@@ -87,13 +89,17 @@ class FakeReadings(Recorder):
         return None
 
 
+class Heard:
+    text = "is that you"
+
+
 class FakeEars(Recorder):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.muted_for = []
 
     def read(self, timeout):
-        return None
+        return Heard()
 
     def mute_for(self, seconds):
         self.muted_for.append(seconds)
@@ -111,6 +117,11 @@ class FakeEvents(Recorder):
 
     def close(self):
         Recorder.log.append("close FakeEvents")
+
+    def press(self):
+        """Deliver a bump to whatever subscribed to it."""
+        (_, kwargs), = self.subscriptions.values()
+        kwargs["on_event"]({"isContacted": True})
 
 
 class FakeTranscriber(Recorder):
@@ -166,7 +177,7 @@ def test_the_address_reaches_both_things_that_need_it(built):
     machine. Two addresses would be two robots."""
     main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
 
-    assert built["RobotCommands"].ip == "10.0.0.7"
+    assert built["RobotCommands"].ip == "10.0.0.7"  # from `RobotCommands`
     assert built["EventStream"].args[0] == "10.0.0.7"
 
 
@@ -190,22 +201,53 @@ def test_the_distance_pipeline_reads_the_video_stream(built):
 # The wires that were forgotten last time
 # ---------------------------------------------------------------------------
 
-def test_the_foot_bumper_reaches_the_emergency_stop(built):
-    """`PLAN.md` §15.34: `EmergencyStop` was built, tested, and unwired.
-
-    A press has to arrive at the Session, which is what owns the running
-    Episode's stop. Without this the robot cannot be stopped by foot.
-    """
+def test_the_foot_bumper_is_subscribed_to_at_all(built):
+    """One subscription, on the event Misty publishes for it."""
     main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
 
     subscribed = built["EventStream"].subscriptions
     assert [event for event, _ in subscribed.values()] == ["BumpSensor"]
 
-    Recorder.log.clear()
-    (_, kwargs), = subscribed.values()
-    kwargs["on_event"]({"isContacted": True})
 
-    assert "halt" in Recorder.log
+def test_a_press_between_episodes_still_stops_the_motors(built):
+    """No Episode to abort, but the motors are just as real."""
+    main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
+    Recorder.log.clear()
+
+    built["EventStream"].press()
+
+    assert "halt" in built["RobotCommands"].endpoints
+
+
+def test_the_foot_bumper_aborts_the_episode_that_is_running(built, capsys):
+    """`PLAN.md` §15.34: `EmergencyStop` was built, tested, and unwired.
+
+    The test above is not this one. `Session.bumper_pressed` halts the motors
+    either way, so "the robot stopped" is satisfied by the between-Episodes
+    fallback and proves nothing about the wire that matters. What matters is
+    the other branch: a press *during* an Episode goes through that Episode's
+    own `EmergencyStop`, which is what records the interruption at the moment
+    the foot landed and ends the loop.
+
+    Asserted through the rendered Journal, which is the whole chain —
+    subscription callback, Session, `EmergencyStop`, Journal, renderer.
+    """
+    class PressesTheBumperMidEpisode:
+        asked = 0
+
+        def decide(self, working_context, tools):
+            PressesTheBumperMidEpisode.asked += 1
+            built["EventStream"].press()
+            return Decision(
+                tool="speak", args={"text": "hi"}, tokens_in=1, tokens_out=1
+            )
+
+    main(["--robot", "10.0.0.7"], model=PressesTheBumperMidEpisode(),
+         clock=FakeClock())
+
+    printed = capsys.readouterr().out
+    assert "stop requested by foot_bumper" in printed
+    assert "episode aborted" in printed
 
 
 def test_the_microphone_reaches_the_tool_that_has_to_mute_it(built):
@@ -234,12 +276,25 @@ def test_the_audio_stream_is_told_the_sessions_clock(built):
     assert built["AudioStream"].kwargs["monotonic"].__self__ is clock
 
 
-def test_the_ears_are_what_the_snapshot_listens_to(built):
-    """`LivePerception` reports `new_speech` from the Session's ears, and the
-    Session's ears have to be the real `AudioStream`."""
-    main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
+def test_what_the_microphone_hears_reaches_the_model(built):
+    """The first version of this asserted `is not HEARS_NOTHING`, which is
+    true of every double in this file — it checked that a fake is a fake, and
+    stayed green with `ears=` dropped from the `Session` entirely.
 
-    assert built["AudioStream"] is not HEARS_NOTHING
+    What has to hold is the whole path: `AudioStream` → `Session.ears` →
+    `LivePerception` → the Snapshot the model reads.
+    """
+    model = Says("speak", "done")
+
+    main(["--robot", "10.0.0.7"], model=model, clock=FakeClock())
+
+    heard = [
+        entry["content"]["snapshot"]["new_speech"]
+        for context in model.contexts
+        for entry in context
+        if entry.get("role") == "tool" and "snapshot" in entry.get("content", {})
+    ]
+    assert heard == [Heard.text]
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +344,72 @@ def test_the_drivers_are_released_even_when_the_episode_raises(built, monkeypatc
     assert built["RtspVideoStream"].stopped
 
 
+def test_a_robot_with_no_key_gets_no_ears_and_attaches_anyway(built, monkeypatch, tmp_path, capsys):
+    """`PLAN.md` §16.18 says so in prose and nothing was checking it.
+
+    `AudioStream` needs a `Transcriber` and the hosted one needs a key.
+    `HEARS_NOTHING` has `mute_for` and nothing else — no `start`, no `read` —
+    so a keyless run that tried to start it raises `AttributeError` on a
+    machine nobody can test. Every other test in this file sets a key, which
+    is why two mutations lived here: dropping the guard, and building the
+    transcriber unconditionally.
+
+    A robot with no ears is still worth attaching to. Its camera answers, and
+    that alone says the connection is up.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.app.API_KEY_FILE", str(tmp_path / "none"))
+
+    code = main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
+
+    assert code == 0
+    assert "OpenAITranscriber" not in built
+    assert "AudioStream" not in built
+    assert built["RtspVideoStream"].started
+    assert "10.0.0.7: " in capsys.readouterr().out
+
+
+def test_the_reported_line_names_the_robot_it_came_from(built, capsys):
+    """The simulated path labels its number `simulated:` and a photograph
+    labels it with the file (M8 #04 §16.14). A robot has to name itself for
+    the same reason — a distance is only as good as where it came from."""
+    main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
+
+    assert capsys.readouterr().out.startswith("10.0.0.7: ")
+
+
+def test_a_driver_that_fails_to_start_does_not_get_stopped(built, monkeypatch):
+    """`started` is appended to *after* each part comes up, so a failure part
+    way through start-up stops exactly what started.
+
+    Appending before starting is a one-line move that leaves every test here
+    green while `stop()` is called on something that never ran — which, for a
+    thread that was never spawned, is where the shutdown itself raises.
+    """
+    made = []
+
+    class WillNotStart(FakeReadings):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            made.append(self)
+
+        def start(self):
+            raise RuntimeError("the camera is unplugged")
+
+    monkeypatch.setattr("misty_agent.app.DistancePipeline", WillNotStart)
+
+    with pytest.raises(RuntimeError):
+        main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
+
+    # On the instance, not on `Recorder.log`: the log is keyed by the runtime
+    # class name, so a subclass writes `stop WillNotStart` and an assertion
+    # about `stop FakeReadings` is vacuously true however the code behaves.
+    (never_started,) = made
+    assert built["RtspVideoStream"].stopped  # it did start, so it is stopped
+    assert not never_started.stopped
+    assert "AudioStream" not in built or not built["AudioStream"].started
+
+
 # ---------------------------------------------------------------------------
 # What it must not imply
 # ---------------------------------------------------------------------------
@@ -304,6 +425,29 @@ def test_asking_for_a_robot_says_this_has_never_touched_one(built, capsys):
     warned = capsys.readouterr().err
     assert "never" in warned.lower()
     assert "PLAN.md" in warned
+
+
+def test_a_photograph_and_a_robot_are_refused_together(built, capsys):
+    """Ignoring one of them silently is how somebody ends up believing their
+    photograph did something. A robot has a camera; the image flag exists to
+    tell a *simulated* world where to put the person."""
+    with pytest.raises(SystemExit):
+        main(["--robot", "10.0.0.7", "--image", "someone.jpg"],
+             model=Says(), clock=FakeClock())
+
+    assert built == {}
+    assert "--image and --robot" in capsys.readouterr().err
+
+
+def test_an_empty_address_is_refused_rather_than_simulated(built, capsys):
+    """`--robot ""` is falsy, so every branch that asks `if args.robot` would
+    quietly simulate — and wanting something other than the simulation is the
+    one thing typing `--robot` has told you."""
+    with pytest.raises(SystemExit):
+        main(["--robot", ""], model=Says(), clock=FakeClock())
+
+    assert built == {}
+    assert "--robot needs an address" in capsys.readouterr().err
 
 
 def test_the_default_touches_no_driver_at_all(built, capsys):

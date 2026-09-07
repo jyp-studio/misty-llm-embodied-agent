@@ -233,6 +233,24 @@ def test_the_default_clock_is_a_real_one():
 # The bumper — the wiring `EmergencyStop` never had
 # ---------------------------------------------------------------------------
 
+def test_the_shared_clock_is_the_one_the_drivers_read_on_their_own():
+    """The premise `PLAN.md` §16.18 rests on, pinned.
+
+    `RtspVideoStream` and `DistancePipeline` stamp frames and readings by
+    calling `time.monotonic()` themselves and take no clock to call instead.
+    §16.18 argues that is survivable rather than a missing wire — but only
+    because `SystemClock.monotonic` *is* `time.monotonic`: the same function,
+    not two that happen to agree today. Give `SystemClock` its own notion of
+    now and `approach` starts rejecting every real reading as stale, with
+    nothing else going red.
+    """
+    before = time.monotonic()
+    shared = SystemClock().monotonic()
+    after = time.monotonic()
+
+    assert before <= shared <= after
+
+
 def test_a_session_arms_the_bumper_as_part_of_construction():
     """A safety path that needs a second remembered call is not wired."""
     events = Events()

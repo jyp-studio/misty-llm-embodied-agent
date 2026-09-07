@@ -1883,8 +1883,11 @@ Standards 列的八個存活 mutation，六個修掉、一個靠刪程式碼消�
 #### 一個不明顯的關停順序
 
 `RtspVideoStream.stop()` 會關掉 `AvSession`，而 `AudioStream` 正在讀同一個 session。先停
-影像，聲音那兩條執行緒就會對著一個已經關掉的串流繼續讀。所以關停不只是「啟動的反序」——
-**影像一定最後停**。`started` 是邊啟動邊追加的，所以啟動失敗到一半時，只會停掉真的起來的那些。
+影像，聲音那兩條執行緒就會對著一個已經關掉的串流繼續讀。
+
+程式碼做的**就是**啟動的反序 —— 之所以正確，是因為影像最先啟動，反序就把它排到最後。這裡值得
+記的是「為什麼反序剛好對」，不是「反序不夠」。`started` 是邊啟動邊追加的（先 `start()` 再
+`append`），所以啟動失敗到一半時，只會停掉真的起來的那些。
 
 #### 時鐘只傳得到它傳得到的地方
 
@@ -1904,3 +1907,40 @@ Standards 列的八個存活 mutation，六個修掉、一個靠刪程式碼消�
 `AudioStream` 要一個 `Transcriber`，而 hosted 那個要 key。沒有 key 時這條路拿 `HEARS_NOTHING`
 而不是拒絕連線——**一台沒有耳朵的機器人仍然值得連上去**，它的相機會回答，而那件事本身就告訴
 你連線是通的。
+
+### 16.19 沒有 key 的那條路整段沒有測試（M8 #05 review）
+
+兩軸各自跑完，最有用的一條是 Standards 的：**§16.18 那段「沒有 key 就沒有耳朵」完全沒有
+測試蓋到**。這個檔案裡每一條測試都設了 `OPENAI_API_KEY`，所以 `ears` 從來不是
+`HEARS_NOTHING`，兩個 mutation 因此活著 —— 刪掉那個守衛、以及不管有沒有 key 都建 transcriber。
+
+而 `HearsNothing` 只有 `mute_for`，沒有 `start` 也沒有 `read`。也就是說**真的沒有 key 去跑
+`--robot`，會丟 `AttributeError`** —— 在一台沒有人能測的機器上。散文寫了一件事，程式碼靠一個
+沒有測試的守衛撐著它。補了一條沒有 key 的 `--robot` 測試，兩個 mutation 一起死。
+
+順帶把那個守衛拿掉了。`HearsNothing` 的 docstring 說它存在是為了「讓呼叫端讀一種形狀，不用寫
+`None` 檢查」，而 `attached_to` 一邊收 `Optional[transcriber]` 一邊又比對 sentinel，**把它省
+下來的那個檢查加了回去，還加了兩次**。現在耳朵和「要啟動什麼」在同一個分支裡一次決定完。
+
+### 16.20 一個叫做 `model` 的布林值（M8 #05 review）
+
+`_one_episode(session, args, *, source, model)` 裡的 `model` **不是模型** —— `session.model`
+才是。它唯一的用途是 `if model is None and not api_key_available()`，也就是「有沒有人注入了
+測試替身」。一個穿著協作者名字的布林值。改名 `must_find_a_key`，呼叫端算 `model is None`。
+
+同一輪還修掉：`--robot ""` 是 falsy，所以會安靜地跑模擬（而按下 `--robot` 唯一確定的事情就是
+這個人不要模擬）；parser 的 description 仍然寫著「against a simulated robot… the robot is
+not」，在 `--robot` 底下是假的；以及 `load_api_key` 被搬成每次 `main()` 都跑 —— 它會**寫入**
+`os.environ`，而一個拿到模型又不連機器人的指令沒有理由在路過時改動環境。
+
+### 16.21 §16.18 的論證少了一顆釘子（M8 #05 review）
+
+Standards 指出：§16.18 說「`RtspVideoStream` 與 `DistancePipeline` 自己讀 `time.monotonic`
+沒關係，因為 `SystemClock.monotonic` 就是 `time.monotonic`」—— 而**那個前提本身沒有任何測試**。
+整段論證掛在一個沒人檢查的等式上。
+
+釘上了，而且是行為斷言不是原始碼比對：夾在兩次 `time.monotonic()` 之間取一次
+`SystemClock().monotonic()`，斷言它落在中間。換成 `time.time()` 立刻紅。
+
+**教訓和 §16.10 是同一條**：一段推理如果有一個「因為 X」，那個 X 就是要被斷言的東西，不是被
+複述的東西。

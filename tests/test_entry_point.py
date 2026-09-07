@@ -335,6 +335,24 @@ def test_the_whole_episode_is_printed_in_time_order(capsys):
 # It is a command, not just a function
 # ---------------------------------------------------------------------------
 
+def test_a_command_that_needs_no_key_does_not_go_looking_for_one(monkeypatch):
+    """`load_api_key` does not just read — it *exports* what it finds.
+
+    A run that was handed a model and told to simulate needs no key, and has
+    no business writing to the process environment on its way past. It was
+    called unconditionally for one commit, which is how a test suite starts
+    depending on whose machine it is running on.
+    """
+    looked_in = []
+    monkeypatch.setattr(
+        "misty_agent.app.load_api_key", lambda path: looked_in.append(path)
+    )
+
+    main(["--said", "hi"], model=Says(), clock=FakeClock())
+
+    assert looked_in == []
+
+
 def test_the_module_really_runs_as_a_command(tmp_path):
     """Everything above calls `main` in-process.
 

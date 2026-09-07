@@ -317,8 +317,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m misty_agent",
         description=(
-            "Run one Episode against a simulated robot. Perception is real; "
-            "the robot is not."
+            "Run one Episode. By default the robot is simulated and only "
+            "perception is real; --robot attaches to a Misty II instead, "
+            "which nothing here has ever done."
         ),
     )
     parser.add_argument(
@@ -424,7 +425,9 @@ def attached_to(
     they agree, because `SystemClock.monotonic` is `time.monotonic` — the same
     function, not two that happen to match. **A fake clock here would break
     the freshness test**, in exactly the way M8 #04 found a second clock
-    breaks it for the simulated world.
+    breaks it for the simulated world. `tests/test_real_drivers.py` passes one
+    anyway, and may: it replaces the two classes that read the clock directly,
+    so there is nothing left in it for a fake clock to disagree with.
 
     Adding a clock parameter to those two so this docstring could say "all
     of them" would be a parameter with one caller passing one value, which is
@@ -443,18 +446,16 @@ def attached_to(
     stream = AvSession(commands)
     video = RtspVideoStream(stream)
     readings = DistancePipeline(video)
-    ears = (
-        HEARS_NOTHING
-        if transcriber is None
-        else AudioStream(stream, transcriber, monotonic=clock.monotonic)
-    )
+    if transcriber is None:
+        ears, listening = HEARS_NOTHING, ()
+    else:
+        ears = AudioStream(stream, transcriber, monotonic=clock.monotonic)
+        listening = (ears,)
     events = EventStream(ip)
 
     started: list = []
     try:
-        for part in (video, readings, ears):
-            if part is HEARS_NOTHING:
-                continue
+        for part in (video, readings, *listening):
             part.start()
             started.append(part)
         # Built inside the `try`: its constructor subscribes the bumper, and
@@ -477,11 +478,31 @@ def attached_to(
 
 
 def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.robot is not None and not args.robot.strip():
+        # Falsy, so every `if args.robot` below would quietly simulate — and
+        # the one thing somebody typing `--robot` has told you is that they
+        # did not want the simulation.
+        parser.error("--robot needs an address")
+    if args.robot and args.image is not None:
+        # Refused rather than ignored. A photograph sets where the person
+        # starts in a *simulated* world; a real robot has a camera, and the
+        # readings that come out of it are the ones that change when it
+        # drives. Accepting both and quietly honouring one is how somebody
+        # ends up believing their photograph did something.
+        parser.error(
+            "--image and --robot are alternatives: with a robot attached, "
+            "its own camera is what produces the readings"
+        )
     clock = clock or SystemClock()
-    # Both paths, and early: the hosted transcriber needs the same key the
-    # model does, and it is built before the drivers are.
-    key = load_api_key(API_KEY_FILE)
+    # Only when something is actually going to need one. It is read early
+    # because the hosted transcriber needs the same key the model does and is
+    # built before the drivers are — but `load_api_key` *exports* what it
+    # finds, and a command given a model and no robot has no business
+    # touching the environment on its way past.
+    needs_a_key = model is None or args.robot
+    key = load_api_key(API_KEY_FILE) if needs_a_key else None
     asked = model if model is not None else OpenAIModel()
 
     if args.robot:
@@ -492,7 +513,9 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
             clock=clock,
             transcriber=OpenAITranscriber(key) if key else None,
         ) as session:
-            return _one_episode(session, args, source=args.robot, model=model)
+            return _one_episode(
+                session, args, source=args.robot, must_find_a_key=model is None
+            )
 
     try:
         robot, readings = _robot_and_room(args.image, clock)
@@ -509,10 +532,14 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
         clock=clock,
     )
     source = "simulated" if args.image is None else args.image
-    return _one_episode(session, args, source=source, model=model)
+    return _one_episode(
+        session, args, source=source, must_find_a_key=model is None
+    )
 
 
-def _one_episode(session: Session, args: Any, *, source: Any, model: Any) -> int:
+def _one_episode(
+    session: Session, args: Any, *, source: Any, must_find_a_key: bool
+) -> int:
     """Report what can be seen, then run one Episode against it.
 
     The same six lines whichever world was assembled — which is the point of
@@ -530,7 +557,7 @@ def _one_episode(session: Session, args: Any, *, source: Any, model: Any) -> int
     # no-key guidance appears above the result it is answering.
     print(f"{source}: {in_view(seen)}", flush=True)
 
-    if model is None and not api_key_available():
+    if must_find_a_key and not api_key_available():
         print(str(MissingApiKey()), file=sys.stderr)
         return 1
 

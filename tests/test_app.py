@@ -524,6 +524,24 @@ def test_something_heard_since_the_last_look_reaches_the_snapshot():
     assert snapshot.new_speech == "stop that"
 
 
+def test_the_sessions_own_ears_reach_the_snapshot_it_takes():
+    """The wiring, not `LivePerception` — and nothing else covered it.
+
+    Every test around this one builds a `LivePerception` by hand, so a
+    `Session` that stopped passing its microphone through would leave all of
+    them green while every Episode went deaf. That is `PLAN.md` §15.34's
+    shape exactly, and it is how `ToolContext.ears` sat unwired until M7 #12.
+    A review's mutant replaced the microphone with `None` here and the whole
+    suite stayed green.
+    """
+    class Utterance:
+        text = "stop that"
+
+    session = a_session(ears=Ears(Utterance()))
+
+    assert session.sees().new_speech == "stop that"
+
+
 def test_a_snapshot_without_ears_reports_no_speech_rather_than_failing():
     assert LivePerception(Readings(120)).snapshot().new_speech is None
 

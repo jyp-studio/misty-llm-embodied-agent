@@ -9,16 +9,9 @@ from misty_agent.fakes.fake_robot import (
     RecordedRequest,
     RecordingCommands,
 )
-from misty_agent.fakes.simulated_world import (
-    NOBODY_THERE,
-    EmptyRoom,
-    MovingWorld,
-    a_reading,
-)
+from misty_agent.fakes.simulated_world import MovingWorld, a_reading
 
 __all__ = [
-    "NOBODY_THERE",
-    "EmptyRoom",
     "FakeClock",
     "MovingWorld",
     "RecordedRequest",

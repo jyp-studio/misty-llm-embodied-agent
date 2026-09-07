@@ -17,7 +17,9 @@ M7 的教訓寫在 `PLAN.md` §15.34：`EmergencyStop` 與 `ToolContext.ears` �
       被組起來
 - [ ] 腳踩保險桿接到緊急停止；麥克風接到 TTS 抑制窗
 - [ ] 所有協作者共用同一個時鐘
-- [ ] `load_api_key` 有生產呼叫端
+- [x] `load_api_key` 有生產呼叫端 —— **#04 已經做掉**：`spec.md` 把「`main()` 呼叫
+      `load_api_key()`」放在入口那一節，而 #04 的驗收條件「沒有 API key 時…訊息說明怎麼
+      提供 key」沒有它就無法成立。`MissingApiKey` 的訊息現在也會講 `OAI_CONFIG_LIST.json`
 - [ ] 這條路徑**明確標註「從未在真機執行過」**（`PLAN.md` §8），不得暗示它被驗證過
 - [ ] 有測試在協作者邊界上用假物件涵蓋這條組裝路徑
 - [ ] 預設仍然是模擬路徑

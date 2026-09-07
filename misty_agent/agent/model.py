@@ -36,6 +36,13 @@ from misty_agent.config import settings
 #: message can say it rather than making someone go and find out.
 API_KEY_VARIABLE = "OPENAI_API_KEY"
 
+#: The other channel, and the reason it is a constant rather than a word in a
+#: sentence: `README.md` and `.env.example` both promise this file works, and
+#: `app.load_api_key` is what keeps that promise. A message naming the file as
+#: prose would go stale the day the file is renamed, silently, in the one
+#: paragraph a new reader depends on.
+API_KEY_FILE = "OAI_CONFIG_LIST.json"
+
 
 class MissingApiKey(RuntimeError):
     """Raised with instructions rather than a stack trace from inside a SDK."""
@@ -43,7 +50,10 @@ class MissingApiKey(RuntimeError):
     def __init__(self) -> None:
         super().__init__(
             f"no {API_KEY_VARIABLE} in the environment, so there is nothing "
-            f"to ask. Run `export {API_KEY_VARIABLE}=sk-...` in this shell. "
+            f"to ask. Either run `export {API_KEY_VARIABLE}=sk-...` in this "
+            f"shell, or put the key in {API_KEY_FILE} (copy "
+            f"{API_KEY_FILE}.example) — an entry point reads that file and "
+            f"exports it for you. "
             f"Not the project's .env file: that is read by `Settings` for "
             f"MISTY_-prefixed fields only and is never exported to the "
             f"environment, which is why .env.example says not to put a key "

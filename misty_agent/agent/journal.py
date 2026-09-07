@@ -706,7 +706,7 @@ def describe(record: Record) -> Described:
         return Described(f"{record.tool} refused", record.reason, tone="refused")
     if isinstance(record, Observation):
         return Described(
-            _came_back(record.result), _in_view(record.snapshot), tone="result"
+            _came_back(record.result), in_view(record.snapshot), tone="result"
         )
     if isinstance(record, StopRequested):
         return Described(f"stop requested by {record.source}", tone="boundary")
@@ -750,7 +750,15 @@ def _came_back(result: Mapping[str, Any]) -> str:
     return "ok" if result.get("ok") is True else "returned"
 
 
-def _in_view(snapshot: Snapshot) -> str:
+def in_view(snapshot: Snapshot) -> str:
+    """A Snapshot as the phrase a person reads, in the only place it is built.
+
+    Public since M8 #04: the entry point has to report what perception made of
+    the world *before* any Record exists, and it first did so with a second
+    copy of this — which promptly diverged, rendering `someone Nonecm away`
+    for the distance-unknown case this handles. `PLAN.md` §15.4.
+    """
+
     if not snapshot.face_present:
         return "nobody in view"
     if snapshot.distance_cm is None:

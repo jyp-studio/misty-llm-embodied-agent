@@ -5,6 +5,14 @@ a loop. This is where they are wired into something that can be pointed at a
 robot — and it is deliberately thin, because everything worth testing has
 already been tested where it lives.
 
+## The command
+
+`main` is here too, and `__main__.py` only forwards to it. Starting the whole
+thing *is* the last piece of this wiring, and a module run as
+`python -m misty_agent` is imported under the name `__main__` — so anything
+that later imported `misty_agent.__main__` to reuse the assembly would get a
+second copy of it, constants and all.
+
 ## One Episode, not a session
 
 `PLAN.md` §15.1: the public entry is "feed one trigger, run one Episode".
@@ -34,26 +42,42 @@ swallowed.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import pathlib
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional, Tuple
 
-from misty_agent.agent.journal import Journal, Snapshot, TerminalRenderer
+from misty_agent.agent.journal import (
+    Journal,
+    Snapshot,
+    TerminalRenderer,
+    in_view,
+)
 from misty_agent.agent.memory import Memory
+# The two channels a key may arrive by, in order: the environment first
+# because that is what the OpenAI SDK reads on its own, the JSON file second
+# because `.env.example` and the README have promised it since before this
+# rewrite. Both are named where the key is *needed*, so `MissingApiKey` can
+# name them too — one definition, one paragraph of advice.
+from misty_agent.agent.model import (
+    API_KEY_FILE,
+    API_KEY_VARIABLE,
+    MissingApiKey,
+    OpenAIModel,
+    api_key_available,
+)
 from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.config import Settings, settings
 from misty_agent.drivers.events import event_condition
-
-#: Where a key may come from, in order. The environment first because that is
-#: what the OpenAI SDK reads on its own; the JSON file second because
-#: `.env.example` and the README have promised it since before this rewrite.
-API_KEY_VARIABLE = "OPENAI_API_KEY"
-API_KEY_FILE = "OAI_CONFIG_LIST.json"
+from misty_agent.fakes import MovingWorld, RecordingCommands
+from misty_agent.perception.distance import NOBODY_THERE
 
 
 class SystemClock:
@@ -270,3 +294,125 @@ class Session:
         finally:
             self._running = None
         return outcome, journal
+
+
+# ---------- the command ----------
+
+#: Where the person is standing when no photograph says otherwise. Far enough
+#: that `approach` has something to do, and inside the range the M5 report
+#: measured — a demo that starts already arrived demonstrates nothing.
+DEFAULT_START_CM = 150
+
+#: The two kinds of thing that start an Episode. `CONTEXT.md` gives an Episode
+#: exactly one external trigger, and these are the two the goldens carry.
+TRIGGERS = ("speech", "visual")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m misty_agent",
+        description=(
+            "Run one Episode against a simulated robot. Perception is real; "
+            "the robot is not."
+        ),
+    )
+    parser.add_argument(
+        "--trigger",
+        choices=TRIGGERS,
+        default="speech",
+        help="what set this Episode off (default: speech)",
+    )
+    parser.add_argument(
+        "--said",
+        default="",
+        help="what the person said, as speech-to-text would have heard it",
+    )
+    parser.add_argument(
+        "--image",
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "a photograph to run through face detection and distance "
+            "estimation; where the person is standing comes from it"
+        ),
+    )
+    return parser
+
+
+def _robot_and_room(image: Optional[pathlib.Path], clock: Any) -> Tuple[Any, Any]:
+    """The robot and the readings, as one pair because the world is one thing.
+
+    `MovingWorld` is both: it answers drive commands and it answers
+    `latest_reading`, which is what makes the distance it reports respond to
+    the driving. An empty room needs the two split, because there is a robot
+    but nobody to measure.
+    """
+    if image is None:
+        world = MovingWorld(clock, start_cm=DEFAULT_START_CM, config=settings)
+        return world, world
+
+    import cv2
+
+    frame = cv2.imread(str(image))
+    if frame is None:
+        raise FileNotFoundError(image)
+
+    from misty_agent.perception.face import FaceDetector
+
+    with FaceDetector() as detector:
+        seen = detector.detect(frame)
+    if not seen.has_human:
+        return RecordingCommands(), NOBODY_THERE
+    world = MovingWorld(clock, start_cm=seen.distance_cm, config=settings)
+    return world, world
+
+
+def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -> int:
+    args = _parser().parse_args(argv)
+    clock = clock or SystemClock()
+
+    try:
+        robot, readings = _robot_and_room(args.image, clock)
+    except FileNotFoundError as missing:
+        print(f"could not read {missing}", file=sys.stderr)
+        return 1
+
+    session = Session(
+        robot=robot,
+        readings=readings,
+        model=model if model is not None else OpenAIModel(),
+        memory=Memory(),
+        config=settings,
+        clock=clock,
+    )
+
+    seen = session.sees()
+    # Named by where the number came from. A photograph is perception; the
+    # default is `DEFAULT_START_CM` and calling that "perception" would be the
+    # entry point claiming a camera it did not use — the same invention
+    # `PLAN.md` §16.13 refuses for an image with no face in it.
+    #
+    # Flushed because the next thing written may go to stderr, and stdout is
+    # block-buffered whenever this is piped into anything. Without it the
+    # no-key guidance appears above the result it is answering.
+    source = "simulated" if args.image is None else args.image
+    print(f"{source}: {in_view(seen)}", flush=True)
+
+    if model is None:
+        load_api_key(API_KEY_FILE)
+        if not api_key_available():
+            print(str(MissingApiKey()), file=sys.stderr)
+            return 1
+
+    # The renderer already writes the closing line — `episode done after 3
+    # turn(s), 3 step(s)`. Printing the same three facts again underneath it,
+    # in a second phrasing, is `PLAN.md` §15.4's two copies of one fact, and
+    # they had already diverged: one said `turn(s)`, the other `turns`.
+    #
+    # The exit code says whether the *command* ran, not how the Episode ended.
+    # An Episode that hits its Turn cap or is aborted did what it was built to
+    # do, and the one outcome that is a failure — `error` — is already
+    # reported, in the Journal and on the terminal, by the thing that saw it.
+    session.episode(args.trigger, args.said)
+    return 0
+

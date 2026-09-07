@@ -1801,3 +1801,66 @@ MediaPipe face mesh 和同一個距離估計，出來的數字就是人站的起
 
 **README 沒有動。** §16.6 盤點過它現在大部分在描述 M1 就被移除的系統，整份留給 M9 重寫；
 在一份整體錯誤的文件上加一行正確的話，只會讓它更難讀。
+
+### 16.14 兩軸 review：印出來的那一行從來沒有被測過（M8 #04）
+
+Spec 軸把整行 `print(f"perception: {_describe(seen)}")` 換成寫死的字串
+`"perception: someone 150cm away"`，**1100 條全綠**。我親手重跑確認過。
+
+原因是唯一斷言那行的測試走的是沒有圖片的路徑，而那條路徑的距離**就是 `DEFAULT_START_CM`
+＝ 150**。斷言 `"150" in printed.out` 等於拿一個常數去比對它自己產生的數字 —— 和 §15.29
+「拿兩個推導值互比會蓋掉同時影響兩者的錯誤」是同一個形狀。
+
+修法是讓斷言對上**這個模組拿不出來的數字**：跑真的 pipeline 去問那張照片是幾公分，再斷言印
+出來的就是那個數。測試不寫 `52`，寫 `what_the_camera_makes_of(portrait)` —— 那個數字是
+MediaPipe 的，不該被釘在測試裡。
+
+同一條 finding 的第二半：沒有圖片時把 `DEFAULT_START_CM` 標成 `perception:`，本身就是
+§16.13 拒絕過的那件事（「入口自己發明一個相機沒看到的人」）換一張臉。現在那行會講數字從哪來
+——`simulated: 150cm away` 對 `photo.jpg: 52cm away`。
+
+### 16.15 同一件事印了兩遍，就印在彼此下面（M8 #04 review）
+
+Standards 軸指出結尾那兩行是同一句話：
+
+```
+   6.24s  episode done after 3 turn(s), 3 step(s)     ← TerminalRenderer
+done after 3 turns and 3 steps                        ← main() 自己再印一次
+```
+
+`_count` 這個函式存在的唯一理由，是把一個**已經被渲染過**的事實重新處理單複數。這是 §15.4
+最字面的違反，而且兩份拷貝**已經漂了** —— 一邊 `turn(s)`，一邊 `turns`。整段刪掉，順帶
+帶走三個活著的 mutation（`_count` 恆複數、整行刪掉、`turns`/`steps` 對調）：**不能被刪掉
+還沒人發現的輸出，本來就不該存在。**
+
+同一軸抓到 `_describe` 是 `journal._in_view` 的第二份拷貝，而且我寫的註解說錯了為什麼要有
+第二份（我寫「`_in_view` 讀的是 Record」——它讀的是 Snapshot）。兩份也已經漂了：`_in_view`
+處理「有人但距離未知」，我的版本會印出 `someone Nonecm away`。`in_view` 改成公開，`_describe`
+刪掉。
+
+`_describe` 裡那段「聽到什麼」的分支則是**永遠到不了的程式碼**：入口的 `Session` 沒有耳朵
+（`ears` 預設 `HEARS_NOTHING`，`_microphone()` 回 `None`），所以 `new_speech` 恆為 `None`。
+一併刪掉。
+
+### 16.16 `EmptyRoom` 放錯地方，而且它的 docstring 在吹牛（M8 #04 review）
+
+`NEVER_STOPS`、`NO_MEMORY`、`HEARS_NOTHING` 三個 null object **都住在它們所抵銷的那個
+protocol 旁邊**。我把 `EmptyRoom` 放進 `misty_agent/fakes/simulated_world.py` —— 但它身上
+沒有任何東西是模擬的：它是這個 seam 對「沒有讀數」的合法回答。搬到 `perception/distance.py`，
+`DistancePipeline` 旁邊。
+
+docstring 原本寫「省下呼叫端在**每個**建構點都要寫的分支」。呼叫端只有一個，而且它照樣要分支。
+改掉了。**一個為了聽起來有道理而寫的理由，比沒有理由更糟。**
+
+### 16.17 一個誠實的等價 mutation（M8 #04）
+
+Standards 列的八個存活 mutation，六個修掉、一個靠刪程式碼消滅，剩下這個沒有：把
+`seen = session.sees()` 換成 `LivePerception(session.readings, None).snapshot()`。
+
+它活著是因為**在這條路徑上它真的等價** —— 入口的 Session 沒有麥克風，兩種寫法產生逐欄位相同
+的 Snapshot。`sees()` 要保護的不是行為，是「`LivePerception` 只在一個地方被組出來」，而那不是
+一條測試能斷言的東西。記在這裡而不是假裝殺掉它。
+
+真正有東西的是它的鄰居：把 `Session._perception()` 的麥克風換成 `None` **也**全綠，而那個
+會讓**每一次** Episode 都聾掉。原因是所有耳朵測試都自己手動組 `LivePerception`，沒有一條
+穿過 `Session`。補了一條，mutation 現在會紅。這正是 §15.34 的形狀。

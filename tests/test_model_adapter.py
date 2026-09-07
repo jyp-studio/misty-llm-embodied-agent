@@ -14,6 +14,7 @@ import json
 import pytest
 
 from misty_agent.agent.model import (
+    API_KEY_FILE,
     API_KEY_VARIABLE,
     MissingApiKey,
     ModelSaidNothing,
@@ -174,6 +175,23 @@ def test_the_missing_key_message_says_how_to_provide_one():
     assert API_KEY_VARIABLE in message
     assert f"export {API_KEY_VARIABLE}=" in message
     assert "runs without one" in message
+
+
+def test_the_missing_key_message_names_both_channels_that_work():
+    """The mirror of the test below, and the defect that outlived it.
+
+    That one keeps a channel which does *not* work out of the message. This
+    one keeps a channel which does *in*: `README.md` and `.env.example` have
+    both promised `OAI_CONFIG_LIST.json` since before the rewrite, and
+    `app.load_api_key` is what keeps that promise — proven by
+    `tests/test_app.py::test_a_key_from_the_file_is_put_where_the_sdk_will_look`.
+    Until M8 #04 the message named only `export`, so the person most in need
+    of the advice was told half of it.
+    """
+    message = str(MissingApiKey())
+
+    assert f"export {API_KEY_VARIABLE}=" in message
+    assert API_KEY_FILE in message
 
 
 def test_the_missing_key_message_does_not_send_anyone_to_dot_env():

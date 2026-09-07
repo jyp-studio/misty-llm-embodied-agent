@@ -7,7 +7,8 @@ that had ever run was assembled inside a test.
 ## The seam
 
 `main(argv)`, the shape `harness/__main__.py` already uses — argv in, exit
-code out. Two collaborators are injectable and both earn it:
+code out. It lives in `app.py`, which is where the pieces are wired together;
+`misty_agent/__main__.py` only forwards to it. Two collaborators are injectable and both earn it:
 
 * `model=` because the live suite is the only thing allowed to spend money
   (AGENTS.md), so every test here scripts the decisions instead;
@@ -22,15 +23,34 @@ world shows up as a wrong Observation, not as a wrong object graph.
 
 from __future__ import annotations
 
+import os
 import pathlib
+import subprocess
+import sys
 
 import pytest
 
-from misty_agent.__main__ import main
+from misty_agent.agent.model import API_KEY_VARIABLE
+from misty_agent.app import DEFAULT_START_CM, main
+from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock
 
-from conftest import FIXTURES
+from conftest import FIXTURES, SKIP_REASON
 from test_app import Says
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def what_the_camera_makes_of(path):
+    """The distance the real pipeline estimates, computed the same way the
+    entry point computes it. Asserting against this rather than against `52`
+    keeps the tests honest without pinning a number MediaPipe owns.
+    """
+    cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
+    from misty_agent.perception.face import FaceDetector
+
+    with FaceDetector() as detector:
+        return detector.detect(cv2.imread(str(path))).distance_cm
 
 
 def snapshots_the_model_read(model):
@@ -141,9 +161,10 @@ def test_a_photograph_decides_where_the_person_is():
     move that, or the image was decoded and thrown away.
     """
     model = Says("speak", "done")
+    portrait = FIXTURES / "frontal_face_portrait.jpg"
 
     code = main(
-        ["--said", "hello", "--image", str(FIXTURES / "frontal_face_portrait.jpg")],
+        ["--said", "hello", "--image", str(portrait)],
         model=model,
         clock=FakeClock(),
     )
@@ -151,15 +172,15 @@ def test_a_photograph_decides_where_the_person_is():
     assert code == 0
     seen = snapshots_the_model_read(model)
     assert seen[0]["face_present"] is True
-    assert seen[0]["distance_cm"] != 150
+    assert seen[0]["distance_cm"] == what_the_camera_makes_of(portrait)
 
 
 def test_a_photograph_of_nobody_is_a_room_with_nobody_in_it(tmp_path):
     """`face_present` false and no distance — the Snapshot `LivePerception`
     builds when `latest_reading()` has nothing to offer. The model is told
     the truth about an empty room rather than a default one."""
-    cv2 = pytest.importorskip("cv2")
-    import numpy as np
+    cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
+    np = pytest.importorskip("numpy", reason=SKIP_REASON)
 
     blank = tmp_path / "empty-room.png"
     cv2.imwrite(str(blank), np.zeros((240, 320, 3), dtype=np.uint8))
@@ -173,6 +194,36 @@ def test_a_photograph_of_nobody_is_a_room_with_nobody_in_it(tmp_path):
     seen = snapshots_the_model_read(model)
     assert seen[0]["face_present"] is False
     assert seen[0]["distance_cm"] is None
+
+
+def test_the_photograph_puts_the_person_in_the_world_the_robot_drives_in(tmp_path):
+    """Robot and readings on the image path have to be the *same* object.
+
+    Split them — a plain `RecordingCommands` as the robot, the world as the
+    readings — and each drive lands on a recorder while the observed distance
+    never moves. `approach` runs to its deadline and reports a lost person,
+    and the exit code is still 0. A review's mutant did exactly this and only
+    the no-image path noticed.
+
+    The portrait is scaled down first: at full size the face reads as 52cm,
+    already inside `target_distance_cm` ± its tolerance, so `approach` would
+    arrive without driving and prove nothing.
+    """
+    cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
+    portrait = cv2.imread(str(FIXTURES / "frontal_face_portrait.jpg"))
+    further = tmp_path / "further-away.png"
+    cv2.imwrite(
+        str(further),
+        cv2.resize(portrait, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA),
+    )
+    config = Settings()
+    started_at = what_the_camera_makes_of(further)
+    assert started_at > config.target_distance_cm + config.distance_tolerance_cm
+
+    model = Says("approach", "done")
+    main(["--image", str(further)], model=model, clock=FakeClock())
+
+    assert snapshots_the_model_read(model)[0]["distance_cm"] < started_at
 
 
 def test_an_image_that_cannot_be_read_says_so_instead_of_raising(capsys):
@@ -199,14 +250,47 @@ def test_without_a_key_perception_still_runs_and_says_how_to_give_one(
     next — not a stack trace from inside an SDK.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("misty_agent.__main__.API_KEY_FILE", str(tmp_path / "none"))
+    monkeypatch.setattr("misty_agent.app.API_KEY_FILE", str(tmp_path / "none"))
 
     code = main(["--said", "hello"], clock=FakeClock())
 
     assert code == 1
     printed = capsys.readouterr()
-    assert "150" in printed.out  # perception reported what it saw
+    assert f"{DEFAULT_START_CM}cm" in printed.out  # it reported what it saw
     assert "OPENAI_API_KEY" in printed.err
+
+
+def test_what_gets_reported_is_what_the_camera_saw(capsys, monkeypatch, tmp_path):
+    """The reported line, tied to the pipeline that produced it.
+
+    The test above asserts `DEFAULT_START_CM` appears — and that is a constant
+    this module owns, so a review replaced the whole `print` with the literal
+    string `"perception: someone 150cm away"` and all 1100 tests stayed green.
+    A photograph produces a number no constant here can supply, which is the
+    only way to tell a report from a recital.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.app.API_KEY_FILE", str(tmp_path / "none"))
+    portrait = FIXTURES / "frontal_face_portrait.jpg"
+
+    code = main(["--image", str(portrait)], clock=FakeClock())
+
+    assert code == 1
+    reported = capsys.readouterr().out
+    assert f"{what_the_camera_makes_of(portrait)}cm away" in reported
+    assert str(portrait) in reported
+
+
+def test_the_reported_line_says_where_its_number_came_from(capsys, monkeypatch, tmp_path):
+    """`PLAN.md` §16.13 refuses to let the entry point invent a person the
+    camera did not find. Labelling `DEFAULT_START_CM` as perception is the
+    same invention with a different face, so the default says so."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.app.API_KEY_FILE", str(tmp_path / "none"))
+
+    main([], clock=FakeClock())
+
+    assert capsys.readouterr().out.startswith("simulated:")
 
 
 def test_without_a_key_nothing_is_asked_of_a_model(monkeypatch, tmp_path):
@@ -214,10 +298,10 @@ def test_without_a_key_nothing_is_asked_of_a_model(monkeypatch, tmp_path):
     failing halfway through one: a halted robot is a worse answer than a
     refusal to start."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("misty_agent.__main__.API_KEY_FILE", str(tmp_path / "none"))
+    monkeypatch.setattr("misty_agent.app.API_KEY_FILE", str(tmp_path / "none"))
     would_have_been_asked = Says()
     monkeypatch.setattr(
-        "misty_agent.__main__.OpenAIModel", lambda *a, **k: would_have_been_asked
+        "misty_agent.app.OpenAIModel", lambda *a, **k: would_have_been_asked
     )
 
     main(["--said", "hello"], clock=FakeClock())
@@ -245,3 +329,41 @@ def test_the_whole_episode_is_printed_in_time_order(capsys):
             continue  # the perception line and the summary carry no stamp
     assert len(stamped) > 5
     assert stamped == sorted(stamped)
+
+
+# ---------------------------------------------------------------------------
+# It is a command, not just a function
+# ---------------------------------------------------------------------------
+
+def test_the_module_really_runs_as_a_command(tmp_path):
+    """Everything above calls `main` in-process.
+
+    So a `__main__.py` that imported the wrong name, or forwarded to nothing,
+    would leave the whole suite green and `python -m misty_agent` dead — and
+    that command is the entire deliverable of M8 #04.
+
+    It also pins the order of the two streams. stdout is block-buffered
+    whenever it is a pipe, so without the explicit flush the guidance on
+    stderr overtakes the report it is answering, and a person piping this into
+    a file reads the two backwards.
+    """
+    # Run from an empty directory, with the package found on the path
+    # instead: `load_api_key` resolves `OAI_CONFIG_LIST.json` relative to the
+    # working directory, so a developer who has a real one would otherwise
+    # get a real Episode — and a paid model call — out of this test.
+    ran = subprocess.run(
+        [sys.executable, "-m", "misty_agent", "--said", "hello"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            API_KEY_VARIABLE: "",
+            "PYTHONPATH": str(REPO_ROOT),
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=120,
+    )
+
+    assert ran.returncode == 1, ran.stdout
+    assert ran.stdout.index("simulated:") < ran.stdout.index(API_KEY_VARIABLE)

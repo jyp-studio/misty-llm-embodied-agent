@@ -45,6 +45,27 @@ class DistanceReading:
         """Process ingress to publication of this reading."""
         return self.detected_at - self.frame_arrived_at
 
+class EmptyRoom:
+    """A reading source with nobody in front of it, for as long as anyone asks.
+
+    `None` is already what this seam says for "no reading" — `LivePerception`
+    turns it into `face_present=False` with no distance — so this is a null
+    object in the sense `NEVER_STOPS`, `NO_MEMORY` and `HEARS_NOTHING` are,
+    and it lives here for the same reason they live beside their own
+    protocols: next to `DistancePipeline`, the real thing it stands in for.
+
+    It is what a photograph with no face in it produces. Inventing a distance
+    there would be the caller inventing a person the camera did not find.
+    """
+
+    def latest_reading(self) -> None:
+        return None
+
+
+#: A room with nobody in it, shared because it holds nothing.
+NOBODY_THERE = EmptyRoom()
+
+
 class DistancePipeline:
     """Continuously turn the latest available video frame into fresh distance.
 

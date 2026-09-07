@@ -18,7 +18,12 @@ M6/M7 已於 2026-08-20 重整（事件流移入 M7），見 `PLAN.md` §14。�
 cd /Users/jyp/dev/misty-embodied-agent
 .venv/bin/python -m pytest tests/ -q -rs # 必須零 skip
 .venv/bin/python -m harness              # 產出 M5 與 M6 兩份證據報告
+.venv/bin/python -m misty_agent --said "come here"   # 跑一次 Episode（假機器人）
+.venv/bin/python -m misty_agent --image 某張照片.jpg  # 真的臉部偵測與距離估計
 ```
+
+最後兩條是 M8 #04 加的，也是這個專案**第一條真的能執行 agent 的指令**。沒有 API key
+也會跑：它會先報告感知看到什麼，再告訴你怎麼給 key。
 
 ⚠️ **一律用 `.venv`，不要用裸的 `python3`**（`AGENTS.md` 有完整說明）。這台機器的 `python3` 是另一套 miniforge 3.10，沒有 mediapipe 也沒有 opencv，而感知測試在那個環境是 **skip 而不是 fail**——直譯器挑錯了會看起來一片綠。判斷方法是看 skip 數：加 `-rs` 跑，`.venv` 底下 `tests/` 不該有任何一項 skip。
 

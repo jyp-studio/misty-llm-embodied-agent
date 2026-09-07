@@ -217,6 +217,19 @@ class Session:
         """
         return self.ears if hasattr(self.ears, "read") else None
 
+    def _perception(self):
+        return LivePerception(self.readings, self._microphone())
+
+    def sees(self) -> Snapshot:
+        """What a Snapshot would say if a Tool returned right now.
+
+        The Episode's own Snapshots come from the same construction, so this
+        is not a second opinion. It exists because an entry point has to be
+        able to report what perception made of the world *before* deciding
+        whether there is a model to ask about it (M8 #04).
+        """
+        return self._perception().snapshot()
+
     # ---------- one Episode ----------
 
     def episode(
@@ -249,7 +262,7 @@ class Session:
                     ears=self.ears,
                 ),
                 journal=journal,
-                perception=LivePerception(self.readings, self._microphone()),
+                perception=self._perception(),
                 stop=stop,
                 memory=self.memory,
                 instructions=self.instructions,

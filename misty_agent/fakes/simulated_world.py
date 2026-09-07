@@ -98,3 +98,22 @@ class MovingWorld(RecordingCommands):
         )
         self.closest_cm = min(self.closest_cm, self._distance_cm)
         return response
+
+
+class EmptyRoom:
+    """A reading seam with nobody in front of it, for as long as anyone asks.
+
+    `None` is already the protocol's answer for "no reading" — `LivePerception`
+    turns it into `face_present=False` with no distance — so this is a null
+    object in the sense `NEVER_STOPS` and `HEARS_NOTHING` are: it saves the
+    caller a branch it would otherwise write at every construction site.
+
+    It is what an image with no face in it produces. A default distance there
+    would be the entry point inventing a person the camera did not find.
+    """
+
+    def latest_reading(self) -> None:
+        return None
+
+
+NOBODY_THERE = EmptyRoom()

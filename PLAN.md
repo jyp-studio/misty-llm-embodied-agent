@@ -2300,3 +2300,66 @@ Spec 軸點名：Play/暫停、拖曳軸、鍵盤、機器人 SVG、語氣顏色
 四種結束方式各自有顏色（綠 done、琥珀 turn_limit、藍 aborted、紅 error），因為票面第五格要求
 「結束方式在畫面上明顯」，而一行同樣灰的字不算明顯。展開的區塊要 `grid-column: 2` —— `li` 是
 兩欄的 grid，不指定的話它會掉進 62px 的時間戳欄位裡，一個字母寬地直著印下來。
+
+### 16.38 那條「比什麼都不給更糟」的路，我自己走上去了（M8 #09 review）
+
+§16.37 我親手寫下：「如果哪天不再一對一，展開會把**另一個決定**的欄位給訪客看，那比什麼都
+不給更糟。」然後我把配對放在**沒有任何測試看得到的 JavaScript** 裡。
+
+兩軸各自從不同角度撞到同一件事：
+
+- **Spec 軸實際重現了它。** `load()` 先 await 拿 storyboard、再 await 拿 journal，中間沒有
+  任何世代守衛。快速點兩個範例，就會出現「A 的 Moment 配 B 的行」——它按下
+  `episode_ends_on_the_first_turn`，展開第 0 筆，看到的是 `"episode_id": "ep-turn-limit"`。
+- **Standards 軸用 mutation 證明沒人會發現。** 把 `state.lines[index]` 改成 `[index+1]` ——
+  **每一筆都配到下一筆的行**——1216 條全綠。它一併指出：**沒有任何測試讀過 `page.html`**，
+  所以那個檔案裡的四個 mutation 全部活著。
+
+**修法不是加測試，是把「配對」這件事消滅掉。** 每一個 Moment 現在自己帶著它被做出來的那一行
+（`moment["line"]`），由 `_example` 在 Python 裡 zip 好送出去。頁面沒有 index 可以錯，那條
+獨立的 `/journal` 路由整條刪掉——順帶解決了 Standards 問的 Q1（`_journal` 與 `_example` 六行
+重複，而且各自寫了一次路徑穿越的防禦）。
+
+長度不一致時是**回 500 而不是硬配**。它不可能發生（`storyboard_of` 對紀錄一對一），拒絕它是
+因為它一旦發生，造成的正是這一節開頭那個失敗。
+
+#### `facts` 與 `line` 同時在 payload 裡，這是刻意的
+
+`Moment.facts` 是 #07 的合約（票面要求「拒絕的理由」「模型呼叫的成本」出現在**結構**裡），
+`line` 是 #09 的交付物（原始欄位、逐位元組）。兩者不會漂——同一次呼叫、同一筆紀錄——而且
+用途不同：一個是「給程式讀的欄位」，一個是「給人核對的證據」。頁面今天只讀後者。
+
+### 16.39 我的「非 canonical」測試只測了兩條軸裡的一條（M8 #09 review）
+
+§16.37 說「拿一個不是 canonical 形狀的檔案去測」就能把「送檔案 vs 重新產生」分開。Standards
+指出我的檔案只在**鍵序與空白**上怪，而兩者真正會分岔的另一條軸是**行尾**：
+
+`read_text()` 會做 universal-newline 轉換，`\r\n` 進去 `\n` 出來 —— 也就是說，把
+`read_bytes()` 換成 `read_text().encode()`，我那條測試照樣綠，而「這是磁碟上那一行」的主張
+已經不成立了。現在的測試檔案用 `write_bytes` 寫入 `\r\n` 與一個非 ASCII 欄位，兩條軸都蓋到。
+
+### 16.40 三個互動缺陷，都在唯一那格新功能上（M8 #09 review）
+
+Spec 軸把頁面當成一個人在用，抓到三個：
+
+1. **選取 JSON 會把它關掉。** click handler 掛在整個 `li` 上，所以想把原始欄位反白複製的人
+   一拖曳就把面板關了 —— 在這張票唯一的新功能上。現在忽略來自 `.raw` 內部的點擊，也忽略
+   有選取時的點擊。
+2. **展開的區塊會卡住。** 展開一筆、再把時間軸拉回它之前：區塊留在一個「還沒發生」的紀錄裡，
+   18% 透明度、`aria-expanded="true"`，而且關不掉（`showLine` 對未顯示的列直接 return）。
+   現在 `seek` 會把不再顯示的列一併關上。
+3. **空白鍵會觸發兩次。** `preventDefault()` 不會阻止冒泡，所以在一筆紀錄上按空白鍵會展開它
+   **並且**讓 document 的 handler 開始播放 —— `state.at` 從 15 跳回 0，讀的人失去位置。
+
+順帶：`function open(index)` 在傳統 script 裡會蓋掉 `window.open`。改名 `showLine`。
+
+### 16.41 `turn_limit` 是個 enum，不是一句話（M8 #09 review）
+
+票面第五格是「Episode 的結束方式在畫面上明顯（自己停 / 撞上限 / 被中止 / 出錯）」，而畫面上
+印的是 `episode turn_limit after 8 turn(s)` —— 那是 `describe` 給終端機的句子，對終端機是對的，
+對一個看申請材料的人是一個沒見過的 enum。而 `aborted` 的色條用的是 `--boundary`，和每一行
+headline 同一個灰藍，等於沒有色條。
+
+`storyboard.py` 多了 `ENDINGS` 與 `Storyboard.ending`：同一件事說給不同的讀者聽，不是第二個
+關於「發生了什麼」的答案 —— 它來自 `Storyboard` 已經有的那個 `outcome`。四個結束方式現在各自
+有一句人話和一個真的分得開的顏色（綠 / 琥珀 / 藍 / 紅）。

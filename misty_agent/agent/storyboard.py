@@ -135,6 +135,20 @@ class Moment:
     facts: Mapping[str, Any] = field(default_factory=dict)
 
 
+#: How each ending reads to somebody who has not met this project's
+#: vocabulary. `describe` gives the Journal's own sentence — "episode
+#: turn_limit after 8 turn(s)" — which is right for a terminal and reads as a
+#: raw enum on a page. This is the same fact said for a different reader, not
+#: a second answer to what happened: the outcome it comes from is the one the
+#: `Storyboard` already carries.
+ENDINGS = {
+    "done": "it decided it was finished",
+    "turn_limit": "it ran out of turns before it ran out of ideas",
+    "aborted": "somebody stopped it",
+    "error": "something it depends on failed",
+}
+
+
 @dataclass(frozen=True)
 class Storyboard:
     """One Episode, as a page is given it."""
@@ -145,6 +159,9 @@ class Storyboard:
     #: `None` while the Episode is still running — which is what a page
     #: watching a live run is holding.
     outcome: Optional[str]
+    #: The same ending in words a visitor has met before. `None` while it is
+    #: still running, for the same reason.
+    ending: Optional[str]
     turns: int
     steps: int
     moments: Tuple[Moment, ...]
@@ -182,6 +199,7 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
         trigger=opening.trigger if opening else None,
         started_at=opening.started_at_wall_clock if opening else None,
         outcome=ending.outcome if ending else None,
+        ending=ENDINGS.get(ending.outcome) if ending else None,
         turns=ending.turns if ending else 0,
         steps=ending.steps if ending else 0,
         moments=tuple(moments),

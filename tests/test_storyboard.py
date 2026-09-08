@@ -35,6 +35,7 @@ import pytest
 
 from misty_agent.agent.journal import (
     JOURNAL_SCHEMA,
+    OUTCOMES,
     EpisodeFinished,
     EpisodeStarted,
     ExecutionFailed,
@@ -50,7 +51,12 @@ from misty_agent.agent.journal import (
     TurnStarted,
 )
 from misty_agent.agent.tools import build_registry
-from misty_agent.agent.storyboard import MOVES, RobotState, storyboard_of
+from misty_agent.agent.storyboard import (
+    ENDINGS,
+    MOVES,
+    RobotState,
+    storyboard_of,
+)
 from misty_agent.fakes import FakeClock
 
 WALL_CLOCK = "2026-09-07T12:00:00+08:00"
@@ -287,6 +293,23 @@ def test_the_four_ways_an_episode_can_end_are_told_apart(outcome):
     # Told apart in the headline too, because a page that groups by outcome
     # and a page that reads the closing line must not be able to disagree.
     assert outcome in board.moments[-1].headline
+
+
+def test_each_ending_is_also_said_in_words_a_visitor_has_met():
+    """`describe` gives the Journal's own sentence — "episode turn_limit
+    after 8 turn(s)" — which is right for a terminal and reads as a raw enum
+    on a page. Every outcome has one, or a page shows a blank where the
+    answer to "how did it end" should be.
+    """
+    for outcome in OUTCOMES:
+        journal = a_journal()
+        journal.record(EpisodeStarted, trigger="speech")
+        journal.record(EpisodeFinished, outcome=outcome, turns=1, steps=0)
+
+        board = storyboard_of(journal.records)
+
+        assert board.ending == ENDINGS[outcome]
+        assert outcome not in board.ending  # said, not spelled
 
 
 def test_an_episode_still_running_has_no_outcome_yet():

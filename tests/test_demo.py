@@ -29,6 +29,7 @@ import sys
 
 import pytest
 
+from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.demo import (
     ANY_FREE_PORT,
     EXAMPLES,
@@ -224,76 +225,105 @@ def test_a_visitor_is_told_which_parts_of_the_robot_this_episode_moves():
 
 
 # ---------------------------------------------------------------------------
-# Traceability: the page can show the line itself
+# Traceability: every Moment carries the line it was made from
 # ---------------------------------------------------------------------------
 
-def test_the_journal_behind_an_example_is_served_verbatim():
-    """M8 #09's load-bearing box: 「點任何一筆紀錄可以展開看到原始欄位 ——
-    『可追溯』不只是一句話」.
-
-    Served as the file rather than as a re-rendering of it. `Moment.facts`
-    would have been the easy answer and it is not the same claim: it drops
-    `t`, `turn` and `type`, and for the two records whose fields were lifted
-    onto the `Storyboard` (§16.30) it is nearly empty. What a visitor is
-    being invited to check is the line in the Journal, so that is what they
-    get.
-    """
-    reply = answer("GET", "/examples/episode_is_aborted/journal")
-
-    assert reply.status == 200
-    assert reply.headers["Content-Type"].startswith("text/plain")
-    assert reply.body == (GOLDENS / "episode_is_aborted.jsonl").read_bytes()
-
-
 @pytest.mark.parametrize("example", [e.name for e in EXAMPLES])
-def test_there_is_exactly_one_journal_line_per_moment(example):
-    """The page pairs them by position, so this is what makes that legal.
+def test_every_moment_carries_the_line_it_was_made_from(example):
+    """M8 #09's load-bearing box. Why the line and not `Moment.facts` is
+    argued once, in `PLAN.md` §16.37.
 
-    A Moment is one record — `storyboard_of` maps over them one for one —
-    and if that ever stopped being true the expansion would show a visitor
-    the fields of some *other* decision, which is worse than showing none.
+    Every record of the golden, in order, on the Moment made from it.
     """
-    lines = [
+    on_disk = [
         line
-        for line in answer("GET", f"/examples/{example}/journal").body.decode().splitlines()
+        for line in (GOLDENS / f"{example}.jsonl").read_bytes().decode().split("\n")
         if line.strip()
     ]
     moments = body_of(f"/examples/{example}")["storyboard"]["moments"]
 
-    assert len(lines) == len(moments)
-    assert [json.loads(line)["t"] for line in lines] == [m["t"] for m in moments]
-    assert [json.loads(line)["type"] for line in lines] == [m["kind"] for m in moments]
+    assert [moment["line"] for moment in moments] == on_disk
 
 
-def test_the_journal_is_the_file_rather_than_a_rendering_of_it(tmp_path, monkeypatch):
-    """Serving `to_jsonl(from_jsonl(text))` passes every other test here,
-    because a golden is already in exactly that form — so byte equality
-    against a canonical file proves nothing about which of the two happened.
+@pytest.mark.parametrize("example", [e.name for e in EXAMPLES])
+def test_the_line_on_a_moment_is_that_moment_and_not_its_neighbour(example):
+    """The failure this shape exists to make impossible.
 
-    A file that is *not* canonical tells them apart, and the difference is
-    the whole claim: what a visitor opens is the line on disk, not this
-    project's reconstruction of it.
+    The line used to arrive as a second request that the page lined up by
+    index. A review's mutant paired every Moment with the *next* one's line
+    and all 1216 tests stayed green, because nothing tests the page — a
+    visitor would have read one decision's fields under another's sentence,
+    which §16.37 calls worse than showing nothing. Carried on the Moment,
+    there is no pairing left to get wrong; asserted anyway.
     """
-    odd = '{"type": "turn_started",  "turn": 1, "t": 0.0, "episode_id": "ep-1"}\n'
+    for moment in body_of(f"/examples/{example}")["storyboard"]["moments"]:
+        record = json.loads(moment["line"])
+
+        assert record["type"] == moment["kind"]
+        assert record["t"] == moment["t"]
+
+
+def test_the_line_is_the_bytes_on_disk_rather_than_a_rendering_of_them(
+    tmp_path, monkeypatch
+):
+    """Serving `to_jsonl(from_jsonl(text))` passes against a golden, because a
+    golden is already in exactly that form. Two axes tell them apart, and a
+    review found the first version only tested one of them:
+
+    * key order and spacing — a re-render sorts and normalises;
+    * **line endings** — `read_text` silently turns `\r\n` into `\n`, so
+      reading as text loses the very fidelity being claimed.
+    """
+    odd = (
+        b'{"type": "turn_started",  "turn": 1, "t": 0.0, '
+        b'"episode_id": "\xc3\xa9p-1"}\r\n'
+    )
     monkeypatch.setattr("misty_agent.demo._GOLDENS", tmp_path)
-    (tmp_path / f"{EXAMPLES[0].name}.jsonl").write_text(odd, encoding="utf-8")
+    (tmp_path / f"{EXAMPLES[0].name}.jsonl").write_bytes(odd)
 
-    reply = answer("GET", f"/examples/{EXAMPLES[0].name}/journal")
+    (moment,) = body_of(f"/examples/{EXAMPLES[0].name}")["storyboard"]["moments"]
 
-    assert reply.body.decode() == odd
+    assert moment["line"] == odd.decode("utf-8").rstrip("\n")
 
 
-def test_the_journal_of_an_example_nobody_has_is_a_404():
-    assert answer("GET", "/examples/not_an_example/journal").status == 404
+def test_records_and_moments_that_disagree_are_refused_not_paired(
+    tmp_path, monkeypatch
+):
+    """It cannot happen — `storyboard_of` maps one Moment per record — and it
+    is refused rather than trusted anyway, because the failure it would cause
+    is the one this whole shape is built to prevent."""
+    monkeypatch.setattr("misty_agent.demo._GOLDENS", tmp_path)
+    (tmp_path / f"{EXAMPLES[0].name}.jsonl").write_text(
+        '{"type": "turn_started", "turn": 1, "t": 0.0, "episode_id": "ep-1"}\n'
+    )
+    monkeypatch.setattr(
+        "misty_agent.demo.storyboard_of",
+        lambda records: storyboard_of(records * 2),
+    )
+
+    reply = answer("GET", f"/examples/{EXAMPLES[0].name}")
+
+    assert reply.status == 500
+    assert b"1 records and 2 moments" in reply.body
 
 
 @pytest.mark.parametrize(
     "attempt",
-    ["/examples/episode_is_aborted/journal/more", "/examples/../goldens/journal",
-     "/examples/episode_is_aborted/anything"],
+    [
+        "/examples/episode_is_aborted/journal",
+        "/examples/episode_is_aborted/my-journal",
+        "/examples/episode_is_aborted/anything",
+        "/examples/../goldens/journal",
+    ],
 )
-def test_nothing_below_an_example_is_served_but_its_journal(attempt):
-    assert answer("GET", attempt).status == 404
+def test_nothing_below_an_example_is_served(attempt):
+    """Including paths that merely *end* in something known — a check written
+    with `endswith` instead of a whole-segment match passed every case the
+    first version of this list contained."""
+    reply = answer("GET", attempt)
+
+    assert reply.status == 404
+    assert b"nothing is served at" in reply.body
 
 
 # ---------------------------------------------------------------------------

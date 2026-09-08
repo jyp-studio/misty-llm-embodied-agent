@@ -156,10 +156,8 @@ def answer(method: str, path: str) -> Reply:
     if path == "/examples":
         return _json(200, [asdict(example) for example in EXAMPLES])
     if path.startswith("/examples/"):
-        name, _, below = path[len("/examples/"):].partition("/")
-        if below == "journal":
-            return _journal(name)
-        if below:
+        name, slash, below = path[len("/examples/"):].partition("/")
+        if slash:
             return _json(404, {"error": f"nothing is served at {path}"})
         return _example(name)
     return _json(404, {"error": f"nothing is served at {path}"})
@@ -176,20 +174,48 @@ def _example(name: str) -> Reply:
     if found is None:
         return _json(404, {"error": f"there is no example called {name!r}"})
     try:
-        text = (_GOLDENS / f"{found.name}.jsonl").read_text(encoding="utf-8")
+        # Bytes, not text: `read_text` translates line endings, and the claim
+        # this whole route exists to make is that a visitor is looking at what
+        # is on disk. Decoded here so the JSON carries it, split on newlines
+        # only, so anything else a line contains survives.
+        raw = (_GOLDENS / f"{found.name}.jsonl").read_bytes()
     except OSError as why:
         # A named example whose file is not there means this copy of the
         # project is incomplete, not that the visitor asked for the wrong
         # thing. `answer` promises a Reply for every request, so it says so
         # rather than raising out of the handler into a blank page.
         return _json(500, {"error": f"the example {name!r} is missing: {why}"})
-    board = storyboard_of(from_jsonl(text))
+
+    text = raw.decode("utf-8")
+    lines = [line for line in text.split("\n") if line.strip()]
+    storyboard = storyboard_of(from_jsonl(text))
+    board = asdict(storyboard)
+    if len(lines) != len(board["moments"]):
+        # Cannot happen — `storyboard_of` maps one Moment per record — and it
+        # is refused rather than trusted anyway. Pairing them off by position
+        # while the two disagree would put one decision's fields under
+        # another's sentence, which is worse than showing nothing at all.
+        return _json(
+            500,
+            {
+                "error": f"{name!r} has {len(lines)} records and "
+                f"{len(board['moments'])} moments"
+            },
+        )
+    for moment, line in zip(board["moments"], lines):
+        # The line the Moment was made from, carried *by* it. It used to be a
+        # second request the page lined up by index, and a review's mutant
+        # paired every Moment with the next one's line while all 1216 tests
+        # stayed green — because nothing tests the page. There is nothing to
+        # get wrong now.
+        moment["line"] = line
+
     return _json(
         200,
         {
             "example": asdict(found),
-            "moves": list(what_moves(board)),
-            "storyboard": asdict(board),
+            "moves": list(what_moves(storyboard)),
+            "storyboard": board,
         },
     )
 
@@ -214,29 +240,6 @@ def what_moves(storyboard) -> Tuple[str, ...]:
         for field, label in _MOVING_PARTS
         if len({getattr(pose, field) for pose in poses}) > 1
     )
-
-
-def _journal(name: str) -> Reply:
-    """The Journal behind an example, as the file rather than as a rendering.
-
-    M8 #09 asks that any record can be opened to its raw fields, and calls
-    that the difference between traceability and the word. `Moment.facts`
-    would have been easier and is not the same claim — it drops `t`, `turn`
-    and `type`, and for the two kinds whose fields were lifted onto the
-    `Storyboard` (`PLAN.md` §16.30) it is nearly empty. What a visitor is
-    invited to check is the line in the Journal, so it is the line they get.
-
-    The page pairs a Moment with a line by position, which
-    `test_there_is_exactly_one_journal_line_per_moment` is what makes legal.
-    """
-    found = next((example for example in EXAMPLES if example.name == name), None)
-    if found is None:
-        return _json(404, {"error": f"there is no example called {name!r}"})
-    try:
-        text = (_GOLDENS / f"{found.name}.jsonl").read_bytes()
-    except OSError as why:
-        return _json(500, {"error": f"the example {name!r} is missing: {why}"})
-    return Reply(200, {"Content-Type": "text/plain; charset=utf-8"}, text)
 
 
 def _json(status: int, payload) -> Reply:

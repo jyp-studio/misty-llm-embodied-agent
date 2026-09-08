@@ -9,7 +9,7 @@
     --ink: #e8e6e3; --dim: #8b8781; --faint: #4a4742;
     --bg: #16151a; --panel: #1e1d23; --line: #2c2a32;
     --boundary: #7c8fa8; --action: #d7d3cc; --result: #6fae83;
-    --refused: #d0a24c; --failed: #cf6a5a; --spec: #8a7cc0;
+    --refused: #d0a24c; --failed: #cf6a5a; --spec: #8a7cc0; --stopped: #5aa8c9;
   }
   * { box-sizing: border-box; }
   body {
@@ -105,9 +105,10 @@
   .outcome b { color: var(--ink); font-weight: 600; }
   .outcome[data-outcome="done"] { box-shadow: inset 3px 0 0 var(--result); }
   .outcome[data-outcome="turn_limit"] { box-shadow: inset 3px 0 0 var(--refused); }
-  .outcome[data-outcome="aborted"] { box-shadow: inset 3px 0 0 var(--boundary); }
+  .outcome[data-outcome="aborted"] { box-shadow: inset 3px 0 0 var(--stopped); }
   .outcome[data-outcome="error"] { box-shadow: inset 3px 0 0 var(--failed); }
   .outcome .running { color: var(--dim); }
+  .outcome .tally { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; }
 </style>
 </head>
 <body>
@@ -159,7 +160,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const state = { board: null, lines: [], at: 0, timer: null };
+const state = { board: null, at: 0, timer: null, asked: 0 };
 
 const FACES = {
   happy:     { eyes: 6.5, mouth: "M70 50 Q80 58 90 50" },
@@ -188,7 +189,18 @@ async function load(name) {
   for (const button of $("picker").querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(button.dataset.name === name));
   }
+  // Both halves, together, and only if this is still the example somebody
+  // wants. They used to be fetched one after the other and assigned as they
+  // arrived, so two quick clicks could leave one episode's Moments beside
+  // another's Journal lines — and the expansion would confidently show the
+  // fields of a decision from a different run. `PLAN.md` §16.37 calls that
+  // worse than showing nothing, and it was right.
+  // Guarded, because two quick clicks used to leave one episode's Moments
+  // beside another's Journal lines and the expansion would confidently show
+  // the fields of a decision from a different run (`PLAN.md` §16.38).
+  const mine = ++state.asked;
   const payload = await (await fetch("/examples/" + encodeURIComponent(name))).json();
+  if (mine !== state.asked) return;
   state.board = payload.storyboard;
 
   const first = payload.example.written_before_the_implementation;
@@ -198,10 +210,6 @@ async function load(name) {
     ? `<b>This is a specification, not a recording.</b> ${escapeText(payload.example.provenance)}.`
       + `<span class="caveat">${escapeText(payload.example.amendments)}</span>`
     : `<b>This one came later.</b> ${escapeText(payload.example.provenance)}.`;
-
-  state.lines = (await (await fetch(`/examples/${encodeURIComponent(name)}/journal`)).text())
-    .split("\n")
-    .filter((line) => line.trim());
 
   const moves = payload.moves;
   $("moves").textContent = moves.length
@@ -242,8 +250,13 @@ function seek(index, { scroll = true } = {}) {
 
   for (const li of $("moments").children) {
     const i = Number(li.dataset.i);
-    li.classList.toggle("shown", i <= state.at);
+    const shown = i <= state.at;
+    li.classList.toggle("shown", shown);
     li.classList.toggle("now", i === state.at);
+    // Scrubbing back past an open record used to leave its fields sitting
+    // in a moment that has not happened yet — dimmed, and unclosable,
+    // because opening is only offered on revealed rows.
+    if (!shown) close(li);
   }
   if (scroll) {
     $("moments").children[state.at].scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -255,26 +268,30 @@ function seek(index, { scroll = true } = {}) {
   const panel = $("outcome");
   panel.dataset.outcome = ended ? state.board.outcome : "";
   panel.innerHTML = ended
-    ? `<b>${escapeText(last.headline)}</b>${last.detail ? " — " + escapeText(last.detail) : ""}`
+    ? `<b>${escapeText(state.board.ending)}</b>`
+      + `<span class="tally">${escapeText(last.headline)}${last.detail ? " — " + escapeText(last.detail) : ""}</span>`
     : `<span class="running">running… turn ${moment.turn ?? "—"}</span>`;
 }
 
-function open(index) {
+function close(li) {
+  const already = li.querySelector(".raw");
+  if (!already) return;
+  already.remove();
+  li.querySelector(".what").setAttribute("aria-expanded", "false");
+}
+
+function showLine(index) {
   const li = $("moments").children[index];
   if (!li || !li.classList.contains("shown")) return;
-  const already = li.querySelector(".raw");
   const what = li.querySelector(".what");
-  if (already) {
-    already.remove();
-    what.setAttribute("aria-expanded", "false");
-    return;
-  }
-  // The line from the Journal, indented — not a re-rendering of it. Pairing
-  // by position is legal because a Moment is one record; the server's tests
-  // are what keep that true.
+  if (li.querySelector(".raw")) return close(li);
+  // The line from the Journal, indented — not a re-rendering of it. It
+  // arrives *on* the Moment, so there is no pairing here to get wrong.
   const raw = document.createElement("div");
   raw.className = "raw";
-  raw.textContent = JSON.stringify(JSON.parse(state.lines[index]), null, 2);
+  // `textContent`, so nothing here parses HTML — running it through
+  // `escapeText` would double-escape and print `&quot;`.
+  raw.textContent = JSON.stringify(JSON.parse(state.board.moments[index].line), null, 2);
   li.appendChild(raw);
   what.setAttribute("aria-expanded", "true");
 }
@@ -337,13 +354,23 @@ function escapeText(text) {
 }
 
 $("moments").addEventListener("click", (event) => {
+  // Not from inside the fields themselves, and not while text is selected:
+  // somebody dragging across the JSON to copy it was closing the thing they
+  // were copying.
+  if (event.target.closest(".raw")) return;
+  if (!document.getSelection().isCollapsed) return;
   const li = event.target.closest("li");
-  if (li) open(Number(li.dataset.i));
+  if (li) showLine(Number(li.dataset.i));
 });
 $("moments").addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   const li = event.target.closest("li");
-  if (li) { event.preventDefault(); open(Number(li.dataset.i)); }
+  if (!li) return;
+  event.preventDefault();
+  // Stopped here, or the document's own Space handler starts playback under
+  // the record that was just opened and the reader loses their place.
+  event.stopPropagation();
+  showLine(Number(li.dataset.i));
 });
 $("play").addEventListener("click", () => (state.timer ? stop() : play()));
 $("scrub").addEventListener("input", (event) => { stop(); seek(Number(event.target.value)); });

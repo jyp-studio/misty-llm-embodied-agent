@@ -34,6 +34,7 @@ from dataclasses import asdict
 import pytest
 
 from misty_agent.agent.journal import (
+    JOURNAL_SCHEMA,
     EpisodeFinished,
     EpisodeStarted,
     ExecutionFailed,
@@ -49,7 +50,7 @@ from misty_agent.agent.journal import (
     TurnStarted,
 )
 from misty_agent.agent.tools import build_registry
-from misty_agent.agent.view import MOVES, RobotState, storyboard_of
+from misty_agent.agent.storyboard import MOVES, RobotState, storyboard_of
 from misty_agent.fakes import FakeClock
 
 WALL_CLOCK = "2026-09-07T12:00:00+08:00"
@@ -119,6 +120,64 @@ def test_reading_the_same_journal_twice_gives_the_same_storyboard():
 # Every kind of record, and the proof that forgetting one is loud
 # ---------------------------------------------------------------------------
 
+def test_the_storyboard_says_how_the_episode_began_and_ended():
+    """Four of its seven fields were asserted by nothing at all — hard-code
+    them to null and every test stayed green. They are the ones a page reads
+    first, before it draws a single Moment."""
+    board = storyboard_of(one_of_every_kind().records)
+
+    assert board.episode_id == "ep-1"
+    assert board.trigger == "speech"
+    assert board.started_at == WALL_CLOCK
+    assert board.outcome == "aborted"
+    assert board.turns == 2
+    assert board.steps == 3
+
+
+def test_nothing_lifted_onto_the_storyboard_is_repeated_in_a_moment():
+    """`PLAN.md` §15.4 across the whole payload, not just within one object.
+
+    `trigger`, `started_at_wall_clock`, `outcome`, `turns` and `steps` were
+    all shipped twice for one commit — once at the top and once inside a
+    Moment's `facts` — five values free to disagree with themselves.
+    """
+    by_kind = {m.kind: m.facts for m in storyboard_of(one_of_every_kind().records).moments}
+
+    assert by_kind["episode_started"] == {"schema": JOURNAL_SCHEMA}
+    assert by_kind["episode_finished"] == {}
+
+
+def test_a_field_a_record_gains_arrives_without_anybody_wiring_it():
+    """§16.27's central claim, which had no test.
+
+    `facts` is taken off the record mechanically, so the three criteria about
+    contents need no code of their own. That only holds while the exclusion
+    list stays what it says it is — adding a name to it silently drops that
+    field from every page.
+    """
+    by_kind = {m.kind: m.facts for m in storyboard_of(one_of_every_kind().records).moments}
+
+    assert by_kind["model_called"] == {
+        "latency_ms": 412, "tokens_in": 930, "tokens_out": 17,
+    }
+    assert by_kind["observation"]["snapshot"] == {
+        "distance_cm": 120, "face_present": True, "new_speech": None,
+    }
+    assert by_kind["execution_failed"] == {
+        "phase": "model", "error_type": "TimeoutError", "message": "took too long",
+    }
+
+
+def test_a_journal_with_nothing_in_it_is_an_empty_storyboard():
+    """A page may ask before the first record has been written."""
+    board = storyboard_of([])
+
+    assert board.moments == ()
+    assert board.episode_id == ""
+    assert board.trigger is None
+    assert board.outcome is None
+
+
 def test_every_record_kind_becomes_a_moment():
     board = storyboard_of(one_of_every_kind().records)
 
@@ -146,7 +205,7 @@ def test_a_record_kind_nobody_taught_it_reads_as_a_failure():
     board = storyboard_of(one_of_every_kind().records)
 
     assert [m for m in board.moments if "unrendered" in m.headline] == []
-    assert set(RECORD_TYPES) == {m.kind for m in board.moments} | {"episode_started"}
+    assert {m.kind for m in board.moments} == set(RECORD_TYPES)
 
 
 def test_a_storyboard_that_says_the_same_thing_about_everything_is_caught():
@@ -158,9 +217,25 @@ def test_a_storyboard_that_says_the_same_thing_about_everything_is_caught():
     """
     moments = storyboard_of(one_of_every_kind().records).moments
 
-    assert len({m.headline for m in moments}) == len(moments)
+    # All three parts of what `describe` returns. `detail` was outside this
+    # for one commit, and blanking it on every Moment passed the whole suite
+    # — while deleting every Snapshot phrase, every refusal reason and every
+    # token count from the page.
+    said = {(m.headline, m.detail, m.tone) for m in moments}
+    assert len(said) == len(moments)
     assert len({m.tone for m in moments}) >= 4
-    assert len({json.dumps(m.facts, sort_keys=True) for m in moments}) == len(moments)
+    assert len([m for m in moments if m.detail]) >= 5
+
+
+def test_the_sentence_behind_each_headline_is_carried_too():
+    """`detail` is the half of `describe` that says *what*: how far away, why
+    it was refused, what the call cost. Naming three of them here means a
+    blanked `detail` is a red test rather than an empty page."""
+    detail = {m.kind: m.detail for m in storyboard_of(one_of_every_kind().records).moments}
+
+    assert detail["observation"] == "120cm away"
+    assert detail["model_called"] == "930+17 tokens"
+    assert detail["tool_rejected"] == "pitch=90 is above the maximum 26"
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +284,9 @@ def test_the_four_ways_an_episode_can_end_are_told_apart(outcome):
     board = storyboard_of(journal.records)
 
     assert board.outcome == outcome
-    assert board.moments[-1].facts["outcome"] == outcome
+    # Told apart in the headline too, because a page that groups by outcome
+    # and a page that reads the closing line must not be able to disagree.
+    assert outcome in board.moments[-1].headline
 
 
 def test_an_episode_still_running_has_no_outcome_yet():
@@ -227,21 +304,28 @@ def test_an_episode_still_running_has_no_outcome_yet():
 # ---------------------------------------------------------------------------
 
 def test_the_robot_starts_in_a_known_pose():
+    """Written out rather than compared to `RobotState()`, which is the same
+    sentence twice and true however the defaults are changed."""
     journal = a_journal()
     journal.record(EpisodeStarted, trigger="speech")
 
-    assert storyboard_of(journal.records).moments[0].robot == RobotState()
+    pose = storyboard_of(journal.records).moments[0].robot
+
+    assert pose.expression == "neutral"
+    assert pose.led == (0, 0, 0)
+    assert pose.head == (0.0, 0.0, 0.0)
+    assert pose.arms == (90.0, 90.0)
 
 
 def test_the_light_stays_the_colour_it_was_set_to():
     """Every Moment carries the whole robot, not a change — a page drawing
     the state at record 7 should not have to replay records 0 to 6."""
     board = storyboard_of(one_of_every_kind().records)
+    by_kind = {m.kind: m.robot for m in board.moments}
 
-    before, after = board.moments[2], board.moments[3]
-
-    assert before.robot.led == (0, 0, 0)
-    assert after.robot.led == (255, 0, 0)
+    # Asked for at `tool_called`, true from the Observation onwards.
+    assert by_kind["tool_called"].led == (0, 0, 0)
+    assert by_kind["observation"].led == (255, 0, 0)
     assert board.moments[-1].robot.led == (255, 0, 0)
 
 
@@ -256,7 +340,8 @@ def test_the_head_and_the_arms_move_when_they_are_told_to():
 
     poses = [m.robot for m in storyboard_of(journal.records).moments]
 
-    assert poses[2].head == (-20.0, 0.0, 45.0)
+    assert poses[2].head == (0.0, 0.0, 0.0)  # asked for, not yet confirmed
+    assert poses[3].head == (-20.0, 0.0, 45.0)
     assert poses[-1].head == (-20.0, 0.0, 45.0)
     assert poses[-1].arms == (-29.0, 0.0)
 
@@ -265,8 +350,29 @@ def test_the_face_changes_when_the_screen_does():
     journal = a_journal()
     journal.record(EpisodeStarted, trigger="speech")
     journal.record(ToolCalled, turn=1, tool="display_image", args={"expression": "happy"})
+    journal.record(Observation, turn=1, result={"ok": True}, snapshot=a_snapshot())
 
     assert storyboard_of(journal.records).moments[-1].robot.expression == "happy"
+
+
+def test_a_call_whose_handler_blew_up_moves_nothing():
+    """The other half of "a pose is asked for and then confirmed".
+
+    `dispatch` records `ToolCalled` and *then* runs the handler, so a handler
+    that raises leaves the record behind and no Observation — `react.py`
+    records `ExecutionFailed` instead. A fold that read the pose off the
+    request alone draws a chest light that never lit, which is `-> , 52cm
+    away` in another medium.
+    """
+    journal = a_journal()
+    journal.record(EpisodeStarted, trigger="speech")
+    journal.record(ToolCalled, turn=1, tool="change_led", args={"red": 255, "green": 0, "blue": 0})
+    journal.record(ExecutionFailed, phase="tool", error_type="ConnectionError", message="no route to host")
+    journal.record(EpisodeFinished, outcome="error", turns=1, steps=0)
+
+    assert [m.robot.led for m in storyboard_of(journal.records).moments] == [
+        (0, 0, 0)
+    ] * 4
 
 
 def test_a_scan_leaves_the_head_where_it_found_someone():
@@ -319,6 +425,34 @@ def test_the_tools_that_move_the_robot_are_tools_that_exist():
     named = set(build_registry().names())
 
     assert set(MOVES) <= named
+
+
+def test_the_arguments_the_fold_reads_are_arguments_those_tools_take():
+    """The other half of the same coupling, and the half that was open.
+
+    Checking the four Tool *names* leaves every argument name unchecked:
+    rename `MoveHeadArgs.pitch` and this file stays green while the head
+    stops moving. `dispatch` records `model_dump()`, so these names are
+    exactly the model's fields.
+    """
+    registry = build_registry()
+
+    for tool_name, (_, arguments) in MOVES.items():
+        takes = set(registry.get(tool_name).args_model.model_fields)
+        assert set(arguments) <= takes, tool_name
+
+
+def test_a_scan_squares_the_head_up_as_well_as_turning_it():
+    """`look_around` issues `move_head(pitch=0, roll=0, yaw=...)`, so a scan
+    undoes a tilt the model set earlier. Only the yaw was asserted."""
+    journal = a_journal()
+    journal.record(EpisodeStarted, trigger="speech")
+    journal.record(ToolCalled, turn=1, tool="move_head", args={"pitch": -30.0, "roll": 20.0, "yaw": 0.0})
+    journal.record(Observation, turn=1, result={"ok": True}, snapshot=a_snapshot())
+    journal.record(ToolCalled, turn=2, tool="look_around", args={})
+    journal.record(Observation, turn=2, result={"ok": True, "found_at_yaw": 30.0}, snapshot=a_snapshot())
+
+    assert storyboard_of(journal.records).moments[-1].robot.head == (0.0, 0.0, 30.0)
 
 
 # ---------------------------------------------------------------------------

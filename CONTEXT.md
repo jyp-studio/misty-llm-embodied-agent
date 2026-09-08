@@ -95,6 +95,8 @@ The boundary a Sweep locates — the parameter value at which the controller
 stops converging, together with how precisely the grid pinned it down.
 _Avoid_: limit, threshold, bound, margin
 
+### The screen
+
 **Storyboard**:
 One Journal arranged for a screen: an ordered sequence of Moments, plus how
 the Episode began and ended. Derived and never authored — a pure function of a

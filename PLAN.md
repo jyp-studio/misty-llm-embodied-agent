@@ -2082,12 +2082,68 @@ Spec 軸順手發現的，記著但這張票不動：**觸發這次 Episode 的�
 
 #### 兩個新詞
 
-`CONTEXT.md` 加了 **Storyboard** 與 **Moment**。`Trace` 不能用 —— 它是 harness 的量測產物，
-而 `Journal` 的 _Avoid_ 明文寫著不要叫它 trace。`Frame` 也不能用，`av_stream.py` 的
-`CapturedFrame` 是相機影格。
+`CONTEXT.md` 加了 **Storyboard** 與 **Moment**，放在新的「畫面」一節。`Trace` 不能用 ——
+它是 harness 的量測產物，而 `Journal` 的 _Avoid_ 明文寫著不要叫它 trace。`Frame` 也不能用，
+`av_stream.py` 的 `CapturedFrame` 是相機影格。模組叫 `storyboard.py` 而不是 `view.py`：
+第一版兩者都做了 —— 在同一個 commit 裡把 `view` 寫進 _Avoid_，然後拿它當檔名（§16.28）。
 
 #### 呼叫端在下一張票
 
 `storyboard_of` 今天只有測試在呼叫，#08 的 demo 伺服器是生產呼叫端。這**不是** §15.23 的形狀：
 那條講的是零呼叫端**且零測試**的參數，而這是一張票的交付物本身，有 23 條測試，而且下一張票
 被它擋著。記在這裡，是因為這個里程碑已經因為「造好卻沒接線」被抓過兩次，值得先講清楚差別。
+
+### 16.28 頁面畫出一盞從來沒亮過的燈（M8 #07 review）
+
+兩軸都抓到同一件事，而它正是這張票開頭引用的那個形狀。
+
+`dispatch` 先記 `ToolCalled`，**然後**才呼叫 handler。handler 丟例外的話，`react.py` 記一筆
+`ExecutionFailed`，**沒有 Observation**。而我的折疊只在 `ToolCalled` 上讀姿勢，所以：
+
+```
+tool_called      led=(255, 0, 0)
+execution_failed led=(255, 0, 0)     ← 燈根本沒亮
+episode_finished led=(255, 0, 0)
+```
+
+我寫在 `view.py` docstring 裡的規則是「參數只有被記錄下來才算數」，那句話只推理了**被拒絕**的
+情況；handler 炸掉落在那條規則的另一邊，而我沒想到。
+
+改成兩筆紀錄的事：`ToolCalled` 讓姿勢變成**待確認**，`Observation` 才把它兌現，其他任何東西
+都把承諾丟掉。順帶把 `ToolCalled` 那一刻畫成「還沒發生」，那也比較誠實 —— 模型開口要紅色的
+當下，燈確實還不是紅的。
+
+### 16.29 23 個 mutation 活了 15 個（M8 #07 review）
+
+Standards 的數字。我自己只跑了七個，而且都集中在折疊邏輯上；**沒有被我碰到的地方，一個都沒有
+被測到**：
+
+| 活著的 | 意思 |
+|---|---|
+| `trigger` / `started_at` / `turns` / `steps` 全部寫死成 null | `Storyboard` 七個欄位裡有四個沒有任何斷言，而那四個是頁面最先讀的 |
+| `arms` 預設改成 `(0,0)`、`expression` 改成 `"happy"` | `assert robot == RobotState()` 是**同義反覆** —— 拿預設值去比預設值 |
+| `detail` 全部清空 | 每一個 Snapshot 片語、每一個拒絕理由、每一個 token 數從頁面消失，1163 條全綠 |
+| `_ALREADY_ON_THE_MOMENT` 多加一個名字 | §16.27 說「紀錄多一個欄位這裡也會自動多」—— 那句話沒有任何測試 |
+
+**Standards 對第三個問題的回答值得抄下來**：§16.27 拿「23 條測試」當作「這不是造好卻沒接線」
+的論據，而那個論據的承重點正好是 15 個 mutation 活過去的地方。有測試不等於測到了。
+
+另外兩個是我自己該看見的：
+- `len(given) == len(names)` 那個保護分支**在生產環境永遠為真** —— `dispatch` 記的是
+  `model_dump()`，pydantic 會把每個預設值填滿。一個到不了的分支，而且它的 `return robot`
+  正好是這個模組 docstring 警告的那種無聲失效。刪掉。
+- `_after` 用 `_facts(record).get("result")` 去拿掃描角度，讓**機器人的折疊繞過顯示用的排除
+  清單** —— 在 `_ALREADY_ON_THE_MOMENT` 裡多寫一個 `"result"` 會無聲地殺掉掃描。改成直接讀
+  `record.result`。
+
+還有一個我沒有補測試而是記下來的：`next(...)` 取第一筆 `EpisodeStarted` 改成取最後一筆，在
+任何合法的 Journal 上都是等價的（一次 Episode 只有一個開頭）。要測它得先偽造一份不可能存在的
+Journal，那測的是別的東西。
+
+### 16.30 同一個 payload 裡把五個值送了兩遍（M8 #07 review）
+
+`trigger`、`started_at_wall_clock`、`outcome`、`turns`、`steps` 被提升到 `Storyboard` 上，
+**同時還留在對應那筆 Moment 的 `facts` 裡**。§15.4 的字面違反，而且我自己在 `_facts` 上面的
+註解就寫著「同一個值不要在一個物件上出現兩次」—— 我只想到了 `Moment`，沒想到 `Storyboard`。
+
+規則改成一句話：**一份 payload，每個值只有一個家。**

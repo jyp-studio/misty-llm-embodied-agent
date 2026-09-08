@@ -33,18 +33,27 @@ drawing record seven should not have to replay records one to six.
 
 Two rules decide it, and both come from how `tools.py` actually behaves:
 
-* **Arguments count only once they are recorded.** `dispatch` validates first
-  and records `ToolCalled` only on the way to the handler, so a refused call
-  never produced one. Reading a pose off `ToolRejected` would draw a head
-  turned to the very angle the system rejected.
+* **A pose is asked for by one record and confirmed by another.** `dispatch`
+  validates first and records `ToolCalled` only on the way to the handler, so
+  a refused call never produced one — but a call whose handler *raises* did,
+  and is followed by `ExecutionFailed` and no Observation. So `ToolCalled`
+  only makes the change pending; the Observation commits it. Otherwise a page
+  shows a chest light that never lit, which is `-> , 52cm away` in a
+  different medium.
 * **A scan reports where it stopped.** `look_around` does not sweep back to
   centre — it stops on whoever it found, so the Snapshot afterwards is about
   that person — and it says where in its *result*, not its arguments. So the
   fold reads results as well.
 
 `MOVES` names Tools by string, which couples this module to `tools.py` across
-a gap no type checker crosses; `tests/test_storyboard.py` closes it by
-checking every name still exists in the registry.
+a gap no type checker crosses. `tests/test_storyboard.py` closes it from both
+ends: every Tool named here must still exist, **and** every argument named
+here must still be one that Tool takes — the first half alone let a renamed
+argument stop the robot moving while the check stayed green.
+
+The module is `storyboard.py` and not `view.py` because `CONTEXT.md` gives
+*Storyboard* an _Avoid_ list with `view` on it. A file named for a word its
+own glossary entry refuses is the glossary not being used.
 """
 
 from __future__ import annotations
@@ -55,6 +64,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from misty_agent.agent.journal import (
     EpisodeFinished,
     EpisodeStarted,
+    Observation,
     Record,
     ToolCalled,
     describe,
@@ -66,6 +76,15 @@ from misty_agent.agent.journal import (
 #: do agree with `Moment.turn` exactly, and the ones that do not have theirs
 #: filled in from the Turn they happened during.
 _ALREADY_ON_THE_MOMENT = ("t", "episode_id", "type", "turn")
+
+#: Fields lifted onto the `Storyboard` itself, by the kind that carries them.
+#: Excluded from that record's `facts` for the same reason, and it is the same
+#: rule: **one payload, one home for each value.** They were shipped twice for
+#: one commit, five values free to disagree with themselves.
+_LIFTED_TO_THE_STORYBOARD = {
+    "episode_started": ("trigger", "started_at_wall_clock"),
+    "episode_finished": ("outcome", "turns", "steps"),
+}
 
 #: The key `look_around` reports its stopping angle under. Read from the
 #: result rather than assumed from the Tool's name, the way `_steps_in` reads
@@ -134,11 +153,13 @@ class Storyboard:
 def storyboard_of(records: Sequence[Record]) -> Storyboard:
     """A Journal's records, arranged for a screen. Pure: no clock, no IO."""
     robot = RobotState()
+    #: A pose the model asked for and the robot has not confirmed yet.
+    pending: Optional[Dict[str, Any]] = None
     turn: Optional[int] = None
     moments = []
 
     for record in records:
-        robot = _after(record, robot)
+        robot, pending = _after(record, robot, pending)
         turn = getattr(record, "turn", None) or turn
         said = describe(record)
         moments.append(
@@ -168,27 +189,50 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
 
 
 def _facts(record: Record) -> Dict[str, Any]:
-    """Everything the record carries that the `Moment` does not already say."""
+    """Everything the record carries that is not already somewhere else here."""
+    elsewhere = _ALREADY_ON_THE_MOMENT + _LIFTED_TO_THE_STORYBOARD.get(
+        record.type, ()
+    )
     return {
         name: value
         for name, value in asdict(record).items()
-        if name not in _ALREADY_ON_THE_MOMENT
+        if name not in elsewhere
     }
 
 
-def _after(record: Record, robot: RobotState) -> RobotState:
-    """The robot once this record has happened."""
-    if isinstance(record, ToolCalled) and record.tool in MOVES:
-        into, names = MOVES[record.tool]
-        given = tuple(record.args[name] for name in names if name in record.args)
-        if len(given) == len(names):
-            return replace(robot, **{into: given[0] if len(given) == 1 else given})
-        return robot
+def _after(
+    record: Record, robot: RobotState, pending: Optional[Dict[str, Any]]
+) -> Tuple[RobotState, Optional[Dict[str, Any]]]:
+    """The robot once this record has happened, and what it is still promised.
 
-    found = _facts(record).get("result", {})
-    if isinstance(found, Mapping) and FOUND_AT_YAW in found:
-        # A scan stops on whoever it found and stays pointed at them; finding
-        # nobody puts the head back to centre, which is where every other Tool
-        # assumes it starts.
-        return replace(robot, head=(0.0, 0.0, found[FOUND_AT_YAW] or 0.0))
-    return robot
+    Asking is one record and arriving is another, so this returns both. A
+    `ToolCalled` that never gets its Observation — the handler raised, and
+    `ExecutionFailed` follows instead — leaves the robot where it was.
+    """
+    if isinstance(record, ToolCalled):
+        if record.tool not in MOVES:
+            return robot, None
+        into, names = MOVES[record.tool]
+        # `dispatch` records `arguments.model_dump()`, and pydantic fills every
+        # default, so each of these names is always present. Reading them
+        # directly rather than guarding says so: a missing one is a `KeyError`
+        # naming the argument, not a robot that silently stops moving.
+        asked = tuple(record.args[name] for name in names)
+        return robot, {into: asked[0] if len(asked) == 1 else asked}
+
+    if isinstance(record, Observation):
+        if pending is not None:
+            robot = replace(robot, **pending)
+        if FOUND_AT_YAW in record.result:
+            # A scan stops on whoever it found and stays pointed at them;
+            # finding nobody puts the head back to centre, which is where
+            # every other Tool assumes it starts. Both are `move_head` calls
+            # the Tool makes itself, so neither is in `record.args`.
+            robot = replace(
+                robot, head=(0.0, 0.0, record.result[FOUND_AT_YAW] or 0.0)
+            )
+        return robot, None
+
+    # Anything else — a failure, an abort, the Episode closing — drops the
+    # promise. Only an Observation says the robot did it.
+    return robot, pending if isinstance(record, ToolCalled) else None

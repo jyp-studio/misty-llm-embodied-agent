@@ -2147,3 +2147,46 @@ Journal，那測的是別的東西。
 註解就寫著「同一個值不要在一個物件上出現兩次」—— 我只想到了 `Moment`，沒想到 `Storyboard`。
 
 規則改成一句話：**一份 payload，每個值只有一個家。**
+
+### 16.31 Demo：純函式回答，socket 是薄殼（M8 #08）
+
+`answer(method, path)` 是 HTTP 的一切，除了 socket：請求進，狀態、標頭、位元組出。`serve()`
+綁 loopback、開瀏覽器、把每個請求交給 `answer`，而且**不測** —— 和 `main()` 同性質，裡面沒有
+測得到的東西可以出錯。`--demo` 掛在既有的指令上（spec.md 的入口那一節就是這樣寫的）。
+
+**零新相依，這是論述不是偏好。** `http.server`、`webbrowser`、手寫 HTML。測試不是相信意圖，
+而是**用 AST 讀這個模組的 import**，扣掉 `sys.stdlib_module_names` 和 `misty_agent` 之後必須
+是空集合。
+
+**只綁 127.0.0.1。** 一個聽所有介面的 demo，會把一份 Journal —— 裡面有人講的話 —— 放到筆電
+剛好連著的那個網路上。
+
+#### 範例是讀 `tests/goldens/`，不是拷貝
+
+一份拷貝可能和它宣稱代表的規格不一樣，而那正好發生在**唯一一個要求訪客認真看待這個宣稱的
+地方**。`harness/__main__.py` 早就為了同樣的理由伸手進 `tests/fixtures/` 拿它重播的那張照片：
+被討論的那個東西，就是 repo 裡的那一個。
+
+#### 五份，不是四份 —— 而第五份不會宣稱自己是規格
+
+票面和 §16.4 都寫「四份」，但 `tests/goldens/` 現在有五個檔案。`tests/goldens/README.md` 講得
+很清楚：原本四份寫在 ReAct 迴圈存在**之前**，第五份是 M7 #13 為了釘住 `error` 這條收尾路徑
+才加的 —— **寫在實作之後**。
+
+把五份都標成「規格，寫在實作之前」，會是在這個專案最顯眼的地方講一句假話，而那正是這張票存在
+的理由。所以來歷是**逐個範例**的，而且跟著 payload 走而不是只寫在 HTML 裡 —— 一句由 JavaScript
+印出來的宣稱是一句這裡沒有測試讀得到的宣稱，那正是 `storyboard.py` 存在要補的洞。頁面上第四個
+範例會拿到不同顏色的橫幅，寫著「這一份是後來才加的」。
+
+`test_every_golden_on_disk_has_been_given_a_provenance` 擋住第六份 golden 悄悄繼承別人的宣稱。
+
+#### 一個誠實的侷限
+
+**五份 golden 裡沒有任何一份成功呼叫過 `change_led`、`move_arms` 或 `display_image`。** 它們
+呼叫的是 `speak`、`approach`、`look_around`、`done`，加上一次被拒絕的 `move_head`。所以旁邊
+那個機器人狀態圖上，燈永遠是暗的、手臂永遠在原位、表情永遠是 neutral；會動的只有頭 ——
+`episode_hits_the_turn_limit` 掃描八次，每次都在 -60° 找到人，那個轉頭是真的看得見的。
+
+**不去改 golden 來讓 demo 好看。** `tests/goldens/README.md` 的規矩是「哪一邊讓步是一個決定」，
+而為了展示效果去動一份寫在實作之前的規格，會毀掉它唯一的價值。狀態圖要活起來，靠的是 #10
+餵真實輸入之後跑出來的 Episode。記在這裡，免得下一個看到那張圖的人以為它壞了。

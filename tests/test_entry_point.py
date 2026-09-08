@@ -561,6 +561,20 @@ def test_a_command_that_needs_no_key_does_not_go_looking_for_one(monkeypatch):
     assert looked_in == []
 
 
+def test_the_demo_flag_serves_instead_of_running_an_episode(monkeypatch):
+    """`--demo` replays Episodes that already finished. Running a live one
+    underneath it would move a robot nobody is watching."""
+    served = []
+    monkeypatch.setattr("misty_agent.demo.serve", lambda: served.append(True))
+    model = Says()
+
+    code = main(["--demo", "--said", "hello"], model=model, clock=FakeClock())
+
+    assert code == 0
+    assert served == [True]
+    assert model.asked == 0
+
+
 def test_the_module_really_runs_as_a_command(tmp_path):
     """Everything above calls `main` in-process.
 

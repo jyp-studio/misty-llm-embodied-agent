@@ -29,6 +29,9 @@ cd /Users/jyp/dev/misty-embodied-agent
 `tests/goldens/` 相同，既有的比對工具直接可讀。**不給就完全不寫**——Journal 裡有人講的話，
 保存是使用者要主動開啟的事（`PLAN.md` §16.22）。
 
+`.venv/bin/python -m misty_agent --demo` 會開一個本機頁面，五份 golden Episode 可以選、
+沿時間軸播放，旁邊一個機器人狀態圖跟著走（M8 #08）。**零新相依**，只綁 127.0.0.1。
+
 還有一條 `--robot <IP>`，會去組真的驅動（M8 #05）。**它從來沒有在真機上跑過，而且不會**
 ——這台專案沒有 Misty II（`PLAN.md` §8）。它每次執行都會先把這句話印在 stderr 上。
 

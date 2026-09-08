@@ -352,6 +352,14 @@ def _parser() -> argparse.ArgumentParser:
         help="what the person said, as speech-to-text would have heard it",
     )
     parser.add_argument(
+        "--demo",
+        action="store_true",
+        help=(
+            "open the demo page in a browser instead of running an Episode. "
+            "Serves on this machine only"
+        ),
+    )
+    parser.add_argument(
         "--robot",
         metavar="IP",
         default=None,
@@ -508,6 +516,14 @@ def attached_to(
 def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.demo:
+        # Returns when the person stops it. Nothing below runs: the demo
+        # replays finished Episodes, and starting one underneath it would
+        # move a robot nobody is watching.
+        from misty_agent.demo import serve
+
+        serve()
+        return 0
     if args.robot is not None and not args.robot.strip():
         # Falsy, so every `if args.robot` below would quietly simulate — and
         # the one thing somebody typing `--robot` has told you is that they

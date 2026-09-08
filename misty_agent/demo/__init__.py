@@ -37,6 +37,7 @@ test here can read, which is the hole `storyboard.py` exists to close.
 
 from __future__ import annotations
 
+import base64
 import json
 import pathlib
 import webbrowser
@@ -44,8 +45,18 @@ from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Mapping, Optional, Tuple
 
-from misty_agent.agent.journal import from_jsonl
+from misty_agent.agent.journal import from_jsonl, to_jsonl
+from misty_agent.agent.model import MissingApiKey, OpenAIModel
 from misty_agent.agent.storyboard import storyboard_of
+from misty_agent.app import (
+    API_KEY_FILE,
+    SystemClock,
+    decode_image,
+    load_api_key,
+    look_at,
+    simulated_session,
+)
+from misty_agent.perception.asr import OpenAITranscriber, wav_to_pcm
 
 #: The only address this binds. A demo that listened on every interface would
 #: put a Journal — which carries what people said — on whatever network the
@@ -94,9 +105,17 @@ class Example:
     name: str
     title: str
     provenance: str
-    #: The claim a visitor is being asked to believe, as a fact a test can
-    #: read. False for the one golden that was written afterwards.
-    written_before_the_implementation: bool
+    #: What this Episode *is*, as one word a page can style by and a test can
+    #: read. Three, because M8 #10 added a third and a boolean cannot hold it
+    #: without the third meaning being smuggled into the false case:
+    #:
+    #: * `specification` — written before the loop existed;
+    #: * `added-later` — the one golden that was not;
+    #: * `live` — something that happened on this machine a moment ago.
+    #:
+    #: 「不得讓觀看者搞混哪個是規格、哪個是剛跑的」 is the ticket's line, and
+    #: it is not a thing to leave to a page's own judgement.
+    kind: str
     #: What has happened to it since it was written. Travels beside the claim
     #: so that the caveat cannot be dropped while the boast is kept.
     amendments: str = AMENDMENTS
@@ -107,33 +126,33 @@ EXAMPLES: Tuple[Example, ...] = (
         "episode_ends_after_several_turns",
         "Several turns, then it decides it is done",
         _SPEC_FIRST,
-        True,
+        "specification",
     ),
     Example(
         "episode_ends_on_the_first_turn",
         "Nothing worth doing — it stops immediately",
         _SPEC_FIRST,
-        True,
+        "specification",
     ),
     Example(
         "episode_fails_during_model_call",
         "The model call fails and the Episode closes",
         "Added at M7 #13, once runtime failure became a named outcome — "
         "unlike the other four, this one was written after the loop it pins",
-        False,
+        "added-later",
         "",
     ),
     Example(
         "episode_hits_the_turn_limit",
         "It runs out of turns before it runs out of ideas",
         _SPEC_FIRST,
-        True,
+        "specification",
     ),
     Example(
         "episode_is_aborted",
         "A foot on the bumper, mid-Episode",
         _SPEC_FIRST,
-        True,
+        "specification",
     ),
 )
 
@@ -147,10 +166,28 @@ class Reply:
     body: bytes
 
 
-def answer(method: str, path: str) -> Reply:
-    """Everything about serving the demo except the socket. Pure."""
+def answer(
+    method: str, path: str, body: bytes = b"", *, audio: bool = False
+) -> Reply:
+    """Everything about serving the demo except the socket. Pure.
+
+    `body` arrived in M8 #10 and not before. #08 left it out on purpose —
+    nothing sent one and nothing read one, which is the parameter `PLAN.md`
+    §15.23 deleted once already — and both review axes agreed. Now there is
+    a POST.
+
+    `audio` is off unless somebody asked for it on the command line: hosted
+    transcription costs money on the visitor's account, so it is a choice
+    rather than a default.
+    """
+    if method == "POST":
+        return _run(body, audio=audio) if path == "/run" else _json(
+            405, {"error": f"nothing accepts a POST at {path}"}
+        )
     if method != "GET":
         return _json(405, {"error": f"{method} is not something this serves"})
+    if path == "/options":
+        return _json(200, {"audio": audio})
     if path == "/":
         return Reply(200, {"Content-Type": "text/html; charset=utf-8"}, _PAGE.read_bytes())
     if path == "/examples":
@@ -242,6 +279,127 @@ def what_moves(storyboard) -> Tuple[str, ...]:
     )
 
 
+#: What a run that just happened says about itself. Deliberately not a
+#: variant of the goldens' claim: it is the opposite one.
+LIVE = Example(
+    "live",
+    "Just now, on this machine",
+    "Run just now, on this machine. Nothing here was written in advance — "
+    "which is exactly what makes the four specifications above worth having",
+    "live",
+    "",
+)
+
+
+def _run(body: bytes, *, audio: bool) -> Reply:
+    """One Episode from what the page sent, and what perception made of it.
+
+    ## Perception is free; decisions are not
+
+    MediaPipe runs here, on this machine, and costs nothing. So an upload
+    always comes back with what the camera made of it — face, distance,
+    whether they are looking — even with no key at all. Only the Episode
+    needs one, and `MissingApiKey` already writes the paragraph explaining
+    both ways to supply it (`PLAN.md` §16.24), so this hands that one over
+    rather than composing a second.
+
+    ## Nothing that arrives is written down
+
+    The image is decoded in memory and the audio with it. The only thing in
+    this project that writes an Episode to disk is `JsonlFile`, and reaching
+    it takes the `--journal` flag (M8 #06) — which is a decision about
+    keeping people's words, made once, on purpose.
+    """
+    try:
+        asked = json.loads(body or b"{}")
+        if not isinstance(asked, dict):
+            raise ValueError("expected an object")
+    except ValueError as why:
+        return _json(400, {"error": f"the body is not JSON this reads: {why}"})
+
+    said = str(asked.get("said") or "")
+    heard = None
+
+    if asked.get("audio"):
+        if not audio:
+            given = _decoded(asked, "audio")
+            if given is None:
+                return _json(400, {"error": "the audio is not base64"})
+            return _json(
+                400,
+                {
+                    "error": "audio is off unless it is asked for: restart the "
+                    "demo with --audio. It goes to hosted transcription, which "
+                    "needs a key and costs money on your account"
+                },
+            )
+        spoken = _decoded(asked, "audio")
+        if spoken is None:
+            return _json(400, {"error": "the audio is not base64"})
+        try:
+            pcm, rate = wav_to_pcm(spoken)
+        except Exception as why:
+            return _json(400, {"error": f"this reads 16-bit PCM WAV: {why}"})
+        key = load_api_key(API_KEY_FILE)
+        if not key:
+            return _json(400, {"error": str(MissingApiKey())})
+        heard = OpenAITranscriber(key).transcribe(pcm, rate)
+        said = heard or said
+
+    seen = None
+    if asked.get("image"):
+        picture = _decoded(asked, "image")
+        if picture is None:
+            return _json(400, {"error": "the image is not base64"})
+        frame = decode_image(picture)
+        if frame is None:
+            return _json(400, {"error": "that image could not be decoded"})
+        seen = look_at(frame)
+
+    perceived = {
+        "face_present": bool(seen.has_human) if seen else False,
+        "distance_cm": seen.distance_cm if seen and seen.has_human else None,
+        "is_looking": bool(seen.is_looking) if seen else False,
+        "looked": seen is not None,
+    }
+    answered = {
+        "example": asdict(LIVE),
+        "perception": perceived,
+        "heard": heard,
+        "moves": [],
+        "storyboard": None,
+        "why_no_episode": None,
+    }
+
+    if not load_api_key(API_KEY_FILE):
+        answered["why_no_episode"] = str(MissingApiKey())
+        return _json(200, answered)
+
+    session = simulated_session(seen, model=OpenAIModel(), clock=SystemClock())
+    _, journal = session.episode(
+        "visual" if seen is not None and not said else "speech",
+        said,
+        render=False,
+    )
+    board = asdict(storyboard_of(journal.records))
+    for moment, line in zip(board["moments"], to_jsonl(journal.records).splitlines()):
+        # The same promise the built-ins make, on a run from a moment ago:
+        # every Moment carries the record it was made from. There is no file
+        # here to read it back from — and there must not be — so it is
+        # serialised straight out of the Journal.
+        moment["line"] = line
+    answered["storyboard"] = board
+    answered["moves"] = list(what_moves(storyboard_of(journal.records)))
+    return _json(200, answered)
+
+
+def _decoded(asked: Mapping[str, Any], field: str) -> Optional[bytes]:
+    try:
+        return base64.b64decode(asked[field], validate=True)
+    except Exception:
+        return None
+
+
 def _json(status: int, payload) -> Reply:
     return Reply(
         status,
@@ -257,11 +415,17 @@ def _json(status: int, payload) -> Reply:
 class _Handler(BaseHTTPRequestHandler):
     """Hands the request to `answer` and writes back what it decided."""
 
+    #: Set by `serve`. The shell is where a command-line choice lands.
+    audio = False
+
     def do_GET(self) -> None:  # noqa: N802 — the base class names it
-        self._reply(answer("GET", self.path))
+        self._reply(answer("GET", self.path, audio=self.audio))
 
     def do_POST(self) -> None:  # noqa: N802
-        self._reply(answer("POST", self.path))
+        length = int(self.headers.get("Content-Length") or 0)
+        self._reply(
+            answer("POST", self.path, self.rfile.read(length), audio=self.audio)
+        )
 
     def _reply(self, reply: Reply) -> None:
         self.send_response(reply.status)
@@ -275,9 +439,12 @@ class _Handler(BaseHTTPRequestHandler):
         """Quiet. The terminal belongs to the Episode, not to the transport."""
 
 
-def serve(*, open_browser: bool = True, port: int = ANY_FREE_PORT) -> None:
+def serve(
+    *, open_browser: bool = True, port: int = ANY_FREE_PORT, audio: bool = False
+) -> None:
     """Bind loopback, open a browser, and answer until interrupted."""
-    server = HTTPServer((LOOPBACK_ONLY, port), _Handler)
+    handler = type("_ConfiguredHandler", (_Handler,), {"audio": audio})
+    server = HTTPServer((LOOPBACK_ONLY, port), handler)
     where = f"http://{LOOPBACK_ONLY}:{server.server_port}/"
     print(f"demo at {where} — ctrl-c to stop", flush=True)
     if open_browser:

@@ -360,6 +360,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--audio",
+        action="store_true",
+        help=(
+            "with --demo, accept a recording as the trigger. Off by default: "
+            "it goes to hosted transcription, which needs a key and costs "
+            "money on your account"
+        ),
+    )
+    parser.add_argument(
         "--robot",
         metavar="IP",
         default=None,
@@ -390,32 +399,80 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _robot_and_room(image: Optional[pathlib.Path], clock: Any) -> Tuple[Any, Any]:
+def decode_image(data: bytes) -> Optional[Any]:
+    """An uploaded image as a frame, or `None` if it is not one.
+
+    In memory throughout: M8 #10 asks that nothing uploaded is left on disk,
+    and the shortest way to break that promise is a temporary file.
+    """
+    import cv2
+    import numpy as np
+
+    return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+
+def look_at(frame: Any) -> Any:
+    """What the real pipeline makes of one image. No robot, and no API key.
+
+    Split from the assembly below so that a caller holding *bytes* rather
+    than a path can use it — the demo page hands over an upload, and M8 #10
+    forbids putting it on disk to read it back.
+    """
+    from misty_agent.perception.face import FaceDetector
+
+    with FaceDetector() as detector:
+        return detector.detect(frame)
+
+
+def room_for(seen: Optional[Any], clock: Any) -> Tuple[Any, Any]:
     """The robot and the readings, as one pair because the world is one thing.
 
     `MovingWorld` is both: it answers drive commands and it answers
     `latest_reading`, which is what makes the distance it reports respond to
     the driving. An empty room needs the two split, because there is a robot
     but nobody to measure.
+
+    `seen` is `None` when nothing was looked at, which is not the same as
+    having looked and found nobody: the first gets the default simulated
+    world, the second gets a room with nobody in it.
     """
-    if image is None:
+    if seen is None:
         world = MovingWorld(clock, start_cm=DEFAULT_START_CM, config=settings)
         return world, world
+    if not seen.has_human:
+        return RecordingCommands(), NOBODY_THERE
+    world = MovingWorld(clock, start_cm=seen.distance_cm, config=settings)
+    return world, world
+
+
+def simulated_session(
+    seen: Optional[Any], *, model: Any, clock: Any
+) -> Session:
+    """One Session against a simulated robot, with the person where
+    perception put them. Shared by the command and the demo page, so both
+    reach a model through exactly the same assembly."""
+    robot, readings = room_for(seen, clock)
+    return Session(
+        robot=robot,
+        readings=readings,
+        model=model,
+        memory=Memory(),
+        config=settings,
+        clock=clock,
+    )
+
+
+def _robot_and_room(image: Optional[pathlib.Path], clock: Any) -> Tuple[Any, Any]:
+    """The command's half: read the file, then hand the frame on."""
+    if image is None:
+        return room_for(None, clock)
 
     import cv2
 
     frame = cv2.imread(str(image))
     if frame is None:
         raise FileNotFoundError(image)
-
-    from misty_agent.perception.face import FaceDetector
-
-    with FaceDetector() as detector:
-        seen = detector.detect(frame)
-    if not seen.has_human:
-        return RecordingCommands(), NOBODY_THERE
-    world = MovingWorld(clock, start_cm=seen.distance_cm, config=settings)
-    return world, world
+    return room_for(look_at(frame), clock)
 
 
 #: What `--robot` has to say for itself, every time.
@@ -516,6 +573,8 @@ def attached_to(
 def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.audio and not args.demo:
+        parser.error("--audio is a --demo option: it accepts an upload")
     if args.demo:
         # Refused rather than ignored, the same as `--image` with `--robot`:
         # the demo replays Episodes that already finished, so every one of
@@ -539,7 +598,7 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
         # Returns when the person stops it. Nothing below runs.
         from misty_agent.demo import serve
 
-        serve()
+        serve(audio=args.audio)
         return 0
     if args.robot is not None and not args.robot.strip():
         # Falsy, so every `if args.robot` below would quietly simulate — and

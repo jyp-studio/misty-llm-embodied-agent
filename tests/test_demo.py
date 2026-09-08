@@ -23,12 +23,14 @@ inheriting somebody else's.
 from __future__ import annotations
 
 import ast
+import base64
 import json
 import pathlib
 import sys
 
 import pytest
 
+from misty_agent.agent.model import API_KEY_VARIABLE
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.demo import (
     ANY_FREE_PORT,
@@ -38,6 +40,9 @@ from misty_agent.demo import (
     answer,
     serve,
 )
+
+from conftest import FIXTURES, SKIP_REASON
+from test_app import Says
 
 
 class _StillbornServer:
@@ -135,7 +140,7 @@ def test_the_claim_that_an_example_is_a_specification_is_in_the_payload():
     payload = body_of("/examples/episode_ends_on_the_first_turn")
 
     assert "before" in payload["example"]["provenance"].lower()
-    assert payload["example"]["written_before_the_implementation"] is True
+    assert payload["example"]["kind"] == "specification"
 
 
 def test_the_claim_travels_with_what_happened_to_it_afterwards():
@@ -150,7 +155,7 @@ def test_the_claim_travels_with_what_happened_to_it_afterwards():
     """
     example = body_of("/examples/episode_ends_on_the_first_turn")["example"]
 
-    assert example["written_before_the_implementation"] is True
+    assert example["kind"] == "specification"
     assert "amended" in example["amendments"].lower()
     assert "four of them" in example["amendments"]
 
@@ -174,7 +179,7 @@ def test_the_golden_that_came_later_does_not_claim_it_came_first():
     """
     payload = body_of("/examples/episode_fails_during_model_call")
 
-    assert payload["example"]["written_before_the_implementation"] is False
+    assert payload["example"]["kind"] == "added-later"
     assert "M7 #13" in payload["example"]["provenance"]
 
 
@@ -324,6 +329,218 @@ def test_nothing_below_an_example_is_served(attempt):
 
     assert reply.status == 404
     assert b"nothing is served at" in reply.body
+
+
+# ---------------------------------------------------------------------------
+# Running something of your own
+# ---------------------------------------------------------------------------
+
+def a_portrait(scale: float = 1.0) -> bytes:
+    """The fixture photograph as bytes, as an upload would arrive."""
+    cv2 = pytest.importorskip("cv2", reason=SKIP_REASON)
+    frame = cv2.imread(str(FIXTURES / "frontal_face_portrait.jpg"))
+    if scale != 1.0:
+        frame = cv2.resize(frame, None, fx=scale, fy=scale,
+                           interpolation=cv2.INTER_AREA)
+    return cv2.imencode(".jpg", frame)[1].tobytes()
+
+
+def run(said="hello", image=None, wav=None, **rest):
+    """A POST as the page makes it. `rest` goes to `answer` — that is where
+    the `audio=` switch lives, and it is not the same thing as sending one."""
+    asked = {"said": said}
+    if image is not None:
+        asked["image"] = base64.b64encode(image).decode()
+    if wav is not None:
+        asked["audio"] = base64.b64encode(wav).decode()
+    return answer("POST", "/run", json.dumps(asked).encode(), **rest)
+
+
+def test_a_photograph_from_the_page_goes_through_the_real_pipeline(monkeypatch):
+    """The half that is free: mediapipe runs here, on this machine, and needs
+    no key. Somebody with no key still finds out what the camera made of
+    their photograph."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.demo.load_api_key", lambda path: None)
+
+    seen = json.loads(run(image=a_portrait()).body)["perception"]
+
+    assert seen["face_present"] is True
+    assert seen["distance_cm"] == 52
+    assert seen["is_looking"] is True
+
+
+def test_without_a_key_it_says_why_there_are_no_decisions(monkeypatch):
+    """Criterion: 「說明為什麼沒有後續決策、以及怎麼提供 key」. `MissingApiKey`
+    already writes that paragraph and names both channels (§16.24), so this
+    hands over that one rather than composing a second."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.demo.load_api_key", lambda path: None)
+
+    payload = json.loads(run(image=a_portrait()).body)
+
+    assert payload["storyboard"] is None
+    assert API_KEY_VARIABLE in payload["why_no_episode"]
+    assert "OAI_CONFIG_LIST.json" in payload["why_no_episode"]
+
+
+def test_with_a_key_it_runs_and_comes_back_the_same_shape_as_an_example(
+    monkeypatch,
+):
+    """Criterion: 「結果用與內建範例**相同的**呈現路徑顯示」. Not similar —
+    the same keys, so the page draws it with the code it already has."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: Says("speak", "done"))
+
+    live = json.loads(run(said="come here", image=a_portrait(0.5)).body)
+    built_in = body_of("/examples/episode_is_aborted")
+
+    assert set(live) >= set(built_in)
+    assert live["storyboard"]["outcome"] == "done"
+    assert [m["kind"] for m in live["storyboard"]["moments"]][0] == "episode_started"
+
+
+def test_a_live_run_carries_every_line_of_its_own_journal(monkeypatch):
+    """The traceability of #09, on a run that just happened — not only on the
+    built-ins. Nothing was written to disk to get it (`to_jsonl` is the
+    serialisation, `JsonlFile` is the one that writes)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: Says("speak", "done"))
+
+    moments = json.loads(run().body)["storyboard"]["moments"]
+
+    for moment in moments:
+        assert json.loads(moment["line"])["type"] == moment["kind"]
+
+
+def test_what_the_person_said_is_what_the_model_is_asked_about(monkeypatch):
+    """Criterion: 「頁面上可以輸入使用者說的話當作觸發」."""
+    asked = Says("done")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
+
+    run(said="are you there")
+
+    spoken = [e for e in asked.contexts[0] if e["role"] == "user"]
+    assert spoken[0]["content"]["said"] == "are you there"
+
+
+def test_a_live_run_cannot_be_mistaken_for_a_specification(monkeypatch):
+    """Criterion: 「不得讓觀看者搞混哪個是規格、哪個是剛跑的」.
+
+    Three kinds, not a boolean with a third meaning bolted on: a golden
+    written first, the one added afterwards, and something that happened a
+    moment ago on this machine.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: Says("done"))
+
+    live = json.loads(run().body)["example"]
+    spec_first = body_of("/examples/episode_ends_on_the_first_turn")["example"]
+    came_later = body_of("/examples/episode_fails_during_model_call")["example"]
+
+    assert live["kind"] == "live"
+    assert spec_first["kind"] == "specification"
+    assert came_later["kind"] == "added-later"
+    assert live["amendments"] == ""
+    assert "just now" in live["provenance"].lower()
+
+
+def test_nothing_uploaded_is_left_behind(monkeypatch, tmp_path):
+    """Criterion: 「上傳的檔案不會被留在磁碟上」. The image is decoded in
+    memory; the only thing in this project that writes a run down is
+    `JsonlFile`, and reaching it takes the `--journal` flag (#06)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: Says("done"))
+    monkeypatch.chdir(tmp_path)
+
+    run(image=a_portrait())
+
+    assert list(tmp_path.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Audio: supported, and off unless somebody asks
+# ---------------------------------------------------------------------------
+
+def a_spoken_wav(seconds: float = 0.3) -> bytes:
+    """A WAV a browser could have recorded. Silence is enough — what is being
+    tested is that it reaches the transcriber, not what it says."""
+    import numpy as np
+
+    from misty_agent.perception.asr import pcm_to_wav
+
+    return pcm_to_wav(np.zeros(int(16000 * seconds), dtype=np.float32), 16000)
+
+
+def test_audio_is_refused_unless_somebody_turned_it_on():
+    """It costs money on somebody else's account and needs a key, so it is a
+    choice rather than a default. `--demo` alone does not enable it."""
+    reply = run(wav=a_spoken_wav())
+
+    assert reply.status == 400
+    assert b"--audio" in reply.body
+
+
+def test_the_page_is_told_whether_audio_is_on_offer():
+    assert json.loads(answer("GET", "/options").body) == {"audio": False}
+    assert json.loads(answer("GET", "/options", audio=True).body) == {"audio": True}
+
+
+def test_audio_that_was_asked_for_is_transcribed_and_becomes_what_was_said(
+    monkeypatch,
+):
+    """The caller the ticket asks for: 「否則 ASR 那條路會變成下一個『造好沒接
+    線』的東西」. `OpenAITranscriber` had no production caller until here.
+    """
+    heard = []
+
+    class Hears:
+        def transcribe(self, pcm, sample_rate):
+            heard.append((len(pcm), sample_rate))
+            return "is that you"
+
+    asked = Says("done")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
+    monkeypatch.setattr("misty_agent.demo.OpenAITranscriber", lambda key: Hears())
+
+    payload = json.loads(run(said="", wav=a_spoken_wav(), audio=True).body)
+
+    assert heard == [(4800, 16000)]
+    assert payload["heard"] == "is that you"
+    spoken = [e for e in asked.contexts[0] if e["role"] == "user"]
+    assert spoken[0]["content"]["said"] == "is that you"
+
+
+def test_audio_that_is_not_a_wav_is_refused_with_a_reason():
+    reply = run(wav=b"this is not a wav at all", audio=True)
+
+    assert reply.status == 400
+    assert b"WAV" in reply.body
+
+
+# ---------------------------------------------------------------------------
+# What a POST may not do
+# ---------------------------------------------------------------------------
+
+def test_a_body_that_is_not_json_is_refused():
+    reply = answer("POST", "/run", b"{not json")
+
+    assert reply.status == 400
+    assert b"JSON" in reply.body
+
+
+def test_posting_anywhere_else_is_still_refused():
+    assert answer("POST", "/", b"{}").status == 405
+    assert answer("POST", "/examples", b"{}").status == 405
+
+
+def test_an_image_that_is_not_an_image_is_refused_with_a_reason():
+    reply = run(image=b"nothing decodable here")
+
+    assert reply.status == 400
+    assert b"image" in reply.body.lower()
 
 
 # ---------------------------------------------------------------------------

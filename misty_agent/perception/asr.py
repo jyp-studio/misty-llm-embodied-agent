@@ -20,7 +20,7 @@ from __future__ import annotations
 import io
 import logging
 import wave
-from typing import Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, Tuple, runtime_checkable
 
 import numpy as np
 
@@ -63,6 +63,34 @@ def pcm_to_wav(pcm: np.ndarray, sample_rate: int) -> bytes:
         wav.setframerate(int(sample_rate))
         wav.writeframes(samples.tobytes())
     return buffer.getvalue()
+
+
+def wav_to_pcm(data: bytes) -> Tuple[np.ndarray, int]:
+    """Decode a 16-bit PCM WAV into the mono float32 `transcribe` expects.
+
+    The inverse of `pcm_to_wav`, and here rather than in the caller because
+    this is where the encoding is already known. M8 #10 needs it: a browser
+    hands over a file, and the transcriber takes samples.
+
+    Only 16-bit PCM, which is what `wave` can read without help and what a
+    browser records. Anything else is refused by name rather than decoded
+    into noise. Extra channels are averaged rather than dropped, so a stereo
+    recording of one person does not lose whichever side they sat on.
+    """
+    with wave.open(io.BytesIO(data), "rb") as source:
+        if source.getsampwidth() != 2:
+            raise ValueError(
+                f"{source.getsampwidth() * 8}-bit audio: this reads 16-bit "
+                f"PCM WAV, which is what a browser records"
+            )
+        channels = source.getnchannels()
+        rate = source.getframerate()
+        frames = source.readframes(source.getnframes())
+
+    samples = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    return samples, rate
 
 
 class OpenAITranscriber:

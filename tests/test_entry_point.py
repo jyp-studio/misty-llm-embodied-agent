@@ -565,7 +565,7 @@ def test_the_demo_flag_serves_instead_of_running_an_episode(monkeypatch):
     """`--demo` replays Episodes that already finished. Running a live one
     underneath it would move a robot nobody is watching."""
     served = []
-    monkeypatch.setattr("misty_agent.demo.serve", lambda: served.append(True))
+    monkeypatch.setattr("misty_agent.demo.serve", lambda **how: served.append(True))
     model = Says()
 
     code = main(["--demo"], model=model, clock=FakeClock())
@@ -586,13 +586,32 @@ def test_the_demo_refuses_the_flags_it_would_have_ignored(
     """Silently ignoring them is how somebody believes their photograph, or
     their key, was used. The same call `--image` with `--robot` gets."""
     served = []
-    monkeypatch.setattr("misty_agent.demo.serve", lambda: served.append(True))
+    monkeypatch.setattr("misty_agent.demo.serve", lambda **how: served.append(True))
 
     with pytest.raises(SystemExit):
         main(["--demo", *alongside], model=Says(), clock=FakeClock())
 
     assert served == []
     assert "--demo replays finished Episodes" in capsys.readouterr().err
+
+
+def test_audio_is_a_demo_option_and_says_so(capsys):
+    """It only means anything as an upload, and a flag that quietly does
+    nothing is worse than one that says it does nothing."""
+    with pytest.raises(SystemExit):
+        main(["--audio", "--said", "hi"], model=Says(), clock=FakeClock())
+
+    assert "--audio is a --demo option" in capsys.readouterr().err
+
+
+def test_asking_for_audio_reaches_the_demo(monkeypatch):
+    """`--demo --audio` has to arrive, or the switch is decoration."""
+    asked = []
+    monkeypatch.setattr("misty_agent.demo.serve", lambda **how: asked.append(how))
+
+    main(["--demo", "--audio"], model=Says(), clock=FakeClock())
+
+    assert asked == [{"audio": True}]
 
 
 def test_the_module_really_runs_as_a_command(tmp_path):

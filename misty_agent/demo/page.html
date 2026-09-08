@@ -28,6 +28,23 @@
   .picker button:hover { color: var(--ink); border-color: var(--faint); }
   .picker button[aria-pressed="true"] { color: var(--bg); background: var(--ink); border-color: var(--ink); }
 
+  .yours { margin: 14px 26px 0; padding: 13px 15px; border: 1px dashed var(--line); border-radius: 7px; }
+  .yours h2 { margin: 0 0 9px; font-size: 12px; font-weight: 600; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
+  .yours .row { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+  .yours input[type=text] {
+    flex: 1 1 240px; min-width: 0; font: inherit; font-size: 12.5px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px;
+  }
+  .yours input[type=file] { font: inherit; font-size: 11.5px; color: var(--dim); max-width: 210px; }
+  .yours button {
+    font: inherit; font-size: 12.5px; cursor: pointer; color: var(--bg);
+    background: var(--ink); border: 1px solid var(--ink); border-radius: 5px; padding: 6px 15px;
+  }
+  .yours button[disabled] { opacity: .5; cursor: progress; }
+  .yours .note { margin: 9px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .yours .note.bad { color: var(--failed); }
+  .yours .seen { margin: 9px 0 0; color: var(--dim); font-size: 12.5px; }
+
   .provenance {
     margin: 16px 26px 0; padding: 11px 14px; border-radius: 6px;
     background: rgba(138,124,192,.09); border-left: 3px solid var(--spec);
@@ -37,6 +54,8 @@
   .provenance .caveat { display: block; margin-top: 5px; color: #a99fc4; }
   .provenance.later { background: rgba(208,162,76,.09); border-left-color: var(--refused); color: #e2cb9e; }
   .provenance.later b { color: #f0dcb4; }
+  .provenance.live { background: rgba(111,174,131,.10); border-left-color: var(--result); color: #b8d9c3; }
+  .provenance.live b { color: #d6efdd; }
 
   main { display: grid; grid-template-columns: minmax(0,1fr) 260px; gap: 26px; padding: 20px 26px 60px; }
   /* Narrow: the robot goes above the list rather than below it, where it was
@@ -118,6 +137,20 @@
   <nav class="picker" id="picker" aria-label="Example episodes"></nav>
 </header>
 
+<section class="yours">
+  <h2>Run one yourself</h2>
+  <div class="row">
+    <input id="said" type="text" placeholder="What did somebody say to it?" value="come here">
+    <input id="picture" type="file" accept="image/*" aria-label="A photograph">
+    <input id="recording" type="file" accept="audio/wav" aria-label="A recording" hidden>
+    <button id="go" type="button">Run it</button>
+  </div>
+  <p class="seen" id="seen"></p>
+  <p class="note" id="note">A photograph goes through the same face detection and distance
+     estimate the measurements were taken against — that part runs here and costs nothing.
+     Deciding what to do about it needs a model, and a key.</p>
+</section>
+
 <div class="provenance" id="provenance"></div>
 
 <main>
@@ -173,6 +206,15 @@ const FACES = {
 };
 
 async function boot() {
+  const options = await (await fetch("/options")).json();
+  $("recording").hidden = !options.audio;
+  if (options.audio) {
+    $("note").textContent =
+      "A photograph goes through the same face detection and distance estimate the "
+      + "measurements were taken against. A recording (16-bit WAV) goes to hosted "
+      + "transcription and becomes what was said — that one costs money on your key.";
+  }
+
   const examples = await (await fetch("/examples")).json();
   $("picker").innerHTML = examples
     .map((e, i) => `<button type="button" data-name="${e.name}" aria-pressed="${i === 0}">${e.title}</button>`)
@@ -203,13 +245,7 @@ async function load(name) {
   if (mine !== state.asked) return;
   state.board = payload.storyboard;
 
-  const first = payload.example.written_before_the_implementation;
-  const banner = $("provenance");
-  banner.className = "provenance" + (first ? "" : " later");
-  banner.innerHTML = first
-    ? `<b>This is a specification, not a recording.</b> ${escapeText(payload.example.provenance)}.`
-      + `<span class="caveat">${escapeText(payload.example.amendments)}</span>`
-    : `<b>This one came later.</b> ${escapeText(payload.example.provenance)}.`;
+  say(payload.example);
 
   const moves = payload.moves;
   $("moves").textContent = moves.length
@@ -221,6 +257,23 @@ async function load(name) {
   // Not scrolled: on first load `scrollIntoView` drags the whole page down
   // and the heading with it, so the demo opens halfway through itself.
   seek(0, { scroll: false });
+}
+
+// The three things an Episode on this page can be, and never one dressed as
+// another — `kind` is decided in Python so it is not this file's judgement.
+const SAYS = {
+  specification: ["", "This is a specification, not a recording."],
+  "added-later": [" later", "This one came later."],
+  live: [" live", "This one just happened, here."],
+};
+
+function say(example) {
+  const [tone, lead] = SAYS[example.kind] || SAYS.live;
+  const banner = $("provenance");
+  banner.className = "provenance" + tone;
+  banner.innerHTML =
+    `<b>${escapeText(lead)}</b> ${escapeText(example.provenance)}.`
+    + (example.amendments ? `<span class="caveat">${escapeText(example.amendments)}</span>` : "");
 }
 
 function draw() {
@@ -378,6 +431,86 @@ document.addEventListener("keydown", (event) => {
   if (event.key === " ") { event.preventDefault(); state.timer ? stop() : play(); }
   if (event.key === "ArrowRight") { stop(); seek(state.at + 1); }
   if (event.key === "ArrowLeft") { stop(); seek(state.at - 1); }
+});
+
+async function runYours() {
+  const asked = { said: $("said").value };
+  const picture = $("picture").files[0];
+  const recording = $("recording").files[0];
+  if (picture) asked.image = await asBase64(picture);
+  if (recording) asked.audio = await asBase64(recording);
+
+  stop();
+  $("go").disabled = true;
+  $("go").textContent = "Running…";
+  const note = $("note");
+  try {
+    const reply = await fetch("/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(asked),
+    });
+    const payload = await reply.json();
+    if (!reply.ok) {
+      note.className = "note bad";
+      note.textContent = payload.error;
+      return;
+    }
+    note.className = "note";
+    $("seen").textContent = describeSeen(payload);
+
+    if (!payload.storyboard) {
+      // Perception ran and there is nothing after it. The reason comes from
+      // `MissingApiKey`, which already names both ways to supply a key.
+      note.className = "note bad";
+      note.textContent = payload.why_no_episode;
+      return;
+    }
+    for (const button of $("picker").querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", "false");
+    }
+    state.board = payload.storyboard;
+    say(payload.example);
+    $("moves").textContent = payload.moves.length
+      ? "moves here: " + payload.moves.join(", ")
+      : "nothing on this figure moves in this episode";
+    draw();
+    $("scrub").max = String(state.board.moments.length - 1);
+    seek(0, { scroll: false });
+    play();
+  } catch (whatever) {
+    note.className = "note bad";
+    note.textContent = String(whatever);
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "Run it";
+  }
+}
+
+// What the camera made of the upload, said the way `in_view` says it — this
+// is the one place the page has no Storyboard to read it off, because
+// perception happens whether or not an Episode follows.
+function describeSeen(payload) {
+  const seen = payload.perception;
+  const heard = payload.heard ? ` Heard: ${JSON.stringify(payload.heard)}.` : "";
+  if (!seen.looked) return heard.trim();
+  if (!seen.face_present) return "Nobody in that picture." + heard;
+  return `Someone ${seen.distance_cm}cm away, `
+    + `${seen.is_looking ? "looking at the camera" : "looking away"}.${heard}`;
+}
+
+function asBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.readAsDataURL(file);
+  });
+}
+
+$("go").addEventListener("click", runYours);
+$("said").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") runYours();
 });
 
 boot();

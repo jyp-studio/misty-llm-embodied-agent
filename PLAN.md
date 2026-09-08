@@ -2408,3 +2408,66 @@ import numpy，「零新相依」那條 AST 測試才能繼續維持最嚴格的
 「五份 golden 沒有任何一份會點燈或動手臂，所以那張圖上燈永遠是暗的」—— 我當時寫「狀態圖要
 活起來，靠的是 #10 餵真實輸入之後跑出來的 Episode」。跑了：一次真的 Episode 之後，面板寫的是
 `moves here: chest light, arms, face`，胸口是青色的，手臂舉起來，臉是笑的。
+
+### 16.43 上一次執行的結果，留在下一個範例的畫面上（M8 #10 review）
+
+Spec 軸把頁面當成一個人在用，走了一條我沒走過的路：**先跑一次自己的（沒有 key），再點一個
+內建範例**。結果是一個紫色的「This is a specification, not a recording」橫幅，上面掛著
+「Someone 52cm away, looking at the camera.」和整段紅色的沒有 key 說明。
+
+`load()` 會重設橫幅、機器人面板、moves 說明、選單按鈕 —— 它**不會**重設感知那一行和那段紅字，
+因為那兩個是 #10 才加的，而 `load()` 是 #08 寫的。**這正是票面第七格要防的那個混淆**，而且是
+用我自己剛加的東西造出來的。
+
+### 16.44 那段「怎麼給 key」的說明，有一半在頁面上做不到（M8 #10 review）
+
+`MissingApiKey` 講兩條通道（§16.24 才剛讓它兩條都講），而頁面沿用它 —— 但那段話是寫給**站在
+終端機前面的人**看的。`load_api_key` 讀的是**這個行程**的環境變數，所以訪客在自己的 shell 裡
+`export` 永遠不會傳到一個已經在跑的 demo；檔案那條會，下一個 request 就讀到了，什麼都不用重啟。
+
+Spec 軸實際驗證過：把 `OAI_CONFIG_LIST.json` 丟進 demo 的工作目錄，`storyboard` 立刻從 `null`
+變成一次完整的 Episode，沒有重啟。
+
+修法是**補一句，不是寫第二份**：`ONLY_ONE_REACHES_A_PAGE` 說明哪一條到得了、另一條要重啟。
+§16.24 的「一段說明，一個地方」沒有被破壞 —— 加的是一件那段說明不知道的事（它不知道自己被
+一個網頁引用了）。
+
+### 16.45 `--demo` 拒絕 `--journal` 的理由已經過期（M8 #10 review）
+
+那句話是 #08 寫的：「`--demo` 只是重播已經跑完的 Episode」。**#10 之後它會跑活的。** 訊息還在
+講一個不再成立的理由。
+
+真正的理由是別的，而且和 #06 有關：**一個 Journal 檔案裝一次 Episode**，而頁面上想點幾次就
+點幾次。改成講這個。
+
+### 16.46 兩軸在同一張票上抓到的其他東西（M8 #10）
+
+- **`Any` 被用了但沒有 import。** `from __future__ import annotations` 讓它在 import 時不會
+  炸，但 `typing.get_type_hints` 一叫就 `NameError`。這個 repo 沒有 ruff / mypy，所以沒有
+  工具會抓到 —— 只有讀的人會。
+- **12 個 mutation 活了 9 個。** 我自己跑的七個全都集中在「這條新路走不走得通」，而
+  **沒被我碰到的地方一個都沒被測到**：`wav_to_pcm` 完全沒有直接的測試（雙聲道平均、16-bit
+  防護都可以拿掉）；`serve(audio=...)` 到不到得了 handler 沒人測；`validate=True` 沒人測。
+- **觸發種類是猜的。** `"visual" if seen is not None and not said else "speech"` —— 兩個方向
+  的反轉**都**通過全部測試。而「用了哪個輸入框」是**頁面知道、伺服器不知道**的事實，所以現在
+  是頁面送過來、伺服器對照 `TRIGGERS` 驗證。
+- **`simulated_session` 只有一個呼叫端，而它住在 composition root 上。** Standards 說那是
+  Divergent Change。修法不是搬走，是讓 `main` 也用它 —— 現在指令列和瀏覽器**穿過同一套組裝**
+  抵達模型，`_robot_and_room` 整個刪掉。
+- **`validate=True` 的測試本來測不出東西。** `b64decode` 預設會把字母表外的字元**掃掉**，所以
+  「一張真的圖片後面接四個驚嘆號」會安安靜靜解碼成功。我第一版用的是兩種寫法都會炸的垃圾，
+  證明不了任何事。
+- POST 現在有大小上限。一個把 body 解進記憶體才開始看的路由不該沒有邊界。
+
+### 16.47 M8 收尾：§16.3 那張表空了
+
+| 東西 | 生產呼叫端 |
+|---|---|
+| 系統提示 | `app.py` / `react.py`（#03） |
+| `load_api_key` | `app.py`（#04） |
+| `JsonlFile` | `app.py`（#06） |
+| `EmergencyStop`、`ToolContext.ears` | M7 #12，#05 讓真驅動那條也接上 |
+| `OpenAITranscriber` | `app.py`（#05 的真驅動）與 `demo/`（#10 的語音上傳） |
+
+M8 開始時的實質理由就是這張表（§16.3）。十張票之後它是空的，而且每一格都有兩軸 review
+驗證過的呼叫端。

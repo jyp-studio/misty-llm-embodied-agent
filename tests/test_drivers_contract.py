@@ -21,6 +21,9 @@ the layer, both of which would have made a real robot silently ignore us:
 
 import json
 
+import io
+import wave
+
 import numpy as np
 import pytest
 
@@ -258,6 +261,57 @@ def _wav_header(data: bytes) -> dict:
             "frame_rate": wav.getframerate(),
             "frames": wav.getnframes(),
         }
+
+
+def test_a_wav_comes_back_as_the_samples_that_went_in():
+    """`wav_to_pcm` is `pcm_to_wav` backwards, and M8 #10 is its caller: a
+    browser hands over a file, the transcriber takes samples."""
+    from misty_agent.perception.asr import wav_to_pcm
+
+    spoken = np.linspace(-0.8, 0.8, 480, dtype=np.float32)
+
+    heard, rate = wav_to_pcm(pcm_to_wav(spoken, 16000))
+
+    assert rate == 16000
+    assert heard.shape == spoken.shape
+    assert np.allclose(heard, spoken, atol=1e-4)
+
+
+def test_two_channels_are_averaged_rather_than_half_of_them_dropped():
+    """A stereo recording of one person must not lose whichever side they sat
+    on. Taking the left channel passes any test that only counts samples."""
+    from misty_agent.perception.asr import wav_to_pcm
+
+    left, right = np.full(4, -0.5, np.float32), np.full(4, 0.5, np.float32)
+    interleaved = np.empty(8, np.float32)
+    interleaved[0::2], interleaved[1::2] = left, right
+    stereo = io.BytesIO()
+    with wave.open(stereo, "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(16000)
+        out.writeframes((interleaved * 32767).astype("<i2").tobytes())
+
+    heard, _ = wav_to_pcm(stereo.getvalue())
+
+    assert heard.shape == (4,)
+    assert np.allclose(heard, 0.0, atol=1e-4)
+
+
+def test_audio_that_is_not_sixteen_bit_is_refused_by_name():
+    """Read as 16-bit anyway it becomes noise, and a transcriber given noise
+    returns something — which is worse than a refusal."""
+    from misty_agent.perception.asr import wav_to_pcm
+
+    eight_bit = io.BytesIO()
+    with wave.open(eight_bit, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(1)
+        out.setframerate(16000)
+        out.writeframes(b"\x80" * 64)
+
+    with pytest.raises(ValueError, match="8-bit audio"):
+        wav_to_pcm(eight_bit.getvalue())
 
 
 def test_wav_encoding_is_mono_16_bit_at_the_source_rate():

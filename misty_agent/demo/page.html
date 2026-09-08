@@ -193,7 +193,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const state = { board: null, at: 0, timer: null, asked: 0 };
+const state = { board: null, at: 0, timer: null, asked: 0, note: "" };
 
 const FACES = {
   happy:     { eyes: 6.5, mouth: "M70 50 Q80 58 90 50" },
@@ -214,6 +214,7 @@ async function boot() {
       + "measurements were taken against. A recording (16-bit WAV) goes to hosted "
       + "transcription and becomes what was said — that one costs money on your key.";
   }
+  state.note = $("note").textContent;
 
   const examples = await (await fetch("/examples")).json();
   $("picker").innerHTML = examples
@@ -246,6 +247,14 @@ async function load(name) {
   state.board = payload.storyboard;
 
   say(payload.example);
+
+  // Everything the last live run put on screen. A built-in has no perception
+  // result and no missing key, and leaving either one there put "Someone
+  // 52cm away" under a purple "this is a specification" banner — which is
+  // the one confusion this ticket exists to prevent.
+  $("seen").textContent = "";
+  $("note").className = "note";
+  $("note").textContent = state.note;
 
   const moves = payload.moves;
   $("moves").textContent = moves.length
@@ -434,9 +443,15 @@ document.addEventListener("keydown", (event) => {
 });
 
 async function runYours() {
-  const asked = { said: $("said").value };
+  const said = $("said").value.trim();
   const picture = $("picture").files[0];
   const recording = $("recording").files[0];
+  // Said rather than inferred by the server: which control was used is
+  // something only this page knows.
+  const asked = {
+    said,
+    trigger: said || recording ? "speech" : "visual",
+  };
   if (picture) asked.image = await asBase64(picture);
   if (recording) asked.audio = await asBase64(recording);
 

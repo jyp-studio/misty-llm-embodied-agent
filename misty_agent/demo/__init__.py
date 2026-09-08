@@ -1,7 +1,7 @@
 """The demo, as a pure function plus a shell that owns the socket.
 
-`answer(method, path)` is everything about HTTP except the socket: a request
-in, a status, headers and bytes out. `serve()` is the shell — bind loopback,
+`answer(method, path, body)` is everything about HTTP except the socket: a
+request in, a status, headers and bytes out. `serve()` is the shell — bind loopback,
 open a browser, hand each request to `answer`. The shell is not tested, on the
 same grounds `main()` is not: there is nothing in it to get wrong that a test
 could see without opening a port.
@@ -43,13 +43,14 @@ import pathlib
 import webbrowser
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from misty_agent.agent.journal import from_jsonl, to_jsonl
 from misty_agent.agent.model import MissingApiKey, OpenAIModel
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.app import (
     API_KEY_FILE,
+    TRIGGERS,
     SystemClock,
     decode_image,
     load_api_key,
@@ -279,6 +280,26 @@ def what_moves(storyboard) -> Tuple[str, ...]:
     )
 
 
+#: The half of `MissingApiKey`'s advice that a page cannot follow.
+#:
+#: That message is right, and it is the only one (`PLAN.md` §16.24) — but it
+#: is written for somebody standing at a terminal. `load_api_key` reads *this
+#: process's* environment, so an `export` in the visitor's own shell never
+#: reaches a demo that is already running; the file is picked up on the next
+#: request, with nothing to restart. Saying so is an addition to that
+#: paragraph, not a second copy of it.
+#: As much as one request may carry. Generous for a photograph and a short
+#: recording, and a bound on what a single POST can ask this process to hold
+#: in memory — the body is decoded before anything looks at it.
+MOST_ONE_REQUEST_MAY_CARRY = 24 * 1024 * 1024
+
+ONLY_ONE_REACHES_A_PAGE = (
+    "Two ways, and only one of them reaches a demo that is already running: "
+    "the file is read again on every run, so putting it there is enough. An "
+    "`export` sets the variable in your shell and not in this process — for "
+    "that one, stop the demo and start it again."
+)
+
 #: What a run that just happened says about itself. Deliberately not a
 #: variant of the goldens' claim: it is the opposite one.
 LIVE = Example(
@@ -310,6 +331,14 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     it takes the `--journal` flag (M8 #06) — which is a decision about
     keeping people's words, made once, on purpose.
     """
+    if len(body) > MOST_ONE_REQUEST_MAY_CARRY:
+        return _json(
+            413,
+            {
+                "error": f"that is {len(body) // (1024 * 1024)}MB; this takes "
+                f"up to {MOST_ONE_REQUEST_MAY_CARRY // (1024 * 1024)}MB"
+            },
+        )
     try:
         asked = json.loads(body or b"{}")
         if not isinstance(asked, dict):
@@ -318,13 +347,18 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         return _json(400, {"error": f"the body is not JSON this reads: {why}"})
 
     said = str(asked.get("said") or "")
+    # Which control somebody used is a fact the page holds and this does not,
+    # so it is sent rather than inferred. Both halves of the guess this used
+    # to make — always "speech", always "visual" — passed the whole suite.
+    trigger = str(asked.get("trigger") or "speech")
+    if trigger not in TRIGGERS:
+        return _json(
+            400, {"error": f"{trigger!r} is not one of {', '.join(TRIGGERS)}"}
+        )
     heard = None
 
     if asked.get("audio"):
         if not audio:
-            given = _decoded(asked, "audio")
-            if given is None:
-                return _json(400, {"error": "the audio is not base64"})
             return _json(
                 400,
                 {
@@ -372,16 +406,13 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     }
 
     if not load_api_key(API_KEY_FILE):
-        answered["why_no_episode"] = str(MissingApiKey())
+        answered["why_no_episode"] = f"{MissingApiKey()}\n\n{ONLY_ONE_REACHES_A_PAGE}"
         return _json(200, answered)
 
     session = simulated_session(seen, model=OpenAIModel(), clock=SystemClock())
-    _, journal = session.episode(
-        "visual" if seen is not None and not said else "speech",
-        said,
-        render=False,
-    )
-    board = asdict(storyboard_of(journal.records))
+    _, journal = session.episode(trigger, said, render=False)
+    live = storyboard_of(journal.records)
+    board = asdict(live)
     for moment, line in zip(board["moments"], to_jsonl(journal.records).splitlines()):
         # The same promise the built-ins make, on a run from a moment ago:
         # every Moment carries the record it was made from. There is no file
@@ -389,7 +420,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         # serialised straight out of the Journal.
         moment["line"] = line
     answered["storyboard"] = board
-    answered["moves"] = list(what_moves(storyboard_of(journal.records)))
+    answered["moves"] = list(what_moves(live))
     return _json(200, answered)
 
 

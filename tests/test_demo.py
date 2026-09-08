@@ -31,9 +31,11 @@ import sys
 import pytest
 
 from misty_agent.agent.model import API_KEY_VARIABLE
+from misty_agent.app import DEFAULT_START_CM
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.demo import (
     ANY_FREE_PORT,
+    MOST_ONE_REQUEST_MAY_CARRY,
     EXAMPLES,
     LOOPBACK_ONLY,
     Reply,
@@ -53,8 +55,11 @@ class _StillbornServer:
     an acceptance criterion: that a browser is opened, at this machine.
     """
 
+    handler = None
+
     def __init__(self, address, handler):
         self.server_port = address[1]
+        _StillbornServer.handler = handler
 
     def serve_forever(self):
         raise KeyboardInterrupt
@@ -345,10 +350,12 @@ def a_portrait(scale: float = 1.0) -> bytes:
     return cv2.imencode(".jpg", frame)[1].tobytes()
 
 
-def run(said="hello", image=None, wav=None, **rest):
+def run(said="hello", image=None, wav=None, trigger=None, **rest):
     """A POST as the page makes it. `rest` goes to `answer` — that is where
     the `audio=` switch lives, and it is not the same thing as sending one."""
     asked = {"said": said}
+    if trigger is not None:
+        asked["trigger"] = trigger
     if image is not None:
         asked["image"] = base64.b64encode(image).decode()
     if wav is not None:
@@ -423,6 +430,54 @@ def test_what_the_person_said_is_what_the_model_is_asked_about(monkeypatch):
 
     spoken = [e for e in asked.contexts[0] if e["role"] == "user"]
     assert spoken[0]["content"]["said"] == "are you there"
+
+
+def test_the_page_says_what_set_the_episode_off(monkeypatch):
+    """`_run` used to guess from whether an image arrived without words. Both
+    halves of that guess — always "speech", always "visual" — passed the
+    whole suite. Which control somebody used is the page's to say.
+    """
+    asked = Says("done")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
+
+    run(said="", image=a_portrait(), trigger="visual")
+
+    told = [e for e in asked.contexts[0] if e["role"] == "user"]
+    assert told[0]["content"]["trigger"] == "visual"
+
+
+def test_a_trigger_nobody_recognises_is_refused():
+    """`CONTEXT.md` gives an Episode one external trigger, and the goldens
+    carry two kinds. A typo must not become a third."""
+    reply = answer("POST", "/run", json.dumps({"trigger": "telepathy"}).encode())
+
+    assert reply.status == 400
+    assert b"telepathy" in reply.body
+
+
+def test_where_the_photograph_put_the_person_is_where_the_episode_starts(
+    monkeypatch,
+):
+    """The upload has to reach the world the Episode runs in, not just the
+    line reported back. Building the world without it left every test green
+    while a photograph changed nothing about the run.
+    """
+    asked = Says("speak", "done")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
+
+    payload = json.loads(run(image=a_portrait(0.5)).body)
+
+    started_at = payload["perception"]["distance_cm"]
+    assert started_at != DEFAULT_START_CM
+    snapshots = [
+        entry["content"]["snapshot"]
+        for context in asked.contexts
+        for entry in context
+        if entry.get("role") == "tool" and "snapshot" in entry.get("content", {})
+    ]
+    assert snapshots[0]["distance_cm"] == started_at
 
 
 def test_a_live_run_cannot_be_mistaken_for_a_specification(monkeypatch):
@@ -514,15 +569,60 @@ def test_audio_that_was_asked_for_is_transcribed_and_becomes_what_was_said(
 
 
 def test_audio_that_is_not_a_wav_is_refused_with_a_reason():
+    """Asserted on what `wave` actually said, not on the wrapper around it —
+    "WAV" is a word this module supplies either way, so it held with the
+    decoder's own guard deleted."""
     reply = run(wav=b"this is not a wav at all", audio=True)
 
     assert reply.status == 400
-    assert b"WAV" in reply.body
+    assert b"RIFF" in reply.body
+
+
+def test_a_field_with_rubbish_in_it_is_refused_rather_than_swept_up():
+    """`validate=True`, and the input has to be the kind that needs it.
+
+    `b64decode` *discards* characters outside the alphabet unless asked not
+    to — so a payload that is a real image with junk appended decodes
+    perfectly well and quietly becomes something nobody sent. Rubbish that
+    fails either way proves nothing, which is what the first version of this
+    test used.
+    """
+    swept_up = base64.b64encode(a_portrait()).decode() + "!!!!"
+
+    reply = answer("POST", "/run", json.dumps({"image": swept_up}).encode())
+
+    assert reply.status == 400
+    assert b"not base64" in reply.body
 
 
 # ---------------------------------------------------------------------------
 # What a POST may not do
 # ---------------------------------------------------------------------------
+
+def test_a_body_too_big_to_be_a_photograph_is_refused_before_it_is_read():
+    """The body is decoded into memory before anything looks at it, so the
+    limit belongs in front of that rather than after."""
+    reply = answer("POST", "/run", b"x" * (MOST_ONE_REQUEST_MAY_CARRY + 1))
+
+    assert reply.status == 413
+    assert b"24MB" in reply.body
+
+
+def test_the_page_is_told_which_way_of_supplying_a_key_reaches_it(monkeypatch):
+    """`MissingApiKey` is written for somebody at a terminal, and one of the
+    two routes it names cannot reach a demo that is already running: an
+    `export` sets the visitor's shell, not this process. The file is read
+    again on every run.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("misty_agent.demo.load_api_key", lambda path: None)
+
+    why = json.loads(run().body)["why_no_episode"]
+
+    assert API_KEY_VARIABLE in why
+    assert "read again on every run" in why
+    assert "stop the demo and start it again" in why
+
 
 def test_a_body_that_is_not_json_is_refused():
     reply = answer("POST", "/run", b"{not json")
@@ -617,6 +717,25 @@ def test_an_example_whose_file_has_gone_is_answered_not_raised(monkeypatch):
 
     assert reply.status == 500
     assert b"missing" in reply.body
+
+
+def test_asking_for_audio_reaches_the_thing_that_answers_requests(monkeypatch):
+    """`serve(audio=True)` has to arrive at `answer`, or the switch is a flag
+    that changes nothing. The handler is built per call, so the value cannot
+    leak between two demos in one process either."""
+    built = []
+    monkeypatch.setattr("misty_agent.demo.HTTPServer", _StillbornServer)
+    monkeypatch.setattr("misty_agent.demo.webbrowser.open", lambda where: None)
+    monkeypatch.setattr(
+        "misty_agent.demo._Handler", type("_Spy", (), {"audio": False})
+    )
+
+    serve(port=1, audio=True)
+    built.append(_StillbornServer.handler.audio)
+    serve(port=2, audio=False)
+    built.append(_StillbornServer.handler.audio)
+
+    assert built == [True, False]
 
 
 def test_the_browser_is_opened_and_pointed_at_this_machine(monkeypatch):

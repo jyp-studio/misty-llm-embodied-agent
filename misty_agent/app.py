@@ -462,17 +462,21 @@ def simulated_session(
     )
 
 
-def _robot_and_room(image: Optional[pathlib.Path], clock: Any) -> Tuple[Any, Any]:
-    """The command's half: read the file, then hand the frame on."""
+def _looked_at(image: Optional[pathlib.Path]) -> Optional[Any]:
+    """The command's half: read the file, then hand the frame to perception.
+
+    `None` back means nothing was looked at, which `room_for` treats as a
+    different thing from having looked and found nobody.
+    """
     if image is None:
-        return room_for(None, clock)
+        return None
 
     import cv2
 
     frame = cv2.imread(str(image))
     if frame is None:
         raise FileNotFoundError(image)
-    return room_for(look_at(frame), clock)
+    return look_at(frame)
 
 
 #: What `--robot` has to say for itself, every time.
@@ -591,8 +595,13 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
             if given
         ]
         if alongside:
+            # `--journal` is refused for its own reason and it is not this
+            # one: a Journal file holds one Episode (#06), and the page can
+            # run as many as somebody clicks. The others are refused because
+            # the page asks for its own trigger, its own photograph, and
+            # never touches a robot.
             parser.error(
-                f"--demo replays finished Episodes, so it cannot also "
+                f"--demo runs Episodes the page asks for, so it cannot also "
                 f"{' or '.join(alongside)}"
             )
         # Returns when the person stops it. Nothing below runs.
@@ -655,19 +664,14 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
             )
 
     try:
-        robot, readings = _robot_and_room(args.image, clock)
+        seen = _looked_at(args.image)
     except FileNotFoundError as missing:
         print(f"could not read {missing}", file=sys.stderr)
         return 1
 
-    session = Session(
-        robot=robot,
-        readings=readings,
-        model=asked,
-        memory=Memory(),
-        config=settings,
-        clock=clock,
-    )
+    # The same assembly the demo page reaches a model through, so a run from
+    # the command line and a run from the browser cannot diverge.
+    session = simulated_session(seen, model=asked, clock=clock)
     source = "simulated" if args.image is None else args.image
     return _one_episode(
         session, args, source=source, must_find_a_key=model is None

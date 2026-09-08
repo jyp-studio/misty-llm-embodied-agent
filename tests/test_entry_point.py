@@ -592,7 +592,7 @@ def test_the_demo_refuses_the_flags_it_would_have_ignored(
         main(["--demo", *alongside], model=Says(), clock=FakeClock())
 
     assert served == []
-    assert "--demo replays finished Episodes" in capsys.readouterr().err
+    assert "--demo runs Episodes the page asks for" in capsys.readouterr().err
 
 
 def test_audio_is_a_demo_option_and_says_so(capsys):

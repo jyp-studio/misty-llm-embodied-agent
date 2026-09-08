@@ -79,6 +79,18 @@
   li[data-tone="refused"] .head { color: var(--refused); }
   li[data-tone="failed"] .head { color: var(--failed); }
   li[data-tone="refused"], li[data-tone="failed"] { padding-left: 8px; border-left-width: 2px; }
+  li.shown .what { cursor: pointer; }
+  li.shown .what:hover .head { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
+  .raw {
+    /* The `li` is a two-column grid (stamp, sentence); without this the
+       expansion lands in the 62px stamp column and renders one letter wide. */
+    grid-column: 2;
+    margin: 5px 0 7px; padding: 9px 11px; border-radius: 5px;
+    background: #131218; border: 1px solid var(--line);
+    color: var(--dim); font-size: 11.5px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+  }
+  .raw b { color: var(--faint); font-weight: 400; }
   li.shown[data-tone="refused"] { border-left-color: rgba(208,162,76,.5); }
   li.shown[data-tone="failed"] { border-left-color: rgba(207,106,90,.5); }
 
@@ -91,6 +103,10 @@
   .robot .moves { margin: 10px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.45; }
   .outcome { margin-top: 12px; padding: 9px 11px; border-radius: 6px; background: rgba(255,255,255,.04); font-size: 12.5px; }
   .outcome b { color: var(--ink); font-weight: 600; }
+  .outcome[data-outcome="done"] { box-shadow: inset 3px 0 0 var(--result); }
+  .outcome[data-outcome="turn_limit"] { box-shadow: inset 3px 0 0 var(--refused); }
+  .outcome[data-outcome="aborted"] { box-shadow: inset 3px 0 0 var(--boundary); }
+  .outcome[data-outcome="error"] { box-shadow: inset 3px 0 0 var(--failed); }
   .outcome .running { color: var(--dim); }
 </style>
 </head>
@@ -143,7 +159,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const state = { board: null, at: 0, timer: null };
+const state = { board: null, lines: [], at: 0, timer: null };
 
 const FACES = {
   happy:     { eyes: 6.5, mouth: "M70 50 Q80 58 90 50" },
@@ -183,6 +199,10 @@ async function load(name) {
       + `<span class="caveat">${escapeText(payload.example.amendments)}</span>`
     : `<b>This one came later.</b> ${escapeText(payload.example.provenance)}.`;
 
+  state.lines = (await (await fetch(`/examples/${encodeURIComponent(name)}/journal`)).text())
+    .split("\n")
+    .filter((line) => line.trim());
+
   const moves = payload.moves;
   $("moves").textContent = moves.length
     ? "moves here: " + moves.join(", ")
@@ -205,7 +225,8 @@ function draw() {
       // in this repo can read.
       return `<li class="${turnMark}" data-tone="${m.tone}" data-i="${i}">
         <span class="t">${m.t.toFixed(2)}s</span>
-        <span class="what">
+        <span class="what" role="button" tabindex="0" aria-expanded="false"
+              title="Show the line this came from">
           <span class="head">${escapeText(m.headline)}</span>${m.detail ? ` <span class="detail">${escapeText(m.detail)}</span>` : ""}
         </span>
       </li>`;
@@ -231,9 +252,31 @@ function seek(index, { scroll = true } = {}) {
 
   const last = state.board.moments[state.board.moments.length - 1];
   const ended = state.at === state.board.moments.length - 1 && state.board.outcome;
-  $("outcome").innerHTML = ended
+  const panel = $("outcome");
+  panel.dataset.outcome = ended ? state.board.outcome : "";
+  panel.innerHTML = ended
     ? `<b>${escapeText(last.headline)}</b>${last.detail ? " — " + escapeText(last.detail) : ""}`
     : `<span class="running">running… turn ${moment.turn ?? "—"}</span>`;
+}
+
+function open(index) {
+  const li = $("moments").children[index];
+  if (!li || !li.classList.contains("shown")) return;
+  const already = li.querySelector(".raw");
+  const what = li.querySelector(".what");
+  if (already) {
+    already.remove();
+    what.setAttribute("aria-expanded", "false");
+    return;
+  }
+  // The line from the Journal, indented — not a re-rendering of it. Pairing
+  // by position is legal because a Moment is one record; the server's tests
+  // are what keep that true.
+  const raw = document.createElement("div");
+  raw.className = "raw";
+  raw.textContent = JSON.stringify(JSON.parse(state.lines[index]), null, 2);
+  li.appendChild(raw);
+  what.setAttribute("aria-expanded", "true");
 }
 
 function paint(robot) {
@@ -293,6 +336,15 @@ function escapeText(text) {
   return node.innerHTML;
 }
 
+$("moments").addEventListener("click", (event) => {
+  const li = event.target.closest("li");
+  if (li) open(Number(li.dataset.i));
+});
+$("moments").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const li = event.target.closest("li");
+  if (li) { event.preventDefault(); open(Number(li.dataset.i)); }
+});
 $("play").addEventListener("click", () => (state.timer ? stop() : play()));
 $("scrub").addEventListener("input", (event) => { stop(); seek(Number(event.target.value)); });
 document.addEventListener("keydown", (event) => {

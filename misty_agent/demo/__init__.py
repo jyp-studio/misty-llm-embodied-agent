@@ -156,7 +156,12 @@ def answer(method: str, path: str) -> Reply:
     if path == "/examples":
         return _json(200, [asdict(example) for example in EXAMPLES])
     if path.startswith("/examples/"):
-        return _example(path[len("/examples/"):])
+        name, _, below = path[len("/examples/"):].partition("/")
+        if below == "journal":
+            return _journal(name)
+        if below:
+            return _json(404, {"error": f"nothing is served at {path}"})
+        return _example(name)
     return _json(404, {"error": f"nothing is served at {path}"})
 
 
@@ -209,6 +214,29 @@ def what_moves(storyboard) -> Tuple[str, ...]:
         for field, label in _MOVING_PARTS
         if len({getattr(pose, field) for pose in poses}) > 1
     )
+
+
+def _journal(name: str) -> Reply:
+    """The Journal behind an example, as the file rather than as a rendering.
+
+    M8 #09 asks that any record can be opened to its raw fields, and calls
+    that the difference between traceability and the word. `Moment.facts`
+    would have been easier and is not the same claim — it drops `t`, `turn`
+    and `type`, and for the two kinds whose fields were lifted onto the
+    `Storyboard` (`PLAN.md` §16.30) it is nearly empty. What a visitor is
+    invited to check is the line in the Journal, so it is the line they get.
+
+    The page pairs a Moment with a line by position, which
+    `test_there_is_exactly_one_journal_line_per_moment` is what makes legal.
+    """
+    found = next((example for example in EXAMPLES if example.name == name), None)
+    if found is None:
+        return _json(404, {"error": f"there is no example called {name!r}"})
+    try:
+        text = (_GOLDENS / f"{found.name}.jsonl").read_bytes()
+    except OSError as why:
+        return _json(500, {"error": f"the example {name!r} is missing: {why}"})
+    return Reply(200, {"Content-Type": "text/plain; charset=utf-8"}, text)
 
 
 def _json(status: int, payload) -> Reply:

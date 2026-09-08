@@ -224,6 +224,79 @@ def test_a_visitor_is_told_which_parts_of_the_robot_this_episode_moves():
 
 
 # ---------------------------------------------------------------------------
+# Traceability: the page can show the line itself
+# ---------------------------------------------------------------------------
+
+def test_the_journal_behind_an_example_is_served_verbatim():
+    """M8 #09's load-bearing box: 「點任何一筆紀錄可以展開看到原始欄位 ——
+    『可追溯』不只是一句話」.
+
+    Served as the file rather than as a re-rendering of it. `Moment.facts`
+    would have been the easy answer and it is not the same claim: it drops
+    `t`, `turn` and `type`, and for the two records whose fields were lifted
+    onto the `Storyboard` (§16.30) it is nearly empty. What a visitor is
+    being invited to check is the line in the Journal, so that is what they
+    get.
+    """
+    reply = answer("GET", "/examples/episode_is_aborted/journal")
+
+    assert reply.status == 200
+    assert reply.headers["Content-Type"].startswith("text/plain")
+    assert reply.body == (GOLDENS / "episode_is_aborted.jsonl").read_bytes()
+
+
+@pytest.mark.parametrize("example", [e.name for e in EXAMPLES])
+def test_there_is_exactly_one_journal_line_per_moment(example):
+    """The page pairs them by position, so this is what makes that legal.
+
+    A Moment is one record — `storyboard_of` maps over them one for one —
+    and if that ever stopped being true the expansion would show a visitor
+    the fields of some *other* decision, which is worse than showing none.
+    """
+    lines = [
+        line
+        for line in answer("GET", f"/examples/{example}/journal").body.decode().splitlines()
+        if line.strip()
+    ]
+    moments = body_of(f"/examples/{example}")["storyboard"]["moments"]
+
+    assert len(lines) == len(moments)
+    assert [json.loads(line)["t"] for line in lines] == [m["t"] for m in moments]
+    assert [json.loads(line)["type"] for line in lines] == [m["kind"] for m in moments]
+
+
+def test_the_journal_is_the_file_rather_than_a_rendering_of_it(tmp_path, monkeypatch):
+    """Serving `to_jsonl(from_jsonl(text))` passes every other test here,
+    because a golden is already in exactly that form — so byte equality
+    against a canonical file proves nothing about which of the two happened.
+
+    A file that is *not* canonical tells them apart, and the difference is
+    the whole claim: what a visitor opens is the line on disk, not this
+    project's reconstruction of it.
+    """
+    odd = '{"type": "turn_started",  "turn": 1, "t": 0.0, "episode_id": "ep-1"}\n'
+    monkeypatch.setattr("misty_agent.demo._GOLDENS", tmp_path)
+    (tmp_path / f"{EXAMPLES[0].name}.jsonl").write_text(odd, encoding="utf-8")
+
+    reply = answer("GET", f"/examples/{EXAMPLES[0].name}/journal")
+
+    assert reply.body.decode() == odd
+
+
+def test_the_journal_of_an_example_nobody_has_is_a_404():
+    assert answer("GET", "/examples/not_an_example/journal").status == 404
+
+
+@pytest.mark.parametrize(
+    "attempt",
+    ["/examples/episode_is_aborted/journal/more", "/examples/../goldens/journal",
+     "/examples/episode_is_aborted/anything"],
+)
+def test_nothing_below_an_example_is_served_but_its_journal(attempt):
+    assert answer("GET", attempt).status == 404
+
+
+# ---------------------------------------------------------------------------
 # The two promises that are about what this does not do
 # ---------------------------------------------------------------------------
 

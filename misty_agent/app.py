@@ -517,9 +517,26 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
     parser = _parser()
     args = parser.parse_args(argv)
     if args.demo:
-        # Returns when the person stops it. Nothing below runs: the demo
-        # replays finished Episodes, and starting one underneath it would
-        # move a robot nobody is watching.
+        # Refused rather than ignored, the same as `--image` with `--robot`:
+        # the demo replays Episodes that already finished, so every one of
+        # these asks for something it will not do, and silence would let
+        # somebody believe their photograph or their key had been used.
+        alongside = [
+            flag
+            for flag, given in (
+                ("--said", args.said),
+                ("--image", args.image is not None),
+                ("--robot", args.robot is not None),
+                ("--journal", args.journal is not None),
+            )
+            if given
+        ]
+        if alongside:
+            parser.error(
+                f"--demo replays finished Episodes, so it cannot also "
+                f"{' or '.join(alongside)}"
+            )
+        # Returns when the person stops it. Nothing below runs.
         from misty_agent.demo import serve
 
         serve()

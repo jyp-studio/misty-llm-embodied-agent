@@ -24,9 +24,9 @@ mechanism and its seam (`PLAN.md` §16.4).
 ## The examples are read from `tests/goldens/`, not copied
 
 A copy could differ from the spec it claims to be, in the one place a visitor
-is being asked to take the claim seriously. `harness/__main__.py` already
-reaches into `tests/fixtures/` for the portrait it replays, for the same
-reason: the artefact under discussion is the one in the repo.
+is asked to take the claim seriously. The cost — this package needing a
+sibling directory that an installed copy would not have — is weighed in
+`PLAN.md` §16.31.
 
 **Four of the five were written before the ReAct loop existed. The fifth was
 not.** It was added at M7 #13, to pin `error` once runtime failure became a
@@ -68,6 +68,24 @@ _SPEC_FIRST = (
     "rather than from whatever the implementation turned out to do"
 )
 
+#: The other half of that claim, and it is not the flattering half.
+#:
+#: The first version of this banner said the loop "had to be built to produce
+#: it, not the other way round". `tests/goldens/README.md` keeps a table of
+#: every time a golden and the implementation disagreed: **five times, and the
+#: goldens gave way in four of them.** So the flattering version was false,
+#: written in the one place this ticket exists to keep honest.
+#:
+#: The true version is the better story anyway — a rule that is never invoked
+#: is not a rule, and what makes this one worth anything is that each time it
+#: was invoked somebody wrote down which side moved.
+AMENDMENTS = (
+    "It has been amended since. Where a golden and the loop disagreed, which "
+    "side gave way is written down — five times so far, and the goldens gave "
+    "way in four of them (tests/goldens/README.md). Editing one is allowed; "
+    "editing one without saying so is not."
+)
+
 
 @dataclass(frozen=True)
 class Example:
@@ -79,6 +97,9 @@ class Example:
     #: The claim a visitor is being asked to believe, as a fact a test can
     #: read. False for the one golden that was written afterwards.
     written_before_the_implementation: bool
+    #: What has happened to it since it was written. Travels beside the claim
+    #: so that the caveat cannot be dropped while the boast is kept.
+    amendments: str = AMENDMENTS
 
 
 EXAMPLES: Tuple[Example, ...] = (
@@ -100,6 +121,7 @@ EXAMPLES: Tuple[Example, ...] = (
         "Added at M7 #13, once runtime failure became a named outcome — "
         "unlike the other four, this one was written after the loop it pins",
         False,
+        "",
     ),
     Example(
         "episode_hits_the_turn_limit",
@@ -148,10 +170,44 @@ def _example(name: str) -> Reply:
     found = next((example for example in EXAMPLES if example.name == name), None)
     if found is None:
         return _json(404, {"error": f"there is no example called {name!r}"})
-    records = from_jsonl((_GOLDENS / f"{found.name}.jsonl").read_text(encoding="utf-8"))
+    try:
+        text = (_GOLDENS / f"{found.name}.jsonl").read_text(encoding="utf-8")
+    except OSError as why:
+        # A named example whose file is not there means this copy of the
+        # project is incomplete, not that the visitor asked for the wrong
+        # thing. `answer` promises a Reply for every request, so it says so
+        # rather than raising out of the handler into a blank page.
+        return _json(500, {"error": f"the example {name!r} is missing: {why}"})
+    board = storyboard_of(from_jsonl(text))
     return _json(
         200,
-        {"example": asdict(found), "storyboard": asdict(storyboard_of(records))},
+        {
+            "example": asdict(found),
+            "moves": list(what_moves(board)),
+            "storyboard": asdict(board),
+        },
+    )
+
+
+#: The parts of `RobotState` the panel draws, and what to call them.
+_MOVING_PARTS = (("led", "chest light"), ("head", "head"), ("arms", "arms"),
+                 ("expression", "face"))
+
+
+def what_moves(storyboard) -> Tuple[str, ...]:
+    """Which parts of the robot this Episode ever changes.
+
+    `PLAN.md` §16.31: no golden ever lights the chest or moves the arms, so
+    three of the four readouts sit at their defaults for the whole run. A
+    visitor cannot tell that from a panel that just says `off` — it reads as
+    broken. Worked out here rather than in the page, for the same reason
+    everything else about the display is (`PLAN.md` §16.4).
+    """
+    poses = [moment.robot for moment in storyboard.moments]
+    return tuple(
+        label
+        for field, label in _MOVING_PARTS
+        if len({getattr(pose, field) for pose in poses}) > 1
     )
 
 

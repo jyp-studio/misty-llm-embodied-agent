@@ -30,11 +30,31 @@ import sys
 import pytest
 
 from misty_agent.demo import (
+    ANY_FREE_PORT,
     EXAMPLES,
     LOOPBACK_ONLY,
     Reply,
     answer,
+    serve,
 )
+
+
+class _StillbornServer:
+    """An `HTTPServer` that binds nothing and stops the moment it starts.
+
+    The shell is not tested — there is nothing in it a test could see
+    without opening a port — except the one line of it the ticket makes
+    an acceptance criterion: that a browser is opened, at this machine.
+    """
+
+    def __init__(self, address, handler):
+        self.server_port = address[1]
+
+    def serve_forever(self):
+        raise KeyboardInterrupt
+
+    def server_close(self):
+        pass
 
 GOLDENS = pathlib.Path(__file__).resolve().parent / "goldens"
 
@@ -117,6 +137,34 @@ def test_the_claim_that_an_example_is_a_specification_is_in_the_payload():
     assert payload["example"]["written_before_the_implementation"] is True
 
 
+def test_the_claim_travels_with_what_happened_to_it_afterwards():
+    """The first version of this banner said the loop "had to be built to
+    produce it, not the other way round". That was false.
+
+    `tests/goldens/README.md` keeps a table of every time a golden and the
+    implementation disagreed: five times, and **the goldens gave way in four
+    of them**. Saying otherwise was a flattering claim in the one place this
+    ticket exists to keep honest. The caveat therefore ships in the same
+    object as the boast, so one cannot be kept without the other.
+    """
+    example = body_of("/examples/episode_ends_on_the_first_turn")["example"]
+
+    assert example["written_before_the_implementation"] is True
+    assert "amended" in example["amendments"].lower()
+    assert "four of them" in example["amendments"]
+
+
+def test_the_amendment_count_is_the_one_the_goldens_record():
+    """Read off the README rather than remembered, because a sixth invocation
+    of the rule would otherwise leave the page quoting a stale number."""
+    table = (GOLDENS / "README.md").read_text()
+    gave_way = [line for line in table.splitlines() if line.startswith("| ")]
+    goldens_gave_way = [line for line in gave_way if "the golden" in line]
+
+    assert len(goldens_gave_way) == 4
+    assert f"five times" in EXAMPLES[0].amendments
+
+
 def test_the_golden_that_came_later_does_not_claim_it_came_first():
     """`tests/goldens/README.md`: the original four were derived from M7's
     spec; the fifth was added at M7 #13 to pin the `error` path once runtime
@@ -162,6 +210,19 @@ def test_an_example_is_the_golden_file_itself_not_a_copy_of_it():
     assert [m["t"] for m in board["moments"]] == [r["t"] for r in on_disk]
 
 
+def test_a_visitor_is_told_which_parts_of_the_robot_this_episode_moves():
+    """`PLAN.md` §16.31: no golden ever lights the chest or moves the arms,
+    so three of the four readouts sit at their defaults for a whole run. A
+    panel that just says `off` reads as broken. Worked out in Python, like
+    every other display decision here.
+    """
+    scans = body_of("/examples/episode_hits_the_turn_limit")
+    stops_at_once = body_of("/examples/episode_ends_on_the_first_turn")
+
+    assert scans["moves"] == ["head"]
+    assert stops_at_once["moves"] == []
+
+
 # ---------------------------------------------------------------------------
 # The two promises that are about what this does not do
 # ---------------------------------------------------------------------------
@@ -201,9 +262,58 @@ def test_answering_is_pure():
     assert answer("GET", "/examples") == answer("GET", "/examples")
 
 
-def test_every_reply_says_what_it_is():
-    for method, path in [("GET", "/"), ("GET", "/examples"), ("GET", "/nope"), ("POST", "/")]:
-        reply = answer(method, path)
-        assert isinstance(reply, Reply)
-        assert reply.headers["Content-Type"]
-        assert isinstance(reply.body, bytes)
+@pytest.mark.parametrize(
+    "method,path,kind",
+    [
+        ("GET", "/", "text/html"),
+        ("GET", "/examples", "application/json"),
+        ("GET", "/examples/episode_is_aborted", "application/json"),
+        ("GET", "/nope", "application/json"),
+        ("POST", "/", "application/json"),
+    ],
+)
+def test_every_reply_says_what_it_actually_is(method, path, kind):
+    """Named, not merely present. Asserting the header is truthy passed a
+    version that answered every route as `text/plain`, which a browser
+    renders as the source of the page it was asked for."""
+    reply = answer(method, path)
+
+    assert isinstance(reply, Reply)
+    assert reply.headers["Content-Type"].startswith(kind)
+    assert isinstance(reply.body, bytes)
+
+
+def test_an_example_whose_file_has_gone_is_answered_not_raised(monkeypatch):
+    """`answer` promises a status, headers and bytes for every request. A
+    named example with no file behind it means this copy of the project is
+    incomplete — which is a 500 and a sentence, not a traceback into a blank
+    page.
+    """
+    monkeypatch.setattr(
+        "misty_agent.demo._GOLDENS", pathlib.Path("/definitely/not/here")
+    )
+
+    reply = answer("GET", "/examples/episode_is_aborted")
+
+    assert reply.status == 500
+    assert b"missing" in reply.body
+
+
+def test_the_browser_is_opened_and_pointed_at_this_machine(monkeypatch):
+    """The one part of the shell that is an acceptance criterion — 「瀏覽器
+    自動打開，不需要記網址或埠號」. Flipping the default to False left every
+    other test green while the command did nothing visible.
+    """
+    opened = []
+    monkeypatch.setattr("misty_agent.demo.webbrowser.open", opened.append)
+    monkeypatch.setattr("misty_agent.demo.HTTPServer", _StillbornServer)
+
+    serve(port=54321)
+
+    assert opened == ["http://127.0.0.1:54321/"]
+
+
+def test_the_port_is_the_operating_systems_to_choose():
+    """Zero, so two demos cannot collide and nobody types a number. A fixed
+    one is the second machine on a desk failing to start."""
+    assert ANY_FREE_PORT == 0

@@ -568,11 +568,31 @@ def test_the_demo_flag_serves_instead_of_running_an_episode(monkeypatch):
     monkeypatch.setattr("misty_agent.demo.serve", lambda: served.append(True))
     model = Says()
 
-    code = main(["--demo", "--said", "hello"], model=model, clock=FakeClock())
+    code = main(["--demo"], model=model, clock=FakeClock())
 
     assert code == 0
     assert served == [True]
     assert model.asked == 0
+
+
+@pytest.mark.parametrize(
+    "alongside",
+    [["--said", "hello"], ["--image", "x.jpg"], ["--robot", "10.0.0.7"],
+     ["--journal", "out.jsonl"]],
+)
+def test_the_demo_refuses_the_flags_it_would_have_ignored(
+    monkeypatch, capsys, alongside
+):
+    """Silently ignoring them is how somebody believes their photograph, or
+    their key, was used. The same call `--image` with `--robot` gets."""
+    served = []
+    monkeypatch.setattr("misty_agent.demo.serve", lambda: served.append(True))
+
+    with pytest.raises(SystemExit):
+        main(["--demo", *alongside], model=Says(), clock=FakeClock())
+
+    assert served == []
+    assert "--demo replays finished Episodes" in capsys.readouterr().err
 
 
 def test_the_module_really_runs_as_a_command(tmp_path):

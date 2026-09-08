@@ -34,11 +34,18 @@
     color: #cfc7e6; font-size: 12.5px;
   }
   .provenance b { color: #e3ddf5; font-weight: 600; }
+  .provenance .caveat { display: block; margin-top: 5px; color: #a99fc4; }
   .provenance.later { background: rgba(208,162,76,.09); border-left-color: var(--refused); color: #e2cb9e; }
   .provenance.later b { color: #f0dcb4; }
 
   main { display: grid; grid-template-columns: minmax(0,1fr) 260px; gap: 26px; padding: 20px 26px 60px; }
-  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  /* Narrow: the robot goes above the list rather than below it, where it was
+     off-screen for the whole run and so followed nothing. */
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; }
+    aside { order: -1; position: static; }
+    ol.moments { max-height: none; }
+  }
 
   .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
   .controls button {
@@ -48,8 +55,14 @@
   .controls input[type=range] { flex: 1; accent-color: var(--dim); }
   .clock { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
 
-  ol.timeline { list-style: none; margin: 0; padding: 0; }
-  ol.timeline li {
+  ol.moments {
+    list-style: none; margin: 0; padding: 0;
+    /* Its own scroll box, so following the current Moment moves the list and
+       not the window — the "this is a specification" banner used to leave the
+       screen the moment anyone pressed Play. */
+    max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
+  }
+  ol.moments li {
     display: grid; grid-template-columns: 62px 1fr; gap: 12px;
     padding: 3px 0 3px 10px; border-left: 2px solid transparent;
     opacity: .18; transition: opacity .16s ease, border-color .16s ease;
@@ -68,7 +81,6 @@
   li[data-tone="refused"], li[data-tone="failed"] { padding-left: 8px; border-left-width: 2px; }
   li.shown[data-tone="refused"] { border-left-color: rgba(208,162,76,.5); }
   li.shown[data-tone="failed"] { border-left-color: rgba(207,106,90,.5); }
-  .facts { color: var(--faint); font-size: 12px; margin-top: 1px; }
 
   aside { position: sticky; top: 18px; align-self: start; }
   .robot { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
@@ -76,6 +88,7 @@
   .robot dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 12px 0 0; font-size: 12.5px; }
   .robot dt { color: var(--faint); }
   .robot dd { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .robot .moves { margin: 10px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.45; }
   .outcome { margin-top: 12px; padding: 9px 11px; border-radius: 6px; background: rgba(255,255,255,.04); font-size: 12.5px; }
   .outcome b { color: var(--ink); font-weight: 600; }
   .outcome .running { color: var(--dim); }
@@ -97,7 +110,7 @@
       <input id="scrub" type="range" min="0" value="0" step="1" aria-label="Position in the episode">
       <span class="clock" id="clock">0.00s</span>
     </div>
-    <ol class="timeline" id="timeline"></ol>
+    <ol class="moments" id="moments"></ol>
   </section>
 
   <aside>
@@ -121,6 +134,7 @@
         <dt>arms</dt><dd id="dArms">down</dd>
         <dt>face</dt><dd id="dFace">neutral</dd>
       </dl>
+      <p class="moves" id="moves"></p>
       <div class="outcome" id="outcome"></div>
     </div>
   </aside>
@@ -165,8 +179,14 @@ async function load(name) {
   const banner = $("provenance");
   banner.className = "provenance" + (first ? "" : " later");
   banner.innerHTML = first
-    ? `<b>This is a specification, not a recording.</b> ${escapeText(payload.example.provenance)} — the loop had to be built to produce it, not the other way round.`
+    ? `<b>This is a specification, not a recording.</b> ${escapeText(payload.example.provenance)}.`
+      + `<span class="caveat">${escapeText(payload.example.amendments)}</span>`
     : `<b>This one came later.</b> ${escapeText(payload.example.provenance)}.`;
+
+  const moves = payload.moves;
+  $("moves").textContent = moves.length
+    ? "moves here: " + moves.join(", ")
+    : "nothing on this figure moves in this episode";
 
   draw();
   $("scrub").max = String(state.board.moments.length - 1);
@@ -176,35 +196,21 @@ async function load(name) {
 }
 
 function draw() {
-  $("timeline").innerHTML = state.board.moments
+  $("moments").innerHTML = state.board.moments
     .map((m, i) => {
       const turnMark = m.kind === "turn_started" ? " turn-mark" : "";
-      const facts = tellingFacts(m);
+      // Headline and detail, and nothing this file composes itself. What a
+      // record says was decided in `storyboard.py`, where pytest reaches it
+      // (`PLAN.md` §16.4); a sentence assembled here is a sentence no test
+      // in this repo can read.
       return `<li class="${turnMark}" data-tone="${m.tone}" data-i="${i}">
         <span class="t">${m.t.toFixed(2)}s</span>
         <span class="what">
           <span class="head">${escapeText(m.headline)}</span>${m.detail ? ` <span class="detail">${escapeText(m.detail)}</span>` : ""}
-          ${facts ? `<div class="facts">${escapeText(facts)}</div>` : ""}
         </span>
       </li>`;
     })
     .join("");
-}
-
-// What is worth reading under the sentence. `describe` already says what
-// happened; this says what it cost or why it was refused.
-function tellingFacts(moment) {
-  const f = moment.facts || {};
-  if (moment.kind === "model_called") return null;
-  if (moment.kind === "tool_called" && Object.keys(f.args || {}).length) {
-    return Object.entries(f.args).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("  ");
-  }
-  if (moment.kind === "observation" && f.snapshot) {
-    const s = f.snapshot;
-    const heard = s.new_speech ? `, heard ${JSON.stringify(s.new_speech)}` : "";
-    return `face ${s.face_present ? "in view" : "not found"}${heard}`;
-  }
-  return null;
 }
 
 function seek(index, { scroll = true } = {}) {
@@ -213,19 +219,20 @@ function seek(index, { scroll = true } = {}) {
   const moment = state.board.moments[state.at];
   $("clock").textContent = moment.t.toFixed(2) + "s";
 
-  for (const li of $("timeline").children) {
+  for (const li of $("moments").children) {
     const i = Number(li.dataset.i);
     li.classList.toggle("shown", i <= state.at);
     li.classList.toggle("now", i === state.at);
   }
   if (scroll) {
-    $("timeline").children[state.at].scrollIntoView({ block: "nearest", behavior: "smooth" });
+    $("moments").children[state.at].scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
   paint(moment.robot);
 
+  const last = state.board.moments[state.board.moments.length - 1];
   const ended = state.at === state.board.moments.length - 1 && state.board.outcome;
   $("outcome").innerHTML = ended
-    ? `<b>${escapeText(state.board.outcome)}</b> — ${state.board.turns} turn(s), ${state.board.steps} step(s)`
+    ? `<b>${escapeText(last.headline)}</b>${last.detail ? " — " + escapeText(last.detail) : ""}`
     : `<span class="running">running… turn ${moment.turn ?? "—"}</span>`;
 }
 

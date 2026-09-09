@@ -154,7 +154,7 @@ def test_the_claim_travels_with_what_happened_to_it_afterwards():
     produce it, not the other way round". That was false.
 
     `tests/goldens/README.md` keeps a table of every time a golden and the
-    implementation disagreed: five times, and **the goldens gave way in four
+    implementation disagreed: six times, and **the goldens gave way in five
     of them**. Saying otherwise was a flattering claim in the one place this
     ticket exists to keep honest. The caveat therefore ships in the same
     object as the boast, so one cannot be kept without the other.
@@ -163,7 +163,7 @@ def test_the_claim_travels_with_what_happened_to_it_afterwards():
 
     assert example["kind"] == "specification"
     assert "amended" in example["amendments"].lower()
-    assert "four of them" in example["amendments"]
+    assert "five of them" in example["amendments"]
 
 
 def test_the_amendment_count_is_the_one_the_goldens_record():
@@ -173,8 +173,8 @@ def test_the_amendment_count_is_the_one_the_goldens_record():
     gave_way = [line for line in table.splitlines() if line.startswith("| ")]
     goldens_gave_way = [line for line in gave_way if "the golden" in line]
 
-    assert len(goldens_gave_way) == 4
-    assert f"five times" in EXAMPLES[0].amendments
+    assert len(goldens_gave_way) == 5
+    assert f"six times" in EXAMPLES[0].amendments
 
 
 def test_the_golden_that_came_later_does_not_claim_it_came_first():
@@ -351,12 +351,21 @@ def a_portrait(scale: float = 1.0) -> bytes:
     return cv2.imencode(".jpg", frame)[1].tobytes()
 
 
-def run(said="hello", image=None, wav=None, trigger=None, **rest):
+def run(
+    said="hello",
+    image=None,
+    wav=None,
+    trigger=None,
+    evidence_kind=None,
+    **rest,
+):
     """A POST as the page makes it. `rest` goes to `answer` — that is where
     the `audio=` switch lives, and it is not the same thing as sending one."""
     asked = {"said": said}
     if trigger is not None:
         asked["trigger"] = trigger
+    if evidence_kind is not None:
+        asked["evidence_kind"] = evidence_kind
     if image is not None:
         asked["image"] = base64.b64encode(image).decode()
     if wav is not None:
@@ -442,7 +451,7 @@ def test_the_page_says_what_set_the_episode_off(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
     monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
 
-    run(said="", image=a_portrait(), trigger="visual")
+    run(said="", image=a_portrait(), evidence_kind="visual")
 
     told = [e for e in asked.contexts[0] if e["role"] == "user"]
     assert told[0]["content"]["trigger"] == "visual"

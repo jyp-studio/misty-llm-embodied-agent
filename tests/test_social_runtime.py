@@ -8,10 +8,12 @@ Loop that this effort exists to add.
 from __future__ import annotations
 
 import json
+import threading
 
 from misty_agent.agent.journal import EpisodeFinished, StopRequested
+from misty_agent.agent.memory import Memory
 from misty_agent.agent.react import Decision
-from misty_agent.app import simulated_session
+from misty_agent.app import SystemClock, simulated_session
 from misty_agent.config import Settings
 from misty_agent.demo import answer
 from misty_agent.fakes import FakeClock
@@ -22,24 +24,6 @@ from misty_agent.runtime import (
     TimedText,
 )
 from misty_agent.scenarios import EXPLICIT_TEXT_REQUEST, ScenarioModel
-
-
-class ScriptedModel:
-    """The hosted-model boundary, replaced by two deterministic decisions."""
-
-    def __init__(self) -> None:
-        self._decisions = [
-            Decision(
-                tool="speak",
-                args={"text": "Hello — what can I do for you?"},
-                tokens_in=20,
-                tokens_out=8,
-            ),
-            Decision(tool="done", args={}, tokens_in=34, tokens_out=1),
-        ]
-
-    def decide(self, working_context, tools):
-        return self._decisions.pop(0)
 
 
 def test_a_timed_explicit_request_runs_from_attention_to_a_simulated_effect():
@@ -68,6 +52,7 @@ def test_a_timed_explicit_request_runs_from_attention_to_a_simulated_effect():
         "attention_stopped",
     ]
     assert result.records[1].cue_kind == "explicit_request"
+    assert result.records[1].evidence_kind == "speech"
     assert result.records[1].t == EXPLICIT_TEXT_REQUEST.inputs[0].at_s
     assert len(result.episodes) == 1
     episode = result.episodes[0]
@@ -94,15 +79,26 @@ def test_the_demo_replays_a_text_case_that_crossed_the_runtime_seam():
         "attention_stopped",
     ]
     assert payload["runtime"]["episodes"][0]["cue_kind"] == "explicit_request"
+    assert [moment["type"] for moment in payload["runtime"]["timeline"]] == [
+        "attention_started",
+        "cue_detected",
+        "episode_opened",
+        "episode_completed",
+        "attention_stopped",
+    ]
     assert payload["storyboard"]["outcome"] == "done"
     assert payload["storyboard"]["moments"][-1]["kind"] == "episode_finished"
+    page = answer("GET", "/").body.decode()
+    assert 'id="runtime"' in page
+    assert "runtime.timeline" in page
 
 
 def test_text_entered_in_the_demo_also_crosses_the_runtime(monkeypatch):
     """The old one-shot Episode is no longer the Demo's product boundary."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
     monkeypatch.setattr(
-        "misty_agent.demo.OpenAIModel", lambda: ScriptedModel()
+        "misty_agent.demo.OpenAIModel",
+        lambda: ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
     )
     body = json.dumps({"trigger": "speech", "said": "Misty, hello"}).encode()
 
@@ -131,7 +127,11 @@ def test_an_input_failure_still_stops_the_runtime_with_a_bounded_result():
 
     clock = FakeClock()
     source = BrokenInput()
-    session = simulated_session(None, model=ScriptedModel(), clock=clock)
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
     runtime = SocialAgentRuntime(source=source, session=session, clock=clock)
 
     result = runtime.run()
@@ -186,8 +186,117 @@ def test_shutdown_aborts_the_active_episode_and_returns_a_bounded_result():
     assert "tts/speak" not in session.robot.endpoints
 
 
+def test_shutdown_interrupts_a_source_that_is_waiting_for_input():
+    """Shutdown cannot wait for an input source's next scheduled event."""
+
+    class WaitingInput:
+        def __init__(self) -> None:
+            self.reading = threading.Event()
+            self.released = threading.Event()
+
+        def start(self) -> None:
+            pass
+
+        def read(self):
+            self.reading.set()
+            self.released.wait()
+            return None
+
+        def stop(self) -> None:
+            self.released.set()
+
+    clock = FakeClock()
+    source = WaitingInput()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+    runtime = SocialAgentRuntime(source=source, session=session, clock=clock)
+    result = []
+    runner = threading.Thread(target=lambda: result.append(runtime.run()), daemon=True)
+    runner.start()
+    assert source.reading.wait(timeout=1), "the source never started waiting"
+
+    runtime.stop()
+    runner.join(timeout=1)
+    try:
+        assert not runner.is_alive(), "shutdown left the input read blocked"
+        assert result[0].ending == "shutdown"
+    finally:
+        source.stop()
+        runner.join(timeout=1)
+
+
+def test_shutdown_interrupts_scenario_adapter_before_a_future_input_is_due():
+    """The concrete no-hardware adapter honours the InputSource stop contract."""
+    entered_read = threading.Event()
+
+    class SignalsRead(ScenarioInputAdapter):
+        def read(self):
+            entered_read.set()
+            return super().read()
+
+    clock = SystemClock()
+    source = SignalsRead(
+        clock,
+        [TimedText(at_s=60.0, text="a request that must never become due")],
+    )
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+    runtime = SocialAgentRuntime(source=source, session=session, clock=clock)
+    result = []
+    runner = threading.Thread(target=lambda: result.append(runtime.run()), daemon=True)
+    runner.start()
+    assert entered_read.wait(timeout=1), "the adapter never began its timed wait"
+
+    runtime.stop()
+    runner.join(timeout=1)
+
+    assert not runner.is_alive()
+    assert result[0].ending == "shutdown"
+    assert result[0].episodes == ()
+
+
+def test_shutdown_during_episode_close_falls_back_to_a_robot_halt():
+    """A closed Journal race must not turn shutdown into an exception."""
+
+    class StopsWhileConsolidating:
+        runtime = None
+
+        def extract(self, known, exchanges):
+            self.runtime.stop()
+            return {}
+
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+    extractor = StopsWhileConsolidating()
+    session.memory = Memory(summariser=None, extractor=extractor, window=6)
+    runtime = SocialAgentRuntime(
+        source=ScenarioInputAdapter(clock, EXPLICIT_TEXT_REQUEST.inputs),
+        session=session,
+        clock=clock,
+    )
+    extractor.runtime = runtime
+
+    result = runtime.run()
+
+    assert result.ending == "shutdown"
+    assert result.episodes[0].outcome.outcome == "done"
+    assert session.robot.endpoints.count("halt") == 1
+
+
 def test_the_existing_turn_cap_remains_the_runtime_episode_bound():
     """The autonomous shell does not weaken the inner ReAct bound."""
+
+    assert Settings().max_turns_per_episode == 12
 
     class KeepsTalking:
         def decide(self, working_context, tools):

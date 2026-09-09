@@ -7,8 +7,8 @@ loop must be able to produce.
 of them, and `git log` is the evidence: they are derived from
 `.scratch/m7-react-and-journal/spec.md`, not from whatever the implementation
 turned out to do. The fifth was added when M7 #13 introduced runtime `error`
-as a named outcome; it pins that closure path while leaving all four original
-files byte-for-byte unchanged.
+as a named outcome; it pins that closure path. The turn-limit original was
+later amended when the social-runtime spec changed the configured cap.
 
 ## The rule
 
@@ -19,7 +19,8 @@ Quietly editing a golden so the code passes is the failure this whole
 arrangement exists to prevent. Editing one is allowed; editing one without
 saying so is not.
 
-**It has been invoked five times**, across tickets 04 to 08:
+**It has been invoked six times**, across M7 tickets 04 to 08 and
+social-runtime ticket 01:
 
 | What | Which side gave way |
 |---|---|
@@ -28,6 +29,7 @@ saying so is not.
 | `look_around`'s result gaining `found_at_yaw` | the goldens (§15.22) |
 | The turn cap rising from 5 to 8 | the goldens (§15.19) |
 | `t` again, for the aborted file, in ticket 08 | the golden (§15.24) |
+| The turn cap rising from 8 to 12 | the golden (§16.48) |
 
 All four files are now on the timing rule below. The aborted one came last
 because only ticket 08 can produce a `stop_requested`, and retiming a golden
@@ -74,8 +76,9 @@ several are both the model choosing to stop; they are separate files because
 they are separate *paths* through the loop, not separate endings.
 
 The error file was added by M7 #13 after `error` became a named outcome. The
-original four still predate the loop and remain byte-for-byte unchanged; the
-fifth closes the spec's requirement that every current outcome has a golden.
+original four still predate the loop; amendments above record where their
+content later gave way. The fifth closes the spec's requirement that every
+current outcome has a golden.
 
 ## Decisions these files pin
 
@@ -86,9 +89,9 @@ choices are visible only here:
 what the model reads to decide the next Turn. After `done` there is no next
 Turn, so recording one would be recording something nobody reads.
 
-**The turn limit lets the last Turn finish.** The cap stops a *sixth* Turn
-from starting; it does not cut the fifth short. So the limit file has five
-complete Turns and then the ending.
+**The turn limit lets the last Turn finish.** The cap stops a *thirteenth*
+Turn from starting; it does not cut the twelfth short. So the limit file has
+twelve complete Turns and then the ending.
 
 **An abort does not discard work already done, but neither does it claim the
 work succeeded.** The stop arrives from another thread part way through a Tool
@@ -107,9 +110,10 @@ have to confirm, and if it turns out otherwise, this file changes **and
 
 ## What else these files pin
 
-`episode_hits_the_turn_limit.jsonl` runs to eight Turns, not five, because
-the cap is eight — derived in `PLAN.md` §15.19 from the longest gesture the
-script this replaces could perform, since §4 claims composition replaces it.
+`episode_hits_the_turn_limit.jsonl` runs to twelve Turns. The original cap of
+eight came from `PLAN.md` §15.19; the social-runtime spec chose twelve as its
+initial value, and §16.48 records why that later decision and this golden move
+together.
 Its `look_around` results carry `found_at_yaw`, which is §15.22.
 
 `episode_ends_after_several_turns.jsonl` carries a **refused Tool call** and a

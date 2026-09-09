@@ -373,14 +373,14 @@ class Settings(BaseSettings):
     # ReAct loop
     # ------------------------------------------------------------------
     max_turns_per_episode: int = Field(
-        default=8, gt=0,
+        default=12, gt=0,
         description=(
             "Hard cap on model Turns in one Episode. Preserves the property "
             "that every Episode provably returns to idle. Named for Turns, "
             "not Steps: a Turn is one model decision, a Step is one drive "
-            "command (CONTEXT.md), and the old name said `steps` while its "
-            "own description said turns. The default is a floor derived from "
-            "PLAN.md §15.19, not a measurement — revise it from Journal data."
+            "command (CONTEXT.md). Twelve is the social-runtime spec's "
+            "initial value, not a hardware measurement; revise it from "
+            "Journal and replay evidence."
         ),
     )
 

@@ -28,7 +28,7 @@ pass forever and nobody would ever find out.
     pytest -m llm_live
 
 Deselected by default (`pytest.ini`), so an ordinary run never reaches the
-network. Costs a few cents: the Turn cap bounds one Episode at eight model
+network. Costs a few cents: the Turn cap bounds one Episode at twelve model
 calls, and each is roughly a thousand tokens in and a couple of dozen out.
 """
 

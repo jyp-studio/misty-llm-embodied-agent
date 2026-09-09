@@ -187,7 +187,7 @@ def test_choosing_done_does_not_produce_an_observation():
 
 
 def test_the_turn_limit_golden_lets_its_last_turn_finish():
-    """The cap stops a sixth Turn starting; it does not cut the fifth short."""
+    """The cap stops a thirteenth Turn; it does not cut the twelfth short."""
     records = load("episode_hits_the_turn_limit.jsonl")
     last_turn = records[-1].turns
 

@@ -83,6 +83,12 @@ from misty_agent.drivers.robot_commands import RobotCommands
 from misty_agent.fakes import MovingWorld, RecordingCommands
 from misty_agent.perception.asr import OpenAITranscriber
 from misty_agent.perception.distance import NOBODY_THERE, DistancePipeline
+from misty_agent.runtime import (
+    EvidenceKind,
+    ScenarioInputAdapter,
+    SocialAgentRuntime,
+    TimedText,
+)
 
 
 class SystemClock:
@@ -217,34 +223,31 @@ class Session:
         one, the Episode's own `EmergencyStop` does it, because that is what
         writes the record at the moment the foot landed.
         """
+        self.request_stop("foot_bumper")
+
+    def request_stop(self, source: str) -> bool:
+        """Ask the active Episode to abort and always leave motion halted.
+
+        Runtime shutdown and a bumper are different sources of the same
+        bounded interruption.  The runtime uses this public boundary rather
+        than reaching into ``_running`` or pretending shutdown was a foot. If
+        the Episode closed while this call was arriving, its Journal refuses
+        another record; the physical halt still has to happen (``PLAN.md``
+        §15.35).
+        """
         running = self._running
         if running is not None:
             try:
-                running.request("foot_bumper")
-                return
+                return running.request(source)
             except Exception:
-                # The Episode closed while the foot was on its way down. Its
-                # Journal has already recorded an ending and refuses anything
-                # after it, so there is nowhere to write this — but the motors
-                # do not care where the record went. Fall through and stop
-                # them (`PLAN.md` §15.35).
                 pass
         try:
             self.robot.halt()
         except Exception:
-            # The sensor's thread, where nothing would catch it. `stop.py`
-            # gives the same reasoning at more length.
+            # This may run on the bumper callback's thread, where nothing
+            # would catch it. ``stop.py`` gives the same reasoning at length.
             pass
-
-    def request_stop(self, source: str) -> bool:
-        """Ask the active Episode to abort, if there is one.
-
-        Runtime shutdown and a bumper are different sources of the same
-        bounded interruption.  The runtime uses this public boundary rather
-        than reaching into ``_running`` or pretending shutdown was a foot.
-        """
-        running = self._running
-        return running.request(source) if running is not None else False
+        return False
 
     def _microphone(self) -> Optional[Any]:
         """The ears, but only if they can actually be listened to.
@@ -337,16 +340,16 @@ DEFAULT_START_CM = 150
 
 #: The two kinds of thing that start an Episode. `CONTEXT.md` gives an Episode
 #: exactly one external trigger, and these are the two the goldens carry.
-TRIGGERS = ("speech", "visual")
+TRIGGERS = tuple(kind.value for kind in EvidenceKind)
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m misty_agent",
         description=(
-            "Run one Episode. By default the robot is simulated and only "
-            "perception is real; --robot attaches to a Misty II instead, "
-            "which nothing here has ever done."
+            "Run one finite SocialAgentRuntime scenario. By default the robot "
+            "is simulated and only perception is real; --robot attaches to "
+            "a Misty II instead, which nothing here has ever done."
         ),
     )
     parser.add_argument(
@@ -668,7 +671,7 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
             clock=clock,
             transcriber=OpenAITranscriber(key) if key else None,
         ) as session:
-            return _one_episode(
+            return _one_runtime(
                 session, args, source=args.robot, must_find_a_key=model is None
             )
 
@@ -682,15 +685,15 @@ def main(argv: Optional[list] = None, *, model: Any = None, clock: Any = None) -
     # the command line and a run from the browser cannot diverge.
     session = simulated_session(seen, model=asked, clock=clock)
     source = "simulated" if args.image is None else args.image
-    return _one_episode(
+    return _one_runtime(
         session, args, source=source, must_find_a_key=model is None
     )
 
 
-def _one_episode(
+def _one_runtime(
     session: Session, args: Any, *, source: Any, must_find_a_key: bool
 ) -> int:
-    """Report what can be seen, then run one Episode against it.
+    """Report perception, then run one Explicit Request through the runtime.
 
     The same six lines whichever world was assembled — which is the point of
     assembling one before getting here. `source` is what produced the number
@@ -720,9 +723,33 @@ def _one_episode(
     # An Episode that hits its Turn cap or is aborted did what it was built to
     # do, and the one outcome that is a failure — `error` — is already
     # reported, in the Journal and on the terminal, by the thing that saw it.
-    _, journal = session.episode(
-        args.trigger, args.said, journal_path=args.journal
-    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            session.clock,
+            [
+                TimedText(
+                    at_s=0.0,
+                    text=args.said,
+                    evidence_kind=EvidenceKind(args.trigger),
+                )
+            ],
+        ),
+        session=session,
+        clock=session.clock,
+    ).run(render=True, journal_path=args.journal)
+    if not result.episodes:
+        failure = next(
+            (
+                record
+                for record in result.records
+                if record.type == "runtime_failed"
+            ),
+            None,
+        )
+        message = failure.message if failure is not None else result.ending
+        print(f"the runtime did not open an Episode: {message}", file=sys.stderr)
+        return 1
+    journal = result.episodes[0].journal
 
     # A subscriber that raises is caught, recorded and carried on from — which
     # is right for a renderer and wrong for the evidence. Somebody who asked

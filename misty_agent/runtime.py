@@ -14,12 +14,16 @@ exercise time without sleeping in real life.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Optional, Protocol, Sequence, Tuple, Union
 
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
+
+_INPUT_STOP_POLL_S = 0.05
 
 
 class RuntimeState(str, Enum):
@@ -30,17 +34,55 @@ class RuntimeState(str, Enum):
     STOPPED = "stopped"
 
 
+class RuntimeEnding(str, Enum):
+    """The bounded ways a finite runtime invocation can finish."""
+
+    INPUT_EXHAUSTED = "input_exhausted"
+    SHUTDOWN = "shutdown"
+    EPISODE_ERROR = "episode_error"
+    RUNTIME_ERROR = "runtime_error"
+
+
+class RuntimePhase(str, Enum):
+    """The runtime boundary at which an outer failure happened."""
+
+    INPUT_START = "input_start"
+    INPUT = "input"
+    CUE_SELECTION = "cue_selection"
+    EPISODE = "episode"
+    INPUT_STOP = "input_stop"
+
+
+class CueKind(str, Enum):
+    """Interaction Cue kinds implemented by this vertical slice."""
+
+    EXPLICIT_REQUEST = "explicit_request"
+
+
+class EvidenceKind(str, Enum):
+    """Modalities this slice can pass into existing Episode evidence."""
+
+    SPEECH = "speech"
+    VISUAL = "visual"
+
+
 @dataclass(frozen=True)
-class TimedText:
-    """One text input, scheduled relative to scenario start."""
+class RuntimeInput:
+    """One provider-independent input scheduled relative to scenario start."""
 
     at_s: float
-    text: str
-    trigger: str = "speech"
 
     def __post_init__(self) -> None:
         if self.at_s < 0:
             raise ValueError("a scenario input cannot happen before it starts")
+
+
+@dataclass(frozen=True)
+class TimedText(RuntimeInput):
+    """A transcript plus the modality that supplied its Trigger Evidence."""
+
+    text: str
+    evidence_kind: EvidenceKind = EvidenceKind.SPEECH
 
 
 class ScenarioClock(Protocol):
@@ -54,9 +96,11 @@ class InputSource(Protocol):
 
     def start(self) -> None: ...
 
-    def read(self) -> Optional[TimedText]: ...
+    def read(self) -> Optional[RuntimeInput]: ...
 
-    def stop(self) -> None: ...
+    def stop(self) -> None:
+        """Stop the source and unblock a pending ``read``. Idempotent."""
+        ...
 
 
 class EpisodeSession(Protocol):
@@ -65,9 +109,10 @@ class EpisodeSession(Protocol):
     def episode(
         self,
         trigger: str,
-        heard: Optional[str],
+        heard: str,
         *,
         render: bool = False,
+        journal_path: Optional[Path] = None,
     ) -> Tuple[EpisodeOutcome, Journal]: ...
 
     def request_stop(self, source: str) -> bool: ...
@@ -77,7 +122,7 @@ class ScenarioInputAdapter:
     """Feed a finite, ordered text scenario using an injected clock."""
 
     def __init__(
-        self, clock: ScenarioClock, inputs: Sequence[TimedText]
+        self, clock: ScenarioClock, inputs: Sequence[RuntimeInput]
     ) -> None:
         scheduled = tuple(inputs)
         adjacent = zip(scheduled, scheduled[1:])
@@ -87,28 +132,31 @@ class ScenarioInputAdapter:
         self._inputs = scheduled
         self._index = 0
         self._started_at: Optional[float] = None
-        self._stopped = False
+        self._stopped = threading.Event()
 
     def start(self) -> None:
         if self._started_at is not None:
             raise RuntimeError("this scenario input adapter has already started")
         self._started_at = self._clock.monotonic()
 
-    def read(self) -> Optional[TimedText]:
-        if self._started_at is None or self._stopped:
+    def read(self) -> Optional[RuntimeInput]:
+        if self._started_at is None or self._stopped.is_set():
             raise RuntimeError("scenario input is not running")
         if self._index >= len(self._inputs):
             return None
         item = self._inputs[self._index]
         due = self._started_at + item.at_s
         wait_s = due - self._clock.monotonic()
-        if wait_s > 0:
-            self._clock.sleep(wait_s)
+        while wait_s > 0 and not self._stopped.is_set():
+            self._clock.sleep(min(wait_s, _INPUT_STOP_POLL_S))
+            wait_s = due - self._clock.monotonic()
+        if self._stopped.is_set():
+            return None
         self._index += 1
         return item
 
     def stop(self) -> None:
-        self._stopped = True
+        self._stopped.set()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -127,7 +175,8 @@ class AttentionStarted(AttentionRecord):
 @dataclass(frozen=True, kw_only=True)
 class CueDetected(AttentionRecord):
     cue_id: str
-    cue_kind: str
+    cue_kind: CueKind
+    evidence_kind: EvidenceKind
     text: str
     type: str = "cue_detected"
 
@@ -148,13 +197,13 @@ class EpisodeCompleted(AttentionRecord):
 
 @dataclass(frozen=True, kw_only=True)
 class AttentionStopped(AttentionRecord):
-    ending: str
+    ending: RuntimeEnding
     type: str = "attention_stopped"
 
 
 @dataclass(frozen=True, kw_only=True)
 class RuntimeFailed(AttentionRecord):
-    phase: str
+    phase: RuntimePhase
     error_type: str
     message: str
     type: str = "runtime_failed"
@@ -175,8 +224,8 @@ class RuntimeEpisode:
     """One selected cue and the bounded Episode it opened."""
 
     cue_id: str
-    cue_kind: str
-    input: TimedText
+    cue_kind: CueKind
+    input: RuntimeInput
     outcome: EpisodeOutcome
     journal: Journal
 
@@ -185,7 +234,7 @@ class RuntimeEpisode:
 class RuntimeResult:
     """Everything one finite runtime run made observable."""
 
-    ending: str
+    ending: RuntimeEnding
     records: Tuple[RuntimeRecord, ...]
     episodes: Tuple[RuntimeEpisode, ...]
 
@@ -204,10 +253,18 @@ class SocialAgentRuntime:
         self._session = session
         self._clock = clock
         self._origin: Optional[float] = None
-        self._stop_requested = False
+        self._stop_requested = threading.Event()
+        self._source_stop_lock = threading.Lock()
+        self._source_stopped = False
+        self._source_stop_error: Optional[Exception] = None
         self.state = RuntimeState.READY
 
-    def run(self) -> RuntimeResult:
+    def run(
+        self,
+        *,
+        render: bool = False,
+        journal_path: Optional[Path] = None,
+    ) -> RuntimeResult:
         """Own the input lifecycle and stop after a finite source is drained."""
         if self.state is not RuntimeState.READY:
             raise RuntimeError("a SocialAgentRuntime can only be run once")
@@ -216,35 +273,44 @@ class SocialAgentRuntime:
         self._origin = self._clock.monotonic()
         records: list[RuntimeRecord] = [AttentionStarted(t=0.0)]
         episodes: list[RuntimeEpisode] = []
-        ending = "input_exhausted"
-        phase = "input_start"
+        ending = RuntimeEnding.INPUT_EXHAUSTED
+        phase = RuntimePhase.INPUT_START
         try:
             self._source.start()
-            while not self._stop_requested:
-                phase = "input"
+            while not self._stop_requested.is_set():
+                phase = RuntimePhase.INPUT
                 item = self._source.read()
-                if item is None:
+                if item is None or self._stop_requested.is_set():
                     break
+                phase = RuntimePhase.CUE_SELECTION
+                if not isinstance(item, TimedText):
+                    raise TypeError(
+                        f"ticket 01 cannot select a cue from {type(item).__name__}"
+                    )
 
                 cue_id = f"cue-{len(episodes) + 1}"
                 records.append(
                     CueDetected(
                         t=self._elapsed(),
                         cue_id=cue_id,
-                        cue_kind="explicit_request",
+                        cue_kind=CueKind.EXPLICIT_REQUEST,
+                        evidence_kind=item.evidence_kind,
                         text=item.text,
                     )
                 )
                 records.append(EpisodeOpened(t=self._elapsed(), cue_id=cue_id))
-                phase = "episode"
+                phase = RuntimePhase.EPISODE
                 outcome, journal = self._session.episode(
-                    item.trigger, item.text, render=False
+                    item.evidence_kind,
+                    item.text,
+                    render=render,
+                    journal_path=journal_path,
                 )
                 episode_id = journal.records[0].episode_id
                 episodes.append(
                     RuntimeEpisode(
                         cue_id=cue_id,
-                        cue_kind="explicit_request",
+                        cue_kind=CueKind.EXPLICIT_REQUEST,
                         input=item,
                         outcome=outcome,
                         journal=journal,
@@ -259,12 +325,12 @@ class SocialAgentRuntime:
                     )
                 )
                 if outcome.outcome == "error":
-                    ending = "episode_error"
+                    ending = RuntimeEnding.EPISODE_ERROR
                     break
-            if self._stop_requested:
-                ending = "shutdown"
+            if self._stop_requested.is_set():
+                ending = RuntimeEnding.SHUTDOWN
         except Exception as error:
-            ending = "runtime_error"
+            ending = RuntimeEnding.RUNTIME_ERROR
             records.append(
                 RuntimeFailed(
                     t=self._elapsed(),
@@ -274,16 +340,15 @@ class SocialAgentRuntime:
                 )
             )
         finally:
-            try:
-                self._source.stop()
-            except Exception as error:
-                ending = "runtime_error"
+            stop_error = self._stop_source()
+            if stop_error is not None:
+                ending = RuntimeEnding.RUNTIME_ERROR
                 records.append(
                     RuntimeFailed(
                         t=self._elapsed(),
-                        phase="input_stop",
-                        error_type=type(error).__name__,
-                        message=str(error),
+                        phase=RuntimePhase.INPUT_STOP,
+                        error_type=type(stop_error).__name__,
+                        message=str(stop_error),
                     )
                 )
             self.state = RuntimeState.STOPPED
@@ -297,9 +362,23 @@ class SocialAgentRuntime:
 
     def stop(self) -> None:
         """Request bounded shutdown; an active Episode is asked to abort."""
-        self._stop_requested = True
+        self._stop_requested.set()
         if self.state is RuntimeState.RUNNING:
-            self._session.request_stop("runtime_shutdown")
+            try:
+                self._session.request_stop("runtime_shutdown")
+            finally:
+                self._stop_source()
+
+    def _stop_source(self) -> Optional[Exception]:
+        """Stop an InputSource once, synchronising run and shutdown callers."""
+        with self._source_stop_lock:
+            if not self._source_stopped:
+                self._source_stopped = True
+                try:
+                    self._source.stop()
+                except Exception as error:
+                    self._source_stop_error = error
+            return self._source_stop_error
 
     def _elapsed(self) -> float:
         assert self._origin is not None
@@ -310,15 +389,22 @@ __all__ = [
     "AttentionRecord",
     "AttentionStarted",
     "AttentionStopped",
+    "CueKind",
     "CueDetected",
+    "EvidenceKind",
     "EpisodeCompleted",
     "EpisodeOpened",
     "EpisodeSession",
+    "InputSource",
     "RuntimeEpisode",
+    "RuntimeEnding",
     "RuntimeFailed",
+    "RuntimeInput",
+    "RuntimePhase",
     "RuntimeRecord",
     "RuntimeResult",
     "RuntimeState",
+    "ScenarioClock",
     "ScenarioInputAdapter",
     "SocialAgentRuntime",
     "TimedText",

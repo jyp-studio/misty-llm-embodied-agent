@@ -62,6 +62,14 @@ from misty_agent.app import (
 from misty_agent.fakes import FakeClock
 from misty_agent.perception.asr import OpenAITranscriber, wav_to_pcm
 from misty_agent.runtime import (
+    AttentionStarted,
+    AttentionStopped,
+    CueDetected,
+    EvidenceKind,
+    EpisodeCompleted,
+    EpisodeOpened,
+    RuntimeFailed,
+    RuntimeRecord,
     RuntimeResult,
     ScenarioInputAdapter,
     SocialAgentRuntime,
@@ -94,8 +102,8 @@ _SPEC_FIRST = (
 #:
 #: The first version of this banner said the loop "had to be built to produce
 #: it, not the other way round". `tests/goldens/README.md` keeps a table of
-#: every time a golden and the implementation disagreed: **five times, and the
-#: goldens gave way in four of them.** So the flattering version was false,
+#: every time a golden and the implementation disagreed: **six times, and the
+#: goldens gave way in five of them.** So the flattering version was false,
 #: written in the one place this ticket exists to keep honest.
 #:
 #: The true version is the better story anyway — a rule that is never invoked
@@ -103,8 +111,8 @@ _SPEC_FIRST = (
 #: was invoked somebody wrote down which side moved.
 AMENDMENTS = (
     "It has been amended since. Where a golden and the loop disagreed, which "
-    "side gave way is written down — five times so far, and the goldens gave "
-    "way in four of them (tests/goldens/README.md). Editing one is allowed; "
+    "side gave way is written down — six times so far, and the goldens gave "
+    "way in five of them (tests/goldens/README.md). Editing one is allowed; "
     "editing one without saying so is not."
 )
 
@@ -329,6 +337,7 @@ def _runtime_payload(result: RuntimeResult) -> dict:
     return {
         "ending": result.ending,
         "records": [asdict(record) for record in result.records],
+        "timeline": [_runtime_moment(record) for record in result.records],
         "episodes": [
             {
                 "cue_id": run.cue_id,
@@ -338,6 +347,36 @@ def _runtime_payload(result: RuntimeResult) -> dict:
             }
             for run in result.episodes
         ],
+    }
+
+
+def _runtime_moment(record: RuntimeRecord) -> dict:
+    """One Attention fact as display-ready copy, decided outside JavaScript."""
+    headline = "Runtime record"
+    detail = record.type
+    if isinstance(record, AttentionStarted):
+        headline = "Attention Loop started"
+        detail = "waiting for an Interaction Cue"
+    elif isinstance(record, CueDetected):
+        headline = "Explicit Request detected"
+        detail = f"{record.evidence_kind} evidence: {record.text or '(no words)'}"
+    elif isinstance(record, EpisodeOpened):
+        headline = "Episode opened"
+        detail = f"selected {record.cue_id}"
+    elif isinstance(record, EpisodeCompleted):
+        headline = f"Episode ended: {record.outcome}"
+        detail = record.episode_id
+    elif isinstance(record, RuntimeFailed):
+        headline = f"Runtime failed during {record.phase.value}"
+        detail = f"{record.error_type}: {record.message}"
+    elif isinstance(record, AttentionStopped):
+        headline = f"Attention Loop stopped: {record.ending.value}"
+        detail = "finite scenario closed"
+    return {
+        "t": record.t,
+        "type": record.type,
+        "headline": headline,
+        "detail": detail,
     }
 
 
@@ -430,13 +469,18 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         return _json(400, {"error": f"the body is not JSON this reads: {why}"})
 
     said = str(asked.get("said") or "")
-    # Which control somebody used is a fact the page holds and this does not,
-    # so it is sent rather than inferred. Both halves of the guess this used
-    # to make — always "speech", always "visual" — passed the whole suite.
-    trigger = str(asked.get("trigger") or "speech")
-    if trigger not in TRIGGERS:
+    # Pressing Run is the Explicit Request in this first runtime slice. Which
+    # input supplied Trigger Evidence is a separate fact the page holds and
+    # this does not, so it is sent rather than inferred. No visual cue is
+    # classified here; an uploaded image remains evidence attached to the
+    # visitor's deliberate request.
+    evidence_kind = str(
+        asked.get("evidence_kind") or asked.get("trigger") or "speech"
+    )
+    if evidence_kind not in TRIGGERS:
         return _json(
-            400, {"error": f"{trigger!r} is not one of {', '.join(TRIGGERS)}"}
+            400,
+            {"error": f"{evidence_kind!r} is not one of {', '.join(TRIGGERS)}"},
         )
     heard = None
 
@@ -498,7 +542,13 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     result = SocialAgentRuntime(
         source=ScenarioInputAdapter(
             clock,
-            [TimedText(at_s=0.0, text=said, trigger=trigger)],
+            [
+                TimedText(
+                    at_s=0.0,
+                    text=said,
+                    evidence_kind=EvidenceKind(evidence_kind),
+                )
+            ],
         ),
         session=session,
         clock=clock,

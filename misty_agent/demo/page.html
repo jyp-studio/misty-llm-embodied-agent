@@ -56,6 +56,15 @@
   .provenance.later b { color: #f0dcb4; }
   .provenance.live { background: rgba(111,174,131,.10); border-left-color: var(--result); color: #b8d9c3; }
   .provenance.live b { color: #d6efdd; }
+  .provenance.scenario { background: rgba(90,168,201,.10); border-left-color: var(--stopped); color: #b9dae8; }
+  .provenance.scenario b { color: #d8edf5; }
+
+  .runtime { margin: 14px 26px 0; padding: 11px 14px; border: 1px solid var(--line); border-radius: 6px; }
+  .runtime h2 { margin: 0 0 7px; color: var(--dim); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; }
+  .runtime ol { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+  .runtime li { color: var(--dim); font-size: 11.5px; }
+  .runtime li b { color: var(--boundary); font-weight: 500; }
+  .runtime li span { color: var(--faint); }
 
   main { display: grid; grid-template-columns: minmax(0,1fr) 260px; gap: 26px; padding: 20px 26px 60px; }
   /* Narrow: the robot goes above the list rather than below it, where it was
@@ -153,6 +162,11 @@
 
 <div class="provenance" id="provenance"></div>
 
+<section class="runtime" id="runtime" hidden>
+  <h2>Runtime trace</h2>
+  <ol id="runtimeMoments"></ol>
+</section>
+
 <main>
   <section>
     <div class="controls">
@@ -245,6 +259,7 @@ async function load(name) {
   const payload = await (await fetch("/examples/" + encodeURIComponent(name))).json();
   if (mine !== state.asked) return;
   state.board = payload.storyboard;
+  showRuntime(payload.runtime);
 
   say(payload.example);
 
@@ -273,7 +288,7 @@ async function load(name) {
 const SAYS = {
   specification: ["", "This is a specification, not a recording."],
   "added-later": [" later", "This one came later."],
-  scenario: [" live", "This crossed the autonomous runtime."],
+  scenario: [" scenario", "This crossed the autonomous runtime."],
   live: [" live", "This one just happened, here."],
 };
 
@@ -284,6 +299,16 @@ function say(example) {
   banner.innerHTML =
     `<b>${escapeText(lead)}</b> ${escapeText(example.provenance)}.`
     + (example.amendments ? `<span class="caveat">${escapeText(example.amendments)}</span>` : "");
+}
+
+function showRuntime(runtime) {
+  const panel = $("runtime");
+  panel.hidden = !runtime;
+  $("runtimeMoments").innerHTML = runtime
+    ? runtime.timeline.map((moment) =>
+        `<li><b>${escapeText(moment.headline)}</b> <span>${escapeText(moment.detail)}</span></li>`
+      ).join("")
+    : "";
 }
 
 function draw() {
@@ -451,12 +476,13 @@ async function runYours() {
   // something only this page knows.
   const asked = {
     said,
-    trigger: said || recording ? "speech" : "visual",
+    evidence_kind: said || recording ? "speech" : "visual",
   };
   if (picture) asked.image = await asBase64(picture);
   if (recording) asked.audio = await asBase64(recording);
 
   stop();
+  showRuntime(null);
   $("go").disabled = true;
   $("go").textContent = "Running…";
   const note = $("note");
@@ -474,6 +500,7 @@ async function runYours() {
     }
     note.className = "note";
     $("seen").textContent = describeSeen(payload);
+    showRuntime(payload.runtime);
 
     if (!payload.storyboard) {
       // Perception ran and there is nothing after it. The reason comes from

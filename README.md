@@ -1,106 +1,66 @@
 # Misty Embodied Agent
 
-**An LLM-driven embodied AI on the Misty II social robot — perception, planning, and action in a bounded, simulation-tested control loop.**
+An LLM-driven embodied agent for the Misty II social robot, with a bounded
+ReAct core and a simulation-first autonomous runtime.
 
-The robot watches and listens for a human (MediaPipe + Whisper), reasons about what it perceives with GPT-4o (grounded by a three-tier conversation memory), and acts through a deterministic executor with **closed-loop locomotion** — falling back to [AutoMisty](https://arxiv.org/abs/2503.06791) multi-agent code generation only for complex expressive tasks.
+**There is no Misty II available to this project, and there never will be.**
+Every demonstrated behaviour runs against simulated or recorded adapters.
+Real-driver request shapes have contract coverage; physical behaviour,
+calibration, latency, and safety remain hardware-unverified.
 
-<p align="center">
-  <img src="assets/architecture.svg" width="920" alt="System architecture">
-</p>
+## What works now
 
----
+- `SocialAgentRuntime` is the highest product seam. It consumes a unified
+  input source, creates an Interaction Cue, and gives one bounded Episode at a
+  time ownership of model context and robot effects.
+- The first vertical path is a timed text Explicit Request driven by
+  `ScenarioInputAdapter` and a fake clock. It reaches the existing ReAct loop,
+  typed Journal, Tool validation, and simulated Misty effects.
+- Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
+  Episode cap all close with observable bounded endings.
+- The local Demo and acceptance test share the same declarative scenario. The
+  page displays the Attention/Cue trace and replays the resulting Journal.
+- Cross-Episode personal memory is not a current product capability. Social
+  state is ephemeral unless a future consent-based policy explicitly changes it.
 
-## Demo: silent emotional support
-
-No speech at all — the interaction is triggered purely by vision. The VLM grounds the scene ("a man wiping tears"), the planner decides on a sad expression and a comforting sentence, and Misty **asks for consent before approaching**.
-
-| Input — user is crying (no speech) | Output — sad expression + comforting speech |
-|:---:|:---:|
-| ![Input](assets/demo_input.jpg) | ![Output](assets/demo_output.jpg) |
-
-```jsonc
-// Actual planner output for this episode
-{
-  "thought":     "The user appears distressed and is crying silently.",
-  "movement":    "stay",                 // asks consent before closing distance
-  "expression":  "sad",
-  "gesture":     "none",
-  "speak":       "Would you like a hug or would you prefer a little space?",
-  "complex_task": null
-}
-```
-
----
-
-## Highlights
-
-**1. The LLM never touches physical parameters.**
-Misty's `drive` velocity is a *percentage of max speed*, not a physical unit — letting an LLM compute "velocity x time" open-loop is a recipe for overshoot. Here the planner outputs only high-level intent (`approach / stay / back_up`); a closed-loop controller (`approach_user()`) drives in small bounded steps, re-measures the user distance with a median filter after every step, and converges to a 60 cm social distance with a 45 cm hard safety floor. Simulation shows it stays within tolerance even with **50% calibration error**, where an open-loop scheme would overshoot by ~45 cm.
-
-**2. Three-tier conversation memory.**
-A verbatim short-term window (last 10 turns), a rolling summary that old turns get folded into (token-bounded), and long-term user facts (name, preferences) extracted each turn and **persisted across sessions** as JSON. The planner receives all three tiers in context — Misty remembers your name tomorrow.
-
-**3. Bounded execution everywhere (System 1 / System 2 action split).**
-Common reactions (expression, gestures, speech, approach) run on a deterministic *fast path* — sub-second, no code generation. Only elaborate performances (dance, storytelling) route to the AutoMisty *slow path*, whose agent loops are round-capped, timeout-guarded, and terminate immediately on successful code execution (`exitcode: 0`). Every episode provably returns to IDLE.
-
-**4. Simulation-tested control logic.**
-A pytest suite runs the *real* control code through its public interface against synthetic frames, a simulated 1-D world and a recording robot adapter — convergence under calibration error, target loss, step caps — with no hardware and no API key required. Reading noise is **not** covered yet; see `docs/measurements/m6-coverage-audit.md`.
-
----
-
-## Architecture
-
-The system is a finite-state loop: `IDLE -> PERCEIVE -> THINK -> ACT -> IDLE`.
-
-**Perception** — Misty's AV stream is started once per process. A MediaPipe face-mesh watchdog detects gaze (interaction trigger) and estimates user distance from face pixel width (median-filtered over recent frames). Whisper transcribes speech with silence-based utterance buffering; GPT-4o vision describes the trigger frame. During actions, perception is *paused, not stopped*: distance keeps updating for the closed-loop controller, but no new events fire — which also prevents Misty from hearing its own speech.
-
-**Plan** — a single structured GPT-4o call. Input: the memory block plus current perception. Output: strict JSON (`movement | expression | gesture | speak | complex_task`), sanitized against a whitelist so malformed model output degrades to safe defaults instead of crashing.
-
-**Action** — the deterministic executor maps intent to Misty's API (`emotion_*` displays, arm/head motion primitives, onboard TTS) and runs the closed-loop approach. `complex_task` (when set) is handed to AutoMisty's planner/coder/critic agents, which generate and execute Python on the robot. A foot-bumper e-stop can interrupt any stage.
+The concise source of truth is [docs/architecture.md](docs/architecture.md).
+`PLAN.md` preserves the longer decision history.
 
 ```mermaid
 flowchart LR
-    subgraph P["1 · Perception"]
-        MP["MediaPipe<br>gaze + distance"] --> VLM["GPT-4o Vision"]
-        ASR["Whisper ASR"] --> VLM
-    end
-    subgraph B["2 · Plan"]
-        MEM["Memory<br>window / summary / facts"] --> LLM["LLM Planner<br>(strict JSON)"]
-    end
-    subgraph A["3 · Action"]
-        EXE["Deterministic executor"]
-        LOOP["Closed-loop approach_user()"]
-        AM["AutoMisty code-gen<br>(complex tasks only)"]
-    end
-    P -->|PerceptionData| B -->|decision| A
-    MP -.->|live distance| LOOP
-    A -->|turn write-back| MEM
-    A -->|return to IDLE| P
+    INPUT["ScenarioInputAdapter"] --> RUNTIME["SocialAgentRuntime<br>Attention Loop"]
+    RUNTIME -->|"one Explicit Request"| EPISODE["bounded ReAct Episode"]
+    EPISODE --> TOOLS["Tool registry + control layer"]
+    TOOLS --> SIM["simulated Misty"]
+    EPISODE --> JOURNAL["typed Episode Journal"]
+    RUNTIME --> TRACE["Attention / Cue records"]
+    TRACE --> DEMO["local Demo"]
+    JOURNAL --> DEMO
 ```
-
----
 
 ## Quick start
 
-**Requirements:** Python 3.10+, a Misty II robot on the same network, an OpenAI API key.
+Use the project virtual environment; a bare `python3` can silently skip the
+perception suite (see `AGENTS.md`). No robot or API key is needed for the
+built-in runtime scenario.
 
 ```bash
-git clone https://github.com/jyp-studio/misty-llm-embodied-agent.git
-cd misty-llm-embodied-agent
-pip install -r requirements.txt
-
-# Configure (never commit the real file — it is gitignored)
-cp OAI_CONFIG_LIST.json.example OAI_CONFIG_LIST.json
-#   -> fill in your api_key
-export OPENAI_API_KEY=sk-...        # or leave it to the file above
-
-cp .env.example .env
-#   -> set MISTY_ROBOT_IP to your robot's address
+.venv/bin/python -m misty_agent --demo
 ```
 
-An Episode is one trigger and the decisions that follow it: `misty_agent.app.Session.episode("speech", "come here")` runs one and hands back the Journal it produced. There is no "wait until somebody speaks" loop yet, and that is a decision rather than an omission — the audio stream's transcription and voice detection still share a thread (`HANDOFF.md` §4), and building the outer loop on that would be building on a known defect.
+The browser page is loopback-only. Choose **A timed request wakes the social
+runtime** to run the deterministic vertical slice. A live text request needs
+`OPENAI_API_KEY` or `OAI_CONFIG_LIST.json` and may use a hosted model.
 
-Press Misty's foot bumper at any time: the motors halt, the Episode ends as `aborted`, and the moment it happened is on the Journal.
+The command-line path also crosses `SocialAgentRuntime`:
+
+```bash
+export OPENAI_API_KEY=sk-...  # omit when injecting a model in tests
+.venv/bin/python -m misty_agent --said "Misty, hello"
+```
+
+`--robot <IP>` assembles the retained real-driver path and prints an explicit
+warning. It has never run on hardware; its presence is not evidence that it works.
 
 ---
 
@@ -136,11 +96,13 @@ Every one of those gates is proven able to fail in `tests/test_episode_invariant
 
 ---
 
-## Hardware calibration (one-time)
+## Hardware evidence boundary
 
-1. **Drive speed** — run `drive_time(linearVelocity=20, angularVelocity=0, timeMs=2000)`, measure the traveled centimeters, divide by 2, and set `CM_PER_SEC_AT_PERCENT`. The closed loop tolerates large errors here; calibration just reduces step count.
-2. **Camera focal constant** — stand at a measured 100 cm and compare the reported distance; scale `FOCAL_LENGTH` proportionally.
-3. Verify the motors actually move at 20% (`DRIVE_PERCENT`); raise it if they stall below the deadband.
+Motion constants and sensor assumptions are deliberately labelled
+`UNCALIBRATED`. The deterministic world and replay harness prove software
+properties under declared assumptions; they do not prove what a physical Misty
+would do. Do not treat the retained `--robot` path as installation or safety
+guidance.
 
 ---
 
@@ -149,7 +111,9 @@ Every one of those gates is proven able to fail in `tests/test_episode_invariant
 ```
 .
 ├── misty_agent/
-│   ├── app.py                # Entry: wires drivers, agent and memory into one Episode
+│   ├── runtime.py            # Highest seam: Attention, cues, Episodes, shutdown
+│   ├── scenarios.py          # Acceptance Scenario source shared by Demo and tests
+│   ├── app.py                # Composition root and one-Episode runtime dependency
 │   ├── config.py             # Every tunable, with UNCALIBRATED ones marked as such
 │   ├── agent/                # journal, react, tools, memory, stop, layering, model
 │   ├── control/              # approach() and the step policy — the closed loop
@@ -158,11 +122,12 @@ Every one of those gates is proven able to fail in `tests/test_episode_invariant
 │   └── fakes/                # stand-ins: no Misty II was available to this project
 ├── harness/                  # python -m harness — regenerates the M5 and M6 reports
 ├── tests/                    # goldens/ holds four Journals committed before the loop
-├── docs/measurements/        # the evidence those reports produce, under version control
+├── docs/architecture.md      # concise current architecture
+├── docs/adr/                 # hard-to-reverse architecture decisions
+├── docs/measurements/        # replay/simulation evidence and its limits
 ├── PLAN.md                   # every decision and why, including the reversed ones
 ├── CONTEXT.md                # the glossary; Turn, Step and Episode are not synonyms
-├── HANDOFF.md                # what the next person needs, including what is still broken
-└── assets/                   # architecture figure & demo photos
+└── HANDOFF.md                # current progress and handoff notes
 ```
 
 The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py`, `Mistydemo/`) was removed from version control at M1 and lives in `legacy/`, which is gitignored. `PLAN.md` §2–§3 records what was excised and why.
@@ -171,25 +136,19 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 ## Roadmap
 
-- **Skill caching** — reuse previously generated AutoMisty scripts for semantically similar tasks instead of regenerating.
-- **Anthropic API backend** — pluggable LLM provider for the planner/memory path.
-- Angular closed loop (turn-to-face using the face-center offset already computed by MediaPipe).
+The first runtime slice intentionally does not claim the rest of the social
+system. Planned vertical slices add wake detection, visual cue classification,
+Trigger Evidence, cue queues and handoff, Skills, ephemeral social state,
+target-aware movement, and a live input adapter. See
+`.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---
 
 ## Acknowledgements & license
 
-- Code generation is built on **AutoMisty** (Wang, Dong, Rangasrinivasan, Nwogu, Setlur, Govindaraju — *AutoMisty: A Multi-Agent LLM Framework for Automated Code Generation in the Misty Social Robot*, IROS 2025, [arXiv:2503.06791](https://arxiv.org/abs/2503.06791)). The AutoMisty-derived components (`Agents/`, `AutoMisty.py`, and the optimized Misty API) are used under the upstream **Academic Research License**: academic and non-commercial use only, citation required.
-- Misty II robot and REST API by [Misty Robotics](https://www.mistyrobotics.com/).
-- Face tracking by [MediaPipe](https://developers.google.com/mediapipe); speech recognition by [OpenAI Whisper](https://github.com/openai/whisper).
+Misty II and its REST API are by Misty Robotics. Face perception uses
+MediaPipe; hosted speech/model adapters use OpenAI when explicitly configured.
+The original AutoMisty code-generation framework was removed at M1; the
+retained generated Misty SDK file is attributed in `NOTICE`.
 
-The original components of this repository (main control loop, memory system, closed-loop controller, test suites) are released for academic and non-commercial use under the same terms, to remain compatible with the upstream license.
-
-```bibtex
-@inproceedings{wang2025automisty,
-  title     = {AutoMisty: A Multi-Agent LLM Framework for Automated Code Generation in the Misty Social Robot},
-  author    = {Wang, Xiao and Dong, Lu and Rangasrinivasan, Sahana and Nwogu, Ifeoma and Setlur, Srirangaraj and Govindaraju, Venugopal},
-  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
-  year      = {2025}
-}
-```
+This repository is Apache-2.0. See `LICENSE` and `NOTICE`.

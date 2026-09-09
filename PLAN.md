@@ -2471,3 +2471,14 @@ Spec 軸實際驗證過：把 `OAI_CONFIG_LIST.json` 丟進 demo 的工作目錄
 
 M8 開始時的實質理由就是這張表（§16.3）。十張票之後它是空的，而且每一格都有兩軸 review
 驗證過的呼叫端。
+
+### 16.48 Social runtime 將預設 Turn cap 從 8 改為 12
+
+`.scratch/social-react-runtime/spec.md` 把 12 定為新 runtime 的初始 Turn 上限。這推翻 §15.19
+為 M7 單次 Episode 選的 8，而不是可同時保留的兩個預設值：`Settings` 只能有一個 default，
+`SocialAgentRuntime` 也刻意沿用同一個 bounded ReAct core。因此實作與
+`episode_hits_the_turn_limit.jsonl` 一起改為 12 Turns；golden 新增的四個 Turn 仍逐項遵守
+「只有 model latency 與 Tool sleep 推進 fake clock」的既有規則。這是 golden 規則第六次被
+觸發，選擇讓 golden 配合已批准的新架構規格。
+
+12 仍不是硬體量測值。本專案沒有 Misty II；只有後續 Journal 與 replay 證據能支持再次調整。

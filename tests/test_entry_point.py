@@ -65,7 +65,7 @@ def snapshots_the_model_read(model):
 
 
 # ---------------------------------------------------------------------------
-# One command, one Episode
+# One command, one finite runtime scenario
 # ---------------------------------------------------------------------------
 
 def test_one_command_runs_one_episode(capsys):

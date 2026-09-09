@@ -72,6 +72,7 @@ from misty_agent.runtime import (
     RuntimeRecord,
     RuntimeResult,
     ScenarioInputAdapter,
+    ScheduledInput,
     SocialAgentRuntime,
     TimedText,
 )
@@ -264,27 +265,17 @@ def _example(name: str) -> Reply:
 
     text = raw.decode("utf-8")
     lines = [line for line in text.split("\n") if line.strip()]
-    storyboard = storyboard_of(from_jsonl(text))
-    board = asdict(storyboard)
-    if len(lines) != len(board["moments"]):
+    try:
+        storyboard, board = _project_journal(from_jsonl(text), lines=lines)
+    except ValueError as mismatch:
         # Cannot happen — `storyboard_of` maps one Moment per record — and it
         # is refused rather than trusted anyway. Pairing them off by position
         # while the two disagree would put one decision's fields under
         # another's sentence, which is worse than showing nothing at all.
         return _json(
             500,
-            {
-                "error": f"{name!r} has {len(lines)} records and "
-                f"{len(board['moments'])} moments"
-            },
+            {"error": f"{name!r} has {mismatch}"},
         )
-    for moment, line in zip(board["moments"], lines):
-        # The line the Moment was made from, carried *by* it. It used to be a
-        # second request the page lined up by index, and a review's mutant
-        # paired every Moment with the next one's line while all 1216 tests
-        # stayed green — because nothing tests the page. There is nothing to
-        # get wrong now.
-        moment["line"] = line
 
     return _json(
         200,
@@ -294,6 +285,25 @@ def _example(name: str) -> Reply:
             "storyboard": board,
         },
     )
+
+
+def _project_journal(records, *, lines=None):
+    """Build a Storyboard and attach the exact line behind each Moment."""
+    records = tuple(records)
+    source_lines = (
+        list(lines) if lines is not None else to_jsonl(records).splitlines()
+    )
+    storyboard = storyboard_of(records)
+    board = asdict(storyboard)
+    if len(source_lines) != len(board["moments"]):
+        raise ValueError(
+            f"{len(source_lines)} records and {len(board['moments'])} moments"
+        )
+    for moment, line in zip(board["moments"], source_lines):
+        # Carried by the Moment, so JavaScript cannot pair a record with its
+        # neighbour while both independent payloads still look valid.
+        moment["line"] = line
+    return storyboard, board
 
 
 def _runtime_example() -> Reply:
@@ -314,12 +324,7 @@ def _runtime_example() -> Reply:
     )
     result = runtime.run()
     episode = result.episodes[0]
-    storyboard = storyboard_of(episode.journal.records)
-    board = asdict(storyboard)
-    for moment, line in zip(
-        board["moments"], to_jsonl(episode.journal.records).splitlines()
-    ):
-        moment["line"] = line
+    storyboard, board = _project_journal(episode.journal.records)
 
     return _json(
         200,
@@ -543,10 +548,12 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         source=ScenarioInputAdapter(
             clock,
             [
-                TimedText(
+                ScheduledInput(
                     at_s=0.0,
-                    text=said,
-                    evidence_kind=EvidenceKind(evidence_kind),
+                    input=TimedText(
+                        text=said,
+                        evidence_kind=EvidenceKind(evidence_kind),
+                    ),
                 )
             ],
         ),
@@ -555,14 +562,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     ).run()
     episode = result.episodes[0]
     journal = episode.journal
-    live = storyboard_of(journal.records)
-    board = asdict(live)
-    for moment, line in zip(board["moments"], to_jsonl(journal.records).splitlines()):
-        # The same promise the built-ins make, on a run from a moment ago:
-        # every Moment carries the record it was made from. There is no file
-        # here to read it back from — and there must not be — so it is
-        # serialised straight out of the Journal.
-        moment["line"] = line
+    live, board = _project_journal(journal.records)
     answered["storyboard"] = board
     answered["moves"] = list(what_moves(live))
     answered["runtime"] = _runtime_payload(result)

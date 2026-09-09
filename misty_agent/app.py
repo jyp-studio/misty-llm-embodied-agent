@@ -86,6 +86,7 @@ from misty_agent.perception.distance import NOBODY_THERE, DistancePipeline
 from misty_agent.runtime import (
     EvidenceKind,
     ScenarioInputAdapter,
+    ScheduledInput,
     SocialAgentRuntime,
     TimedText,
 )
@@ -727,16 +728,23 @@ def _one_runtime(
         source=ScenarioInputAdapter(
             session.clock,
             [
-                TimedText(
+                ScheduledInput(
                     at_s=0.0,
-                    text=args.said,
-                    evidence_kind=EvidenceKind(args.trigger),
+                    input=TimedText(
+                        text=args.said,
+                        evidence_kind=EvidenceKind(args.trigger),
+                    ),
                 )
             ],
         ),
         session=session,
         clock=session.clock,
-    ).run(render=True, journal_path=args.journal)
+    ).run(
+        render=True,
+        journal_path_for_episode=(
+            (lambda _number: args.journal) if args.journal is not None else None
+        ),
+    )
     if not result.episodes:
         failure = next(
             (

@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Protocol, Sequence, Tuple, Union
+from typing import Callable, Optional, Protocol, Sequence, Tuple, Union
 
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
@@ -68,9 +68,15 @@ class EvidenceKind(str, Enum):
 
 @dataclass(frozen=True)
 class RuntimeInput:
-    """One provider-independent input scheduled relative to scenario start."""
+    """One provider-independent arrival at the Attention Loop."""
+
+
+@dataclass(frozen=True)
+class ScheduledInput:
+    """Scenario-only timing wrapped around a provider-independent input."""
 
     at_s: float
+    input: RuntimeInput
 
     def __post_init__(self) -> None:
         if self.at_s < 0:
@@ -122,7 +128,7 @@ class ScenarioInputAdapter:
     """Feed a finite, ordered text scenario using an injected clock."""
 
     def __init__(
-        self, clock: ScenarioClock, inputs: Sequence[RuntimeInput]
+        self, clock: ScenarioClock, inputs: Sequence[ScheduledInput]
     ) -> None:
         scheduled = tuple(inputs)
         adjacent = zip(scheduled, scheduled[1:])
@@ -144,8 +150,8 @@ class ScenarioInputAdapter:
             raise RuntimeError("scenario input is not running")
         if self._index >= len(self._inputs):
             return None
-        item = self._inputs[self._index]
-        due = self._started_at + item.at_s
+        scheduled = self._inputs[self._index]
+        due = self._started_at + scheduled.at_s
         wait_s = due - self._clock.monotonic()
         while wait_s > 0 and not self._stopped.is_set():
             self._clock.sleep(min(wait_s, _INPUT_STOP_POLL_S))
@@ -153,7 +159,7 @@ class ScenarioInputAdapter:
         if self._stopped.is_set():
             return None
         self._index += 1
-        return item
+        return scheduled.input
 
     def stop(self) -> None:
         self._stopped.set()
@@ -263,7 +269,9 @@ class SocialAgentRuntime:
         self,
         *,
         render: bool = False,
-        journal_path: Optional[Path] = None,
+        journal_path_for_episode: Optional[
+            Callable[[int], Optional[Path]]
+        ] = None,
     ) -> RuntimeResult:
         """Own the input lifecycle and stop after a finite source is drained."""
         if self.state is not RuntimeState.READY:
@@ -300,6 +308,12 @@ class SocialAgentRuntime:
                 )
                 records.append(EpisodeOpened(t=self._elapsed(), cue_id=cue_id))
                 phase = RuntimePhase.EPISODE
+                episode_number = len(episodes) + 1
+                journal_path = (
+                    journal_path_for_episode(episode_number)
+                    if journal_path_for_episode is not None
+                    else None
+                )
                 outcome, journal = self._session.episode(
                     item.evidence_kind,
                     item.text,
@@ -406,6 +420,7 @@ __all__ = [
     "RuntimeState",
     "ScenarioClock",
     "ScenarioInputAdapter",
+    "ScheduledInput",
     "SocialAgentRuntime",
     "TimedText",
 ]

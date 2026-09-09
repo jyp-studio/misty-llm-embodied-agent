@@ -21,8 +21,8 @@ first tracer bullet is deliberately narrow:
 5. The Demo's built-in scenario uses the same declaration as the acceptance
    test, displays the runtime trace, and replays the completed Journal.
 
-The implementation commit is `7bd0a02`; review hardening is being completed in
-the following commit.
+The implementation commit is `7bd0a02`; review hardening starts at `1ac7b31`,
+and the current HEAD includes the follow-up resolution check.
 
 ## Verification
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence, Tuple
 
 from misty_agent.agent.react import Decision
-from misty_agent.runtime import TimedText
+from misty_agent.runtime import ScheduledInput, TimedText
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class AcceptanceScenario:
 
     name: str
     title: str
-    inputs: Tuple[TimedText, ...]
+    inputs: Tuple[ScheduledInput, ...]
     decisions: Tuple[Decision, ...]
 
 
@@ -44,7 +44,9 @@ class ScenarioModel:
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="runtime_explicit_text_request",
     title="A timed request wakes the social runtime",
-    inputs=(TimedText(at_s=0.5, text="Misty, hello"),),
+    inputs=(
+        ScheduledInput(at_s=0.5, input=TimedText(text="Misty, hello")),
+    ),
     decisions=(
         Decision(
             tool="speak",

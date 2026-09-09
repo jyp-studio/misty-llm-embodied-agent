@@ -23,12 +23,14 @@ SocialAgentRuntime ──> Attention/Cue records + Episode Journals
                                       Demo Storyboard replay
 ```
 
-`ScenarioInputAdapter` currently supports ordered, timed text Explicit
-Requests.  It advances an injected clock, so the whole path is deterministic
-and needs no network or hardware.  `SocialAgentRuntime` consumes one input at
-a time, waits for the resulting bounded Episode to close, and only then reads
-another.  Exhausting the finite source, runtime shutdown, the ReAct Turn cap,
-and dependency failure all produce bounded endings.
+`ScenarioInputAdapter` currently supports ordered `ScheduledInput` wrappers
+around text Explicit Requests. Scheduling stays in that adapter; the
+`RuntimeInput` returned through `InputSource` carries no scenario-only clock
+field. The adapter advances an injected clock, so the whole path is
+deterministic and needs no network or hardware. `SocialAgentRuntime` consumes
+one input at a time, waits for the resulting bounded Episode to close, and
+only then reads another. Exhausting the finite source, runtime shutdown, the
+ReAct Turn cap, and dependency failure all produce bounded endings.
 
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.

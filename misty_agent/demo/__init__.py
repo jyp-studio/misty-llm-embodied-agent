@@ -76,7 +76,12 @@ from misty_agent.runtime import (
     SocialAgentRuntime,
     TimedText,
 )
-from misty_agent.scenarios import EXPLICIT_TEXT_REQUEST, ScenarioModel
+from misty_agent.scenarios import (
+    DEMO_SCENARIOS,
+    EXPLICIT_TEXT_REQUEST,
+    AcceptanceScenario,
+    ScenarioModel,
+)
 
 #: The only address this binds. A demo that listened on every interface would
 #: put a Journal — which carries what people said — on whatever network the
@@ -215,15 +220,20 @@ def answer(
     rather than a default.
     """
     if method == "POST":
-        return _run(body, audio=audio) if path == "/run" else _json(
-            405, {"error": f"nothing accepts a POST at {path}"}
-        )
+        if path == "/run":
+            return _run(body, audio=audio)
+        scenario_name = _scenario_run_name(path)
+        if scenario_name is not None:
+            return _run_scenario(scenario_name)
+        return _json(405, {"error": f"nothing accepts a POST at {path}"})
     if method != "GET":
         return _json(405, {"error": f"{method} is not something this serves"})
     if path == "/options":
         return _json(200, {"audio": audio})
     if path == "/":
         return Reply(200, {"Content-Type": "text/html; charset=utf-8"}, _PAGE.read_bytes())
+    if path == "/scenarios":
+        return _json(200, [_scenario_payload(case) for case in DEMO_SCENARIOS])
     if path == "/examples":
         return _json(
             200,
@@ -237,6 +247,79 @@ def answer(
     return _json(404, {"error": f"nothing is served at {path}"})
 
 
+def _scenario_run_name(path: str) -> Optional[str]:
+    """Return one whole scenario name from ``/scenarios/<name>/run``."""
+    prefix = "/scenarios/"
+    suffix = "/run"
+    if not (path.startswith(prefix) and path.endswith(suffix)):
+        return None
+    name = path[len(prefix):-len(suffix)]
+    return name if name and "/" not in name else None
+
+
+def _scenario_payload(case: AcceptanceScenario) -> dict:
+    """The stable, human-readable facts displayed on a scenario card."""
+    return {
+        "name": case.name,
+        "title": case.title,
+        "subtitle": case.subtitle,
+        "availability": case.availability,
+        "limitation": case.limitation,
+        "steps": [asdict(step) for step in case.steps],
+    }
+
+
+def _run_scenario(name: str) -> Reply:
+    """Run one named offline scenario through the real runtime seam."""
+    case = next((item for item in DEMO_SCENARIOS if item.name == name), None)
+    if case is None:
+        return _json(404, {"error": f"there is no scenario called {name!r}"})
+
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(case.decisions),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(clock, case.inputs),
+        session=session,
+        clock=clock,
+    ).run()
+    if len(result.episodes) != len(case.actors):
+        return _json(
+            500,
+            {
+                "error": (
+                    f"scenario {name!r} expected {len(case.actors)} episodes "
+                    f"but produced {len(result.episodes)}"
+                )
+            },
+        )
+    episodes = []
+    for actor, episode in zip(case.actors, result.episodes):
+        storyboard, board = _project_journal(episode.journal.records)
+        episodes.append(
+            {
+                "actor": actor,
+                "cue_id": episode.cue_id,
+                "cue_kind": episode.cue_kind,
+                "episode_id": episode.journal.records[0].episode_id,
+                "outcome": asdict(episode.outcome),
+                "moves": list(what_moves(storyboard)),
+                "storyboard": board,
+            }
+        )
+    return _json(
+        200,
+        {
+            "scenario": _scenario_payload(case),
+            "runtime": _runtime_payload(result),
+            "episodes": episodes,
+        },
+    )
+
+
 def _example(name: str) -> Reply:
     """One golden, as the Storyboard a page draws plus who it claims to be.
 
@@ -244,7 +327,7 @@ def _example(name: str) -> Reply:
     matched against the examples rather than joined onto a path: `..` and a
     slash and an encoded slash are all simply not one of six names.
     """
-    if name == RUNTIME_EXAMPLE.name:
+    if name in {RUNTIME_EXAMPLE.name, "runtime_explicit_text_request"}:
         return _runtime_example()
 
     found = next((example for example in EXAMPLES if example.name == name), None)

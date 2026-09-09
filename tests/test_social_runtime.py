@@ -18,6 +18,8 @@ from misty_agent.config import Settings
 from misty_agent.demo import answer
 from misty_agent.fakes import FakeClock
 from misty_agent.runtime import (
+    CueKind,
+    EvidenceKind,
     RuntimeState,
     ScenarioInputAdapter,
     ScheduledInput,
@@ -94,6 +96,32 @@ def test_an_input_source_does_not_have_to_invent_scenario_timing():
     ).run()
 
     assert result.episodes[0].input == TimedText(text="Misty, hello")
+
+
+def test_a_scripted_care_cue_keeps_its_kind_at_the_runtime_boundary():
+    """A visual Care Cue must not be relabelled as an Explicit Request."""
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+    cue = TimedText(
+        text="A person nearby is visibly crying.",
+        evidence_kind=EvidenceKind.VISUAL,
+        cue_kind=CueKind.CARE_CUE,
+    )
+
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock, [ScheduledInput(at_s=0.0, input=cue)]
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert result.episodes[0].cue_kind is CueKind.CARE_CUE
+    assert result.records[1].cue_kind is CueKind.CARE_CUE
 
 
 def test_the_demo_replays_a_text_case_that_crossed_the_runtime_seam():

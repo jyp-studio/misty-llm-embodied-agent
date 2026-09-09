@@ -2482,3 +2482,20 @@ M8 開始時的實質理由就是這張表（§16.3）。十張票之後它是�
 觸發，選擇讓 golden 配合已批准的新架構規格。
 
 12 仍不是硬體量測值。本專案沒有 Misty II；只有後續 Journal 與 replay 證據能支持再次調整。
+
+### 16.49 Demo 首頁改以三個社交情境說明 runtime（ticket 01 follow-up）
+
+舊首頁把 Journal failure modes、`Play` 與需要 API key 的 `Run` 放在同一層。它雖然能重播紀錄，
+但訪客無法從畫面判斷哪個動作真的會執行、為什麼沒有 key 還能 Play，也看不出這是一個社交機器人
+專案。首頁因此改成白色、內容優先的三張橫向圖卡：有人問候 Misty、有人哭泣、A 聊完後切換到 B。
+
+三張卡的主按鈕只有一個：`執行離線模擬`。它們都 POST 到具名 scenario route，穿過
+`SocialAgentRuntime`、bounded Episode 與 typed Journal，再把 runtime records 與 Journal 當成
+可展開的工程證據。Live AI 被移到獨立的次要區塊，清楚標示 API key 要求；不再用一個無法解釋的
+Play/Run 差異暗示兩條路具有相同能力。
+
+其中只有 greeting 是 ticket 01 已具備的 Explicit Request 垂直路徑。哭泣情境直接注入 visual
+Care Cue，A/B 情境直接注入人物標記並開兩個獨立 Episode；頁面與 payload 都必須說明這兩者**沒有**
+做哭泣辨識或人物辨識。這些案例驗證 runtime 能否接住已選出的 cue 和維持 Episode 邊界，不是感知
+能力或真機行為的證據。本專案仍沒有 Misty II，三個案例都只使用 scripted model、fake clock 與
+simulated robot。

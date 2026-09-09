@@ -89,12 +89,97 @@ def test_the_page_is_served_at_the_root():
     assert b"<!doctype html>" in reply.body.lower()
 
 
+def test_the_page_leads_with_three_readable_social_scenarios():
+    """The portfolio Demo starts with situations, not ReAct failure modes."""
+    page = answer("GET", "/").body.decode("utf-8")
+
+    assert '<html lang="zh-Hant">' in page
+    assert page.count('class="scenario-card') == 3
+    assert "有人和 Misty 打招呼" in page
+    assert "有人在 Misty 面前哭泣" in page
+    assert "A 聊完後，切換成 B" in page
+    assert "執行離線模擬" in page
+    assert "Live AI" in page and "需要 API key" in page
+    assert "#16151a" not in page
+    assert "opacity: .18" not in page
+
+
+def test_the_three_social_scenarios_are_the_only_primary_choices():
+    listed = body_of("/scenarios")
+
+    assert [scenario["name"] for scenario in listed] == [
+        "greeting",
+        "crying-care",
+        "speaker-handoff",
+    ]
+    assert all(len(scenario["steps"]) == 3 for scenario in listed)
+    assert listed[0]["availability"] == "ready"
+    assert listed[1]["availability"] == "scripted_only"
+    assert listed[2]["availability"] == "scripted_only"
+
+
+def run_scenario(name: str) -> dict:
+    reply = answer("POST", f"/scenarios/{name}/run")
+    assert reply.status == 200, (name, reply.status, reply.body)
+    return json.loads(reply.body)
+
+
+def test_the_greeting_card_runs_the_runtime_without_an_api_key(monkeypatch):
+    def key_was_not_asked_for(path):
+        pytest.fail(f"offline scenario tried to load an API key from {path}")
+
+    monkeypatch.setattr("misty_agent.demo.load_api_key", key_was_not_asked_for)
+
+    payload = run_scenario("greeting")
+
+    assert payload["scenario"]["availability"] == "ready"
+    assert payload["runtime"]["ending"] == "input_exhausted"
+    assert len(payload["episodes"]) == 1
+    assert payload["episodes"][0]["actor"] == "person"
+    assert payload["episodes"][0]["storyboard"]["outcome"] == "done"
+
+
+def test_the_crying_card_is_an_honest_scripted_care_cue():
+    payload = run_scenario("crying-care")
+
+    cue = payload["runtime"]["records"][1]
+    assert cue["cue_kind"] == "care_cue"
+    assert cue["evidence_kind"] == "visual"
+    assert "沒有執行哭泣辨識" in payload["scenario"]["limitation"]
+    assert payload["episodes"][0]["storyboard"]["outcome"] == "done"
+
+
+def test_the_handoff_card_runs_a_then_b_as_separate_episodes():
+    payload = run_scenario("speaker-handoff")
+
+    assert [episode["actor"] for episode in payload["episodes"]] == ["A", "B"]
+    assert len({episode["episode_id"] for episode in payload["episodes"]}) == 2
+    assert [
+        record["cue_id"]
+        for record in payload["runtime"]["records"]
+        if record["type"] == "cue_detected"
+    ] == ["cue-1", "cue-2"]
+    assert "沒有執行人物辨識" in payload["scenario"]["limitation"]
+
+
+def test_a_scenario_name_cannot_be_used_as_a_path():
+    assert answer("POST", "/scenarios/../greeting/run").status == 405
+    assert answer("POST", "/scenarios/not-a-case/run").status == 404
+
+
 def test_the_examples_can_be_listed():
     listed = body_of("/examples")
 
     assert [example["name"] for example in listed] == sorted(
         golden.stem for golden in GOLDENS.glob("*.jsonl")
     ) + [RUNTIME_EXAMPLE.name]
+
+
+def test_the_old_runtime_example_link_remains_an_alias():
+    old_link = body_of("/examples/runtime_explicit_text_request")
+    current_link = body_of(f"/examples/{RUNTIME_EXAMPLE.name}")
+
+    assert old_link == current_link
 
 
 def test_an_example_comes_back_as_a_storyboard():

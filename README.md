@@ -18,8 +18,10 @@ calibration, latency, and safety remain hardware-unverified.
   typed Journal, Tool validation, and simulated Misty effects.
 - Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
   Episode cap all close with observable bounded endings.
-- The local Demo and acceptance test share the same declarative scenario. The
-  page displays the Attention/Cue trace and replays the resulting Journal.
+- The local Demo leads with three social-robot stories: a greeting, a scripted
+  Care Cue for someone crying, and a scripted handoff from person A to person
+  B. Each card runs through the same runtime and Journal seam as its acceptance
+  test; the page clearly labels which inputs are injected rather than detected.
 - Cross-Episode personal memory is not a current product capability. Social
   state is ephemeral unless a future consent-based policy explicitly changes it.
 
@@ -48,9 +50,10 @@ built-in runtime scenario.
 .venv/bin/python -m misty_agent --demo
 ```
 
-The browser page is loopback-only. Choose **A timed request wakes the social
-runtime** to run the deterministic vertical slice. A live text request needs
-`OPENAI_API_KEY` or `OAI_CONFIG_LIST.json` and may use a hosted model.
+The browser page is loopback-only. Choose one of the three illustrated cards
+and select **執行離線模擬**; these deterministic scenarios need no API key.
+The separate **Live AI** panel needs `OPENAI_API_KEY` or
+`OAI_CONFIG_LIST.json` and may use a hosted model.
 
 The command-line path also crosses `SocialAgentRuntime`:
 

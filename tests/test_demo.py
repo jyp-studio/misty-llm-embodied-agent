@@ -37,6 +37,7 @@ from misty_agent.demo import (
     ANY_FREE_PORT,
     MOST_ONE_REQUEST_MAY_CARRY,
     EXAMPLES,
+    RUNTIME_EXAMPLE,
     LOOPBACK_ONLY,
     Reply,
     answer,
@@ -93,7 +94,7 @@ def test_the_examples_can_be_listed():
 
     assert [example["name"] for example in listed] == sorted(
         golden.stem for golden in GOLDENS.glob("*.jsonl")
-    )
+    ) + [RUNTIME_EXAMPLE.name]
 
 
 def test_an_example_comes_back_as_a_storyboard():

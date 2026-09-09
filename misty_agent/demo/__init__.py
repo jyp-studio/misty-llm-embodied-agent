@@ -21,18 +21,20 @@ looks the same as one that streams a running one — and it means the built-in
 examples and a real run travel exactly the same path, which removes a whole
 mechanism and its seam (`PLAN.md` §16.4).
 
-## The examples are read from `tests/goldens/`, not copied
+## The original examples are read from `tests/goldens/`, not copied
 
 A copy could differ from the spec it claims to be, in the one place a visitor
 is asked to take the claim seriously. The cost — this package needing a
 sibling directory that an installed copy would not have — is weighed in
 `PLAN.md` §16.31.
 
-**Four of the five were written before the ReAct loop existed. The fifth was
+**Four of the five goldens were written before the ReAct loop existed. The fifth was
 not.** It was added at M7 #13, to pin `error` once runtime failure became a
 named outcome. So provenance is per example and travels *in the payload*
 rather than only in the HTML — a claim printed by JavaScript is a claim no
-test here can read, which is the hole `storyboard.py` exists to close.
+test here can read, which is the hole `storyboard.py` exists to close. Ticket
+01 adds a sixth, generated scenario; it crosses `SocialAgentRuntime` before
+its Journal reaches that same replay path.
 """
 
 from __future__ import annotations
@@ -57,7 +59,15 @@ from misty_agent.app import (
     look_at,
     simulated_session,
 )
+from misty_agent.fakes import FakeClock
 from misty_agent.perception.asr import OpenAITranscriber, wav_to_pcm
+from misty_agent.runtime import (
+    RuntimeResult,
+    ScenarioInputAdapter,
+    SocialAgentRuntime,
+    TimedText,
+)
+from misty_agent.scenarios import EXPLICIT_TEXT_REQUEST, ScenarioModel
 
 #: The only address this binds. A demo that listened on every interface would
 #: put a Journal — which carries what people said — on whatever network the
@@ -107,11 +117,12 @@ class Example:
     title: str
     provenance: str
     #: What this Episode *is*, as one word a page can style by and a test can
-    #: read. Three, because M8 #10 added a third and a boolean cannot hold it
-    #: without the third meaning being smuggled into the false case:
+    #: read. Four, because a generated runtime scenario is different from
+    #: both a pre-authored specification and a live visitor request:
     #:
     #: * `specification` — written before the loop existed;
     #: * `added-later` — the one golden that was not;
+    #: * `scenario` — generated through the deterministic runtime seam;
     #: * `live` — something that happened on this machine a moment ago.
     #:
     #: 「不得讓觀看者搞混哪個是規格、哪個是剛跑的」 is the ticket's line, and
@@ -157,6 +168,19 @@ EXAMPLES: Tuple[Example, ...] = (
     ),
 )
 
+#: Ticket 01's first autonomous path.  Unlike ``EXAMPLES``, this is not a
+#: pre-authored Journal: requesting it feeds a timed input through the
+#: Attention Loop and lets the existing ReAct core produce the Journal that
+#: the page replays.
+RUNTIME_EXAMPLE = Example(
+    EXPLICIT_TEXT_REQUEST.name,
+    EXPLICIT_TEXT_REQUEST.title,
+    "A deterministic scenario run through SocialAgentRuntime on this machine; "
+    "no hosted model, network, or Misty II was used",
+    "scenario",
+    "",
+)
+
 
 @dataclass(frozen=True)
 class Reply:
@@ -192,7 +216,10 @@ def answer(
     if path == "/":
         return Reply(200, {"Content-Type": "text/html; charset=utf-8"}, _PAGE.read_bytes())
     if path == "/examples":
-        return _json(200, [asdict(example) for example in EXAMPLES])
+        return _json(
+            200,
+            [asdict(example) for example in (*EXAMPLES, RUNTIME_EXAMPLE)],
+        )
     if path.startswith("/examples/"):
         name, slash, below = path[len("/examples/"):].partition("/")
         if slash:
@@ -206,8 +233,11 @@ def _example(name: str) -> Reply:
 
     `name` is the only input here that reaches the filesystem, so it is
     matched against the examples rather than joined onto a path: `..` and a
-    slash and an encoded slash are all simply not one of five names.
+    slash and an encoded slash are all simply not one of six names.
     """
+    if name == RUNTIME_EXAMPLE.name:
+        return _runtime_example()
+
     found = next((example for example in EXAMPLES if example.name == name), None)
     if found is None:
         return _json(404, {"error": f"there is no example called {name!r}"})
@@ -256,6 +286,59 @@ def _example(name: str) -> Reply:
             "storyboard": board,
         },
     )
+
+
+def _runtime_example() -> Reply:
+    """Generate and project the first complete SocialAgentRuntime scenario."""
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+    runtime = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            EXPLICIT_TEXT_REQUEST.inputs,
+        ),
+        session=session,
+        clock=clock,
+    )
+    result = runtime.run()
+    episode = result.episodes[0]
+    storyboard = storyboard_of(episode.journal.records)
+    board = asdict(storyboard)
+    for moment, line in zip(
+        board["moments"], to_jsonl(episode.journal.records).splitlines()
+    ):
+        moment["line"] = line
+
+    return _json(
+        200,
+        {
+            "example": asdict(RUNTIME_EXAMPLE),
+            "runtime": _runtime_payload(result),
+            "moves": list(what_moves(storyboard)),
+            "storyboard": board,
+        },
+    )
+
+
+def _runtime_payload(result: RuntimeResult) -> dict:
+    """The runtime facts a Demo client can inspect beside the Storyboard."""
+    return {
+        "ending": result.ending,
+        "records": [asdict(record) for record in result.records],
+        "episodes": [
+            {
+                "cue_id": run.cue_id,
+                "cue_kind": run.cue_kind,
+                "outcome": asdict(run.outcome),
+                "episode_id": run.journal.records[0].episode_id,
+            }
+            for run in result.episodes
+        ],
+    }
 
 
 #: The parts of `RobotState` the panel draws, and what to call them.
@@ -401,6 +484,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         "perception": perceived,
         "heard": heard,
         "moves": [],
+        "runtime": None,
         "storyboard": None,
         "why_no_episode": None,
     }
@@ -409,8 +493,18 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         answered["why_no_episode"] = f"{MissingApiKey()}\n\n{ONLY_ONE_REACHES_A_PAGE}"
         return _json(200, answered)
 
-    session = simulated_session(seen, model=OpenAIModel(), clock=SystemClock())
-    _, journal = session.episode(trigger, said, render=False)
+    clock = SystemClock()
+    session = simulated_session(seen, model=OpenAIModel(), clock=clock)
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [TimedText(at_s=0.0, text=said, trigger=trigger)],
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+    episode = result.episodes[0]
+    journal = episode.journal
     live = storyboard_of(journal.records)
     board = asdict(live)
     for moment, line in zip(board["moments"], to_jsonl(journal.records).splitlines()):
@@ -421,6 +515,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         moment["line"] = line
     answered["storyboard"] = board
     answered["moves"] = list(what_moves(live))
+    answered["runtime"] = _runtime_payload(result)
     return _json(200, answered)
 
 

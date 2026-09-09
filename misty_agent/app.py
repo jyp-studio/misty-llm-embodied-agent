@@ -13,13 +13,12 @@ thing *is* the last piece of this wiring, and a module run as
 that later imported `misty_agent.__main__` to reuse the assembly would get a
 second copy of it, constants and all.
 
-## One Episode, not a session
+## The Episode assembly seam
 
-`PLAN.md` §15.1: the public entry is "feed one trigger, run one Episode".
-There is no "wait until somebody speaks" loop, and that is a decision rather
-than an omission — the outer loop needs the audio stream, and `HANDOFF.md` §4
-records that its transcription and voice detection share a thread, a defect
-nobody has fixed. Building ReAct on top of it would be building on that.
+`Session.episode` owns the dependencies and safety boundary for exactly one
+bounded Episode. `SocialAgentRuntime` is now the product's outer seam and
+calls this method after selecting an Interaction Cue. Keeping the one-Episode
+method public also leaves focused ReAct and driver tests a small interface.
 
 ## The clock
 
@@ -236,6 +235,16 @@ class Session:
             # The sensor's thread, where nothing would catch it. `stop.py`
             # gives the same reasoning at more length.
             pass
+
+    def request_stop(self, source: str) -> bool:
+        """Ask the active Episode to abort, if there is one.
+
+        Runtime shutdown and a bumper are different sources of the same
+        bounded interruption.  The runtime uses this public boundary rather
+        than reaching into ``_running`` or pretending shutdown was a foot.
+        """
+        running = self._running
+        return running.request(source) if running is not None else False
 
     def _microphone(self) -> Optional[Any]:
         """The ears, but only if they can actually be listened to.
@@ -729,4 +738,3 @@ def _one_episode(
         )
         return 1
     return 0
-

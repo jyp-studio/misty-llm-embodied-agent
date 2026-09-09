@@ -815,7 +815,7 @@ def test_the_kinds_do_not_all_say_the_same_thing():
 LINES = {
     "episode_started": "episode began, woken by speech",
     "turn_started": "turn 3",
-    "model_called": "  thought for 1840ms, 812+11 tokens",
+    "model_called": "  model replied in 1840ms, 812+11 tokens",
     "tool_called": "  speak(text='hello')",
     "tool_rejected": "  move_head refused: pitch 140 is outside the permitted range",
     "observation": "  -> ok, 142cm away",

@@ -18,10 +18,10 @@ first tracer bullet is deliberately narrow:
 3. Existing Tool dispatch affects the simulated Misty and produces the typed
    Episode Journal.
 4. Runtime output carries both Attention/Cue records and Episode Journals.
-5. The Demo presents three horizontal social scenarios: greeting, a scripted
-   crying Care Cue, and a scripted A-to-B handoff. Each card uses a shared
-   acceptance declaration, displays its runtime trace, and replays the
-   completed Journal.
+5. The Demo presents three horizontal social scenarios. Greeting is the only
+   runnable card; its human-readable result is derived from the current
+   runtime records and Journal. Crying and A-to-B are visibly locked previews
+   for tickets 06 and 08, with no executable scripted substitute.
 6. Offline scenario execution is visually and mechanically separate from the
    optional Live AI panel, so the no-key path no longer looks blocked by a
    hosted-model requirement.
@@ -48,8 +48,9 @@ To inspect the no-key tracer bullet:
 .venv/bin/python -m misty_agent --demo
 ```
 
-Choose one of the three illustrated cards and select `執行離線模擬`. The page
-is loopback-only; all three card runs are deterministic and need no API key.
+Choose the greeting card and select `執行離線模擬`. The page is loopback-only;
+the run is deterministic and needs no API key. Its input and model decisions
+are predefined, while Runtime, Tool dispatch and Journal execute afresh.
 
 ## Evidence boundary
 
@@ -62,9 +63,9 @@ hardware-unverified.
 The initial social runtime does not yet implement wake detection, visual cue
 classification, Trigger Evidence beyond the explicit input, cue queues,
 identity-aware handoff, Skills, target-aware movement, or a live input adapter.
-The crying and A-to-B cards inject their Care Cue/person labels; they are UI
-acceptance stories, not evidence that those recognizers exist. Those are
-separate vertical tickets rather than implied capabilities.
+The crying and A-to-B cards are roadmap previews only. They do not inject a
+Care Cue or person labels and cannot be run until their corresponding vertical
+tickets implement the capability.
 
 ## Next ticket
 

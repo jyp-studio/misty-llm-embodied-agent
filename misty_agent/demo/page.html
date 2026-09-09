@@ -67,24 +67,38 @@
     flex: 0 0 auto; padding: 12px 19px; color: #fff; background: #0071e3;
     border: 0; border-radius: 999px; cursor: pointer; font-weight: 600;
   }
-  .run-button:hover { background: #0077ed; }
-  .run-button[disabled] { opacity: .55; cursor: wait; }
+  .run-button:hover:not([disabled]) { background: #0077ed; }
+  .run-button[disabled] { color: #6e6e73; background: #e8e8ed; cursor: not-allowed; }
+  .run-button[aria-busy="true"] { color: #fff; background: #0071e3; cursor: wait; opacity: .65; }
   .run-button svg { width: 17px; height: 17px; fill: currentColor; }
-  .sequence { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 28px; background: #fff; border-radius: 16px; }
-  .sequence article { display: flex; gap: 13px; min-height: 156px; padding: 22px; }
-  .sequence article + article { border-left: 1px solid #e8e8ed; }
-  .sequence .number { color: #0071e3; font-weight: 600; }
-  .sequence small { display: block; margin-bottom: 5px; color: #86868b; }
-  .sequence h3 { margin: 0; font-size: 18px; }
-  .sequence p { margin: 7px 0 0; color: #6e6e73; font-size: 14px; }
+  .flow-label { display: block; margin-top: 26px; color: #6e6e73; font-size: 13px; font-weight: 600; letter-spacing: .06em; }
+  .flow { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 28px; background: #fff; border-radius: 16px; }
+  .flow article { display: flex; gap: 13px; min-height: 156px; padding: 22px; }
+  .flow article:not(:nth-child(3n+1)) { border-left: 1px solid #e8e8ed; }
+  .flow article:nth-child(n+4) { border-top: 1px solid #e8e8ed; }
+  .flow .number { color: #0071e3; font-weight: 600; }
+  .flow small { display: block; margin-bottom: 5px; color: #86868b; }
+  .flow h3 { margin: 0; font-size: 18px; }
+  .flow p { margin: 7px 0 0; color: #6e6e73; font-size: 14px; }
   .truth { display: flex; gap: 11px; align-items: start; margin-top: 17px; color: #424245; }
   .truth svg { flex: 0 0 auto; width: 21px; height: 21px; color: #0071e3; }
   .truth div { display: grid; gap: 2px; }
   .truth span { color: #6e6e73; font-size: 14px; }
-  .run-facts { display: none; margin-top: 18px; padding-top: 17px; border-top: 1px solid #d2d2d7; }
-  .run-facts.visible { display: flex; flex-wrap: wrap; gap: 10px 28px; }
-  .run-facts span { color: #6e6e73; }
-  .run-facts b { color: #1d1d1f; }
+  .execution-result { margin-top: 24px; padding: 20px 22px; background: #fff; border: 1px solid #d2d2d7; border-radius: 14px; }
+  .execution-result[hidden] { display: none; }
+  .execution-result h3 { margin: 4px 0 0; font-size: 20px; }
+  .execution-result p { max-width: 790px; margin: 8px 0 0; color: #6e6e73; font-size: 14px; }
+  .execution-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+  .execution-badges span { padding: 5px 9px; color: #424245; background: #f5f5f7; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .decision-note { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e8e8ed; color: #6e6e73; font-size: 13px; }
+  .replay { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  .replay button { padding: 9px 14px; color: #0066cc; background: #fff; border: 1px solid #b9b9bf; border-radius: 999px; cursor: pointer; }
+  .replay button[disabled] { color: #86868b; background: #f5f5f7; cursor: not-allowed; }
+  .replay span { color: #86868b; font-size: 13px; }
+  .replay-stage { display: grid; gap: 4px; margin-top: 13px; padding: 16px; background: #f5f5f7; border-radius: 12px; }
+  .replay-stage[hidden] { display: none; }
+  .replay-stage small { color: #6e6e73; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+  .replay-stage span { color: #6e6e73; font-size: 14px; }
   .proof { margin-top: 24px; }
   .proof details { border-top: 1px solid #d2d2d7; border-bottom: 1px solid #d2d2d7; }
   .proof summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 19px 2px; cursor: pointer; }
@@ -107,8 +121,8 @@
     .scenario-card { grid-template-columns: 210px 1fr; grid-template-rows: auto; padding-bottom: 0; }
     .card-copy { padding: 22px; }
     .result-header { align-items: stretch; flex-direction: column; }
-    .sequence { grid-template-columns: 1fr; }
-    .sequence article + article { border-top: 1px solid #e8e8ed; border-left: 0; }
+    .flow { grid-template-columns: 1fr; }
+    .flow article:not(:first-child) { border-top: 1px solid #e8e8ed; border-left: 0; }
     .live-form { grid-template-columns: 1fr; }
     .live-form input[type="file"] { max-width: none; }
   }
@@ -135,8 +149,8 @@
 
 <section class="hero">
   <span class="eyebrow">INTERACTIVE DEMO</span>
-  <h1>看見 Misty 如何理解<br>每一次社交互動。</h1>
-  <p>選擇情境，執行模擬，查看它收到什麼、如何決定，以及最後做了什麼。</p>
+  <h1>看見目前完成的能力<br>真的執行到哪裡。</h1>
+  <p>已完成案例可以直接執行；未完成情境會標示對應 ticket，不以腳本假裝解鎖。</p>
 </section>
 
 <main>
@@ -149,14 +163,14 @@
           <span class="speech">Misty，你好！</span>
           <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
         </span>
-        <span class="card-copy"><small>CASE 01 · 現在可執行</small><strong>有人和 Misty 打招呼</strong><span>一句明確的問候，開啟完整 Episode。</span></span>
+        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
       </button>
       <button class="scenario-card" type="button" data-scenario="crying-care" aria-pressed="false">
         <span class="scene">
           <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="tear">●</span></span>
           <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
         </span>
-        <span class="card-copy"><small>CASE 02 · SCRIPTED CUE</small><strong>有人在 Misty 面前哭泣</strong><span>觀察線索並詢問，不擅自診斷情緒。</span></span>
+        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
       </button>
       <button class="scenario-card" type="button" data-scenario="speaker-handoff" aria-pressed="false">
         <span class="scene">
@@ -165,19 +179,28 @@
           <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
           <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><b class="person-label">B</b></span>
         </span>
-        <span class="card-copy"><small>CASE 03 · SCRIPTED HANDOFF</small><strong>A 聊完後，切換成 B</strong><span>結束 A 的互動，再由 B 開啟新的 Episode。</span></span>
+        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
       </button>
     </div>
   </section>
 
   <section class="result" aria-labelledby="result-title">
     <div class="result-header">
-      <div><span class="eyebrow">SELECTED CASE</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">目前的最小垂直路徑：從 Explicit Request 一路執行到模擬說話。</p></div>
+      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 01</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">目前的最小垂直路徑：從 Explicit Request 一路執行到模擬說話。</p></div>
       <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
     </div>
-    <div class="sequence" id="steps"></div>
+    <div class="execution-result" id="executionResult" aria-live="polite" hidden>
+      <span class="eyebrow">CURRENT RUN</span>
+      <h3 id="executionHeadline"></h3>
+      <div class="execution-badges"><span id="modelBadge"></span><span id="robotBadge"></span></div>
+      <p id="executionDetail"></p>
+      <div class="decision-note"><b id="decisionHeadline"></b><br><span id="decisionDetail"></span></div>
+      <div class="replay"><button id="replayJournal" type="button" disabled>重播 Episode Journal</button><span id="replayCounter"></span></div>
+      <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span></div>
+    </div>
+    <span class="flow-label" id="flow-label">執行前預覽</span>
+    <div class="flow" id="flow"></div>
     <div class="truth"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6m0-10v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><div><b id="truth-title">此案例現在可以執行</b><span id="truth-copy">使用 scripted model 與 simulated robot；不呼叫網路，未連接 Misty II。</span></div></div>
-    <div class="run-facts" id="runFacts"></div>
   </section>
 
   <section class="proof">
@@ -185,7 +208,7 @@
   </section>
 
   <details class="live">
-    <summary><span><b>Live AI 自由輸入</b><small>這是獨立功能，需要 OpenAI API key；上方三個離線案例不需要。</small></span><span aria-hidden="true">⌄</span></summary>
+    <summary><span><b>Live AI 自由輸入</b><small>這是獨立功能，需要 OpenAI API key；上方可執行的問候案例不需要。</small></span><span aria-hidden="true">⌄</span></summary>
     <div class="live-form">
       <input id="said" type="text" value="Misty，你好" aria-label="對 Misty 說的話">
       <input id="picture" type="file" accept="image/*" aria-label="上傳照片">
@@ -201,7 +224,10 @@
 <script>
 "use strict";
 const byId = (id) => document.getElementById(id);
-const state = { selected: "greeting", scenarios: {} };
+const state = {
+  selected: "greeting", scenarios: {}, replayMoments: [], replayTimer: null,
+  runSerial: 0,
+};
 
 async function boot() {
   const [scenarios, options] = await Promise.all([
@@ -209,47 +235,137 @@ async function boot() {
     fetch("/options").then((response) => response.json()),
   ]);
   state.scenarios = Object.fromEntries(scenarios.map((scenario) => [scenario.name, scenario]));
+  renderScenarioCards();
   byId("recording").hidden = !options.audio;
   selectScenario("greeting");
 }
 
+function renderScenarioCards() {
+  [...document.querySelectorAll("[data-scenario]")].forEach((card, index) => {
+    const scenario = state.scenarios[card.dataset.scenario];
+    if (!scenario) return;
+    const number = String(index + 1).padStart(2, "0");
+    const status = scenario.availability === "ready"
+      ? `CASE ${number} · 現在可執行`
+      : `CASE ${number} · TICKET ${scenario.ticket} 預覽`;
+    card.querySelector("[data-card-status]").textContent = status;
+    card.querySelector("[data-card-title]").textContent = scenario.title;
+    card.querySelector("[data-card-subtitle]").textContent = scenario.subtitle;
+    card.setAttribute("aria-label", `${scenario.title} — ${status}`);
+  });
+}
+
 function selectScenario(name) {
+  state.runSerial += 1;
   state.selected = name;
   for (const card of document.querySelectorAll("[data-scenario]")) {
     card.setAttribute("aria-pressed", String(card.dataset.scenario === name));
   }
   const scenario = state.scenarios[name];
   if (!scenario) return;
+  resetReplay();
   byId("result-title").textContent = scenario.title;
   byId("scenario-summary").textContent = scenario.subtitle;
-  byId("steps").innerHTML = scenario.steps.map((step, index) => `
-    <article><span class="number">0${index + 1}</span><div><small>${escapeText(step.label)}</small>
-      <h3>${escapeText(step.headline)}</h3><p>${escapeText(step.detail)}</p></div></article>`).join("");
-  byId("truth-title").textContent = scenario.availability === "ready"
+  renderFlow(scenario.preview);
+  const ready = scenario.availability === "ready";
+  byId("result-mode").textContent = ready
+    ? `目前可執行 · TICKET ${scenario.ticket}`
+    : `ROADMAP PREVIEW · TICKET ${scenario.ticket}`;
+  byId("flow-label").textContent = ready ? "執行前預覽" : "未來驗收方向";
+  byId("executionResult").hidden = true;
+  const button = byId("runScenario");
+  button.disabled = !ready;
+  button.setAttribute("aria-busy", "false");
+  button.querySelector("span").textContent = ready
+    ? "執行離線模擬"
+    : `尚未實作 · Ticket ${scenario.ticket}`;
+  byId("truth-title").textContent = ready
     ? "此案例現在可以執行"
-    : "此案例使用腳本注入尚未實作的感知證據";
+    : `尚未實作 · Ticket ${scenario.ticket}`;
   byId("truth-copy").textContent = scenario.limitation;
-  byId("runFacts").className = "run-facts";
-  byId("runFacts").innerHTML = "";
-  byId("runScenario").querySelector("span").textContent = "執行離線模擬";
-  byId("evidence").textContent = "請先執行一個離線模擬。";
+  byId("evidence").textContent = ready
+    ? "請先執行一個離線模擬。"
+    : "這是 roadmap preview，尚無執行結果或 Journal。";
+}
+
+function renderFlow(beats) {
+  byId("flow").innerHTML = beats.map((beat, index) => `
+    <article><span class="number">${String(index + 1).padStart(2, "0")}</span><div><small>${escapeText(beat.label)}</small>
+      <h3>${escapeText(beat.headline)}</h3><p>${escapeText(beat.detail)}</p></div></article>`).join("");
+}
+
+function resetReplay() {
+  if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
+  state.replayTimer = null;
+  state.replayMoments = [];
+  byId("replayJournal").disabled = true;
+  byId("replayCounter").textContent = "";
+  byId("replayStage").hidden = true;
+}
+
+function replayJournal() {
+  if (!state.replayMoments.length) return;
+  if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
+  const button = byId("replayJournal");
+  button.disabled = true;
+  byId("replayStage").hidden = false;
+  let index = 0;
+  const showNext = () => {
+    const moment = state.replayMoments[index];
+    byId("replayCounter").textContent = `${index + 1} / ${state.replayMoments.length}`;
+    byId("replayKind").textContent = moment.kind.replaceAll("_", " ").toUpperCase();
+    byId("replayHeadline").textContent = moment.headline;
+    byId("replayDetail").textContent = moment.detail || "";
+    index += 1;
+    if (index < state.replayMoments.length) {
+      state.replayTimer = window.setTimeout(showNext, 550);
+    } else {
+      state.replayTimer = null;
+      button.disabled = false;
+      button.textContent = "再次重播 Episode Journal";
+    }
+  };
+  showNext();
 }
 
 async function runScenario() {
+  const scenario = state.scenarios[state.selected];
+  if (!scenario || scenario.availability !== "ready") return;
+  const scenarioName = state.selected;
+  const runId = ++state.runSerial;
   const button = byId("runScenario");
   button.disabled = true;
+  button.setAttribute("aria-busy", "true");
   button.querySelector("span").textContent = "執行中…";
+  resetReplay();
+  byId("executionResult").hidden = true;
+  byId("flow-label").textContent = "正在執行";
+  renderFlow(scenario.preview);
+  byId("truth-title").textContent = "正在執行這次模擬";
+  byId("truth-copy").textContent = "正在由目前程式產生 Runtime records 與 Episode Journal。";
   try {
-    const response = await fetch(`/scenarios/${encodeURIComponent(state.selected)}/run`, { method: "POST" });
+    const response = await fetch(`/scenarios/${encodeURIComponent(scenarioName)}/run`, { method: "POST" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "scenario failed");
-    const facts = byId("runFacts");
-    facts.className = "run-facts visible";
-    facts.innerHTML = `<span><b>${payload.episodes.length}</b> Episode${payload.episodes.length === 1 ? "" : "s"}</span>
-      <span><b>${payload.runtime.records.length}</b> Runtime records</span>
-      <span>Ending: <b>${escapeText(payload.runtime.ending)}</b></span>`;
+    if (state.runSerial !== runId || state.selected !== scenarioName) return;
+    const execution = payload.execution;
+    byId("executionResult").hidden = false;
+    byId("executionHeadline").textContent = execution.provenance.headline;
+    byId("modelBadge").textContent = `模型：${execution.provenance.model}`;
+    byId("robotBadge").textContent = `機器人：${execution.provenance.robot}`;
+    byId("executionDetail").textContent = execution.provenance.detail;
+    byId("decisionHeadline").textContent = execution.decision_explanation.headline;
+    byId("decisionDetail").textContent = execution.decision_explanation.detail;
+    byId("flow-label").textContent = "這次實際執行";
+    renderFlow(execution.flow);
+    const ending = execution.flow.at(-1);
+    byId("truth-title").textContent = ending.headline;
+    byId("truth-copy").textContent = ending.detail;
+    state.replayMoments = payload.episodes[0].storyboard.moments;
+    byId("replayJournal").disabled = state.replayMoments.length === 0;
     byId("evidence").textContent = JSON.stringify({
       scenario: payload.scenario.name,
+      execution: payload.execution,
       runtime: payload.runtime,
       timeline: payload.runtime.timeline,
       episodes: payload.episodes.map((episode) => ({
@@ -262,10 +378,20 @@ async function runScenario() {
       })),
     }, null, 2);
   } catch (error) {
-    byId("evidence").textContent = String(error);
+    if (state.runSerial === runId && state.selected === scenarioName) {
+      byId("executionResult").hidden = true;
+      byId("flow-label").textContent = "執行前預覽";
+      renderFlow(scenario.preview);
+      byId("truth-title").textContent = "執行失敗";
+      byId("truth-copy").textContent = String(error);
+      byId("evidence").textContent = String(error);
+    }
   } finally {
-    button.disabled = false;
-    button.querySelector("span").textContent = "再次執行離線模擬";
+    if (state.runSerial === runId && state.selected === scenarioName) {
+      button.disabled = false;
+      button.setAttribute("aria-busy", "false");
+      button.querySelector("span").textContent = "再次執行離線模擬";
+    }
   }
 }
 
@@ -319,6 +445,7 @@ document.querySelector(".scenario-grid").addEventListener("click", (event) => {
   if (card) selectScenario(card.dataset.scenario);
 });
 byId("runScenario").addEventListener("click", runScenario);
+byId("replayJournal").addEventListener("click", replayJournal);
 byId("runLive").addEventListener("click", runLive);
 boot().catch((error) => { byId("evidence").textContent = String(error); });
 </script>

@@ -95,10 +95,19 @@ def test_the_page_leads_with_three_readable_social_scenarios():
 
     assert '<html lang="zh-Hant">' in page
     assert page.count('class="scenario-card') == 3
-    assert "有人和 Misty 打招呼" in page
-    assert "有人在 Misty 面前哭泣" in page
-    assert "A 聊完後，切換成 B" in page
+    assert page.count('<strong data-card-title>') == 3
+    assert page.count('<small data-card-status>') == 3
+    assert page.count('<span data-card-subtitle>') == 3
     assert "執行離線模擬" in page
+    assert 'id="executionResult"' in page
+    assert 'id="replayJournal"' in page
+    assert "storyboard.moments" in page
+    assert "runSerial" in page
+    assert "state.runSerial !== runId" in page
+    assert 'id="runFacts"' not in page
+    assert "SCRIPTED CUE" not in page
+    assert "SCRIPTED HANDOFF" not in page
+    assert 'textContent = "這次情境執行完成"' not in page
     assert "Live AI" in page and "需要 API key" in page
     assert "#16151a" not in page
     assert "opacity: .18" not in page
@@ -112,10 +121,17 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "crying-care",
         "speaker-handoff",
     ]
-    assert all(len(scenario["steps"]) == 3 for scenario in listed)
+    assert [scenario["title"] for scenario in listed] == [
+        "有人和 Misty 打招呼",
+        "有人在 Misty 面前哭泣",
+        "A 聊完後，切換成 B",
+    ]
+    assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
-    assert listed[1]["availability"] == "scripted_only"
-    assert listed[2]["availability"] == "scripted_only"
+    assert listed[1]["availability"] == "planned"
+    assert listed[1]["ticket"] == "06"
+    assert listed[2]["availability"] == "planned"
+    assert listed[2]["ticket"] == "08"
 
 
 def run_scenario(name: str) -> dict:
@@ -139,27 +155,97 @@ def test_the_greeting_card_runs_the_runtime_without_an_api_key(monkeypatch):
     assert payload["episodes"][0]["storyboard"]["outcome"] == "done"
 
 
-def test_the_crying_card_is_an_honest_scripted_care_cue():
-    payload = run_scenario("crying-care")
+def test_the_greeting_result_says_what_the_current_run_actually_did():
+    payload = run_scenario("greeting")
 
-    cue = payload["runtime"]["records"][1]
-    assert cue["cue_kind"] == "care_cue"
-    assert cue["evidence_kind"] == "visual"
-    assert "沒有執行哭泣辨識" in payload["scenario"]["limitation"]
-    assert payload["episodes"][0]["storyboard"]["outcome"] == "done"
+    execution = payload["execution"]
+    assert execution["provenance"] == {
+        "kind": "scripted_current_run",
+        "headline": "這是剛剛執行的模擬結果",
+        "model": "預設腳本模型",
+        "robot": "模擬 Misty",
+        "detail": (
+            "輸入與模型決策預先定義；Runtime、Tool 與 Journal 由目前程式"
+            "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
+        ),
+    }
+    assert execution["flow"] == [
+        {
+            "kind": "input",
+            "label": "人說",
+            "headline": "「Misty，你好！」",
+            "detail": "這段輸入由案例預先定義。",
+        },
+        {
+            "kind": "cue",
+            "label": "系統判定",
+            "headline": "明確互動請求",
+            "detail": "Explicit Request",
+        },
+        {
+            "kind": "decision",
+            "label": "Misty 選擇",
+            "headline": "說話",
+            "detail": "speak Tool",
+        },
+        {
+            "kind": "effect",
+            "label": "模擬 Misty",
+            "headline": "「嗨！很高興見到你。」",
+            "detail": "模擬說話成功",
+        },
+        {
+            "kind": "decision",
+            "label": "Misty 選擇",
+            "headline": "結束互動",
+            "detail": "done Tool",
+        },
+        {
+            "kind": "ending",
+            "label": "結果",
+            "headline": "情境執行完成",
+            "detail": "有限情境已播放完畢，Runtime 正常停止。",
+        },
+    ]
+    assert execution["decision_explanation"] == {
+        "available": False,
+        "headline": "Ticket 01 尚無 Decision Note",
+        "detail": "目前可驗證的是 Tool choice；決策說明將由 ticket 02 加入。",
+    }
 
 
-def test_the_handoff_card_runs_a_then_b_as_separate_episodes():
-    payload = run_scenario("speaker-handoff")
+def test_the_human_ending_is_derived_from_an_abnormal_current_run(monkeypatch):
+    class NeverDoneModel:
+        def decide(self, working_context, tools):
+            return Says("speak").decide(working_context, tools)
 
-    assert [episode["actor"] for episode in payload["episodes"]] == ["A", "B"]
-    assert len({episode["episode_id"] for episode in payload["episodes"]}) == 2
-    assert [
-        record["cue_id"]
-        for record in payload["runtime"]["records"]
-        if record["type"] == "cue_detected"
-    ] == ["cue-1", "cue-2"]
-    assert "沒有執行人物辨識" in payload["scenario"]["limitation"]
+    monkeypatch.setattr(
+        "misty_agent.demo.ScenarioModel", lambda decisions: NeverDoneModel()
+    )
+
+    payload = run_scenario("greeting")
+
+    assert payload["execution"]["flow"][-1] == {
+        "kind": "ending",
+        "label": "結果",
+        "headline": "情境未正常完成",
+        "detail": "Episode: turn_limit; Runtime: input_exhausted",
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "ticket"),
+    [("crying-care", "06"), ("speaker-handoff", "08")],
+)
+def test_a_planned_scenario_cannot_be_run_before_its_ticket(name, ticket):
+    reply = answer("POST", f"/scenarios/{name}/run")
+
+    assert reply.status == 409
+    payload = json.loads(reply.body)
+    assert payload == {
+        "error": f"scenario {name!r} is planned for ticket {ticket}",
+        "ticket": ticket,
+    }
 
 
 def test_a_scenario_name_cannot_be_used_as_a_path():

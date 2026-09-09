@@ -715,7 +715,7 @@ def describe(record: Record) -> Described:
         return Described(f"turn {record.turn}", tone="boundary")
     if isinstance(record, ModelCalled):
         return Described(
-            f"thought for {record.latency_ms}ms",
+            f"model replied in {record.latency_ms}ms",
             f"{record.tokens_in}+{record.tokens_out} tokens",
         )
     if isinstance(record, ToolCalled):
@@ -801,4 +801,3 @@ def describe_line(record: Record) -> str:
     # else reads as one phrase with a qualifier.
     separator = ": " if said.tone in ("refused", "failed") else ", "
     return f"{indent}{marker}{said.headline}{separator}{said.detail}"
-

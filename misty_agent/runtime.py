@@ -3,10 +3,9 @@
 ``SocialAgentRuntime`` is the product's highest public seam: an input source
 is watched for an Interaction Cue, a selected cue opens the existing bounded
 Episode runner, and the result keeps both the Attention records and the typed
-Episode Journal.  Ticket 01's live input deliberately supports only timed text
-that is an Explicit Request.  Deterministic Demo scenarios may inject another
-already-selected cue kind, but they do not claim to detect it.  Wake detection,
-visual classification and cue queues belong to later vertical slices.
+Episode Journal.  Ticket 01 deliberately supports only timed text that is an
+Explicit Request.  Wake detection, visual classification, other cue kinds and
+cue queues belong to later vertical slices.
 
 The finite ``ScenarioInputAdapter`` is the no-hardware side of the InputSource
 boundary.  Waiting uses the injected clock, so an acceptance scenario can
@@ -55,10 +54,9 @@ class RuntimePhase(str, Enum):
 
 
 class CueKind(str, Enum):
-    """Interaction Cue kinds a provider may hand to the runtime."""
+    """Interaction Cue kinds implemented by this vertical slice."""
 
     EXPLICIT_REQUEST = "explicit_request"
-    CARE_CUE = "care_cue"
 
 
 class EvidenceKind(str, Enum):
@@ -87,11 +85,10 @@ class ScheduledInput:
 
 @dataclass(frozen=True)
 class TimedText(RuntimeInput):
-    """Textual evidence plus the Interaction Cue selected from it."""
+    """A transcript plus the modality that supplied its Trigger Evidence."""
 
     text: str
     evidence_kind: EvidenceKind = EvidenceKind.SPEECH
-    cue_kind: CueKind = CueKind.EXPLICIT_REQUEST
 
 
 class ScenarioClock(Protocol):
@@ -304,7 +301,7 @@ class SocialAgentRuntime:
                     CueDetected(
                         t=self._elapsed(),
                         cue_id=cue_id,
-                        cue_kind=item.cue_kind,
+                        cue_kind=CueKind.EXPLICIT_REQUEST,
                         evidence_kind=item.evidence_kind,
                         text=item.text,
                     )
@@ -327,7 +324,7 @@ class SocialAgentRuntime:
                 episodes.append(
                     RuntimeEpisode(
                         cue_id=cue_id,
-                        cue_kind=item.cue_kind,
+                        cue_kind=CueKind.EXPLICIT_REQUEST,
                         input=item,
                         outcome=outcome,
                         journal=journal,

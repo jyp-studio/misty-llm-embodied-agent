@@ -2499,3 +2499,27 @@ Care Cue，A/B 情境直接注入人物標記並開兩個獨立 Episode；頁面
 做哭泣辨識或人物辨識。這些案例驗證 runtime 能否接住已選出的 cue 和維持 Episode 邊界，不是感知
 能力或真機行為的證據。本專案仍沒有 Misty II，三個案例都只使用 scripted model、fake clock 與
 simulated robot。
+
+### 16.50 Demo 必須區分「剛執行」、「scripted」與「尚未實作」（ticket 01 follow-up）
+
+§16.49 把三個社交情境放上首頁後，仍留下更根本的混淆：三張卡都能 Run，使預先注入的哭泣
+Care Cue 與 A/B 標記看起來像已完成能力；問候案例執行後又只把 `1 Episode`、
+`5 Runtime records`、`input_exhausted` 放在主畫面，訪客看不見 Misty 選了哪個 Tool、說了什麼，
+也無法分辨這是歷史紀錄、即時 LLM，還是 scripted test double。
+
+Demo 從此遵守以下展示契約：
+
+- **已完成且可執行**：Run 必須穿過目前程式的生產 seam，畫面從這次回傳的 runtime records 與
+  Journal 衍生輸入、Cue、Tool choice、simulated effect 與結束結果；不得拿手寫的預期步驟冒充結果。
+- **Scripted provider**：可以作為 deterministic acceptance evidence，但必須在結果旁直接說明模型
+  決策是預先定義的；它證明 orchestration、Tool dispatch 與 Journal，不證明 LLM 自主決策。
+- **尚未實作**：可以作為 roadmap preview 留在情境卡上，但沒有 Run route。哭泣案例等 ticket 06，
+  A→B handoff 等 ticket 08；在那之前不能用注入 cue／actor 的腳本把卡片假解鎖。
+- **歷史 replay**：若未來保存一次驗證結果，必須帶來源 commit、測試或 Journal provenance，並與
+  「剛剛執行」分開標示。手寫 fixture 不得稱為過去真實執行。
+- **兩層語言**：主結果用「人說了什麼、系統判定、Misty 選擇、模擬回應、情境執行完成」；
+  `Episode`、record count、typed ending 與原始 Journal 收在工程細節。`Decision Note` 到 ticket 02
+  才存在，ticket 01 不得把 Tool choice 包裝成私有思考或 chain-of-thought。
+
+因此 ticket 01 follow-up 只解鎖 greeting。每張後續 ticket 若有 Demo acceptance criterion，完成時
+同時交付人可讀的可觀察成果與同 seam 的 tests；不需要等所有 tickets 完成才看得到 UI 變化。

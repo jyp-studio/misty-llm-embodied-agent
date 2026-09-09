@@ -13,45 +13,65 @@ from enum import Enum
 from typing import Any, Mapping, Sequence, Tuple
 
 from misty_agent.agent.react import Decision
-from misty_agent.runtime import (
-    CueKind,
-    EvidenceKind,
-    ScheduledInput,
-    TimedText,
-)
+from misty_agent.runtime import ScheduledInput, TimedText
 
 
 @dataclass(frozen=True)
-class ScenarioStep:
-    """One plain-language claim the Demo can show for a scripted run."""
+class PresentationBeat:
+    """One plain-language beat in a preview or observed execution flow."""
 
+    kind: str
     label: str
     headline: str
     detail: str
 
 
 class ScenarioAvailability(str, Enum):
-    """How much of a Demo scenario is implemented rather than injected."""
+    """Whether a Demo card can execute against the current product seam."""
 
     READY = "ready"
-    SCRIPTED_ONLY = "scripted_only"
+    PLANNED = "planned"
 
 
 @dataclass(frozen=True)
-class AcceptanceScenario:
-    """One deterministic, no-hardware story through SocialAgentRuntime."""
+class ScenarioCard:
+    """The honest status and preview copy for one Demo choice."""
 
     name: str
     title: str
     subtitle: str
     availability: ScenarioAvailability
+    ticket: str
     limitation: str
+    preview: Tuple[PresentationBeat, ...]
+
+
+@dataclass(frozen=True)
+class PlannedScenario(ScenarioCard):
+    """A roadmap preview with deliberately no executable behavior."""
+
+    def __post_init__(self) -> None:
+        if self.availability is not ScenarioAvailability.PLANNED:
+            raise ValueError("a planned scenario must have planned availability")
+        if not self.ticket:
+            raise ValueError("a planned scenario must name its future ticket")
+
+
+@dataclass(frozen=True)
+class AcceptanceScenario(ScenarioCard):
+    """One deterministic, no-hardware story through SocialAgentRuntime."""
+
     actors: Tuple[str, ...]
-    steps: Tuple[ScenarioStep, ...]
     inputs: Tuple[ScheduledInput, ...]
     decisions: Tuple[Decision, ...]
 
     def __post_init__(self) -> None:
+        if self.availability is not ScenarioAvailability.READY:
+            raise ValueError("an acceptance scenario must be ready to run")
+        if not self.inputs:
+            raise ValueError("a runnable scenario must declare an input")
+        if not self.decisions:
+            raise ValueError("a runnable scenario must declare model decisions")
         if len(self.actors) != len(self.inputs):
             raise ValueError("each scenario input must name exactly one actor")
 
@@ -77,18 +97,22 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     title="有人和 Misty 打招呼",
     subtitle="一句明確的問候，開啟完整 Episode。",
     availability=ScenarioAvailability.READY,
+    ticket="01",
     limitation=(
         "使用 scripted model 與 simulated robot；沒有呼叫網路，也沒有連接 "
         "Misty II。"
     ),
     actors=("person",),
-    steps=(
-        ScenarioStep("收到", "「Misty，你好！」", "語音被分類為明確互動請求。"),
-        ScenarioStep("決定", "回應問候", "ReAct 選擇 speak Tool。"),
-        ScenarioStep(
+    preview=(
+        PresentationBeat(
+            "input", "收到", "「Misty，你好！」", "語音被分類為明確互動請求。"
+        ),
+        PresentationBeat("decision", "決定", "回應問候", "ReAct 選擇 speak Tool。"),
+        PresentationBeat(
+            "effect",
             "模擬動作",
             "「嗨！很高興見到你。」",
-            "Episode 正常結束，回到等待狀態。",
+            "情境輸入播放完畢，Runtime 正常停止。",
         ),
     ),
     inputs=(
@@ -106,92 +130,60 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
 )
 
 
-CRYING_CARE = AcceptanceScenario(
+CRYING_CARE = PlannedScenario(
     name="crying-care",
     title="有人在 Misty 面前哭泣",
-    subtitle="觀察線索並詢問，不擅自診斷情緒。",
-    availability=ScenarioAvailability.SCRIPTED_ONLY,
+    subtitle="未來將觀察線索並自主決定是否詢問。",
+    availability=ScenarioAvailability.PLANNED,
+    ticket="06",
     limitation=(
-        "這是注入的 Care Cue，沒有執行哭泣辨識；也沒有連接 Misty II。"
+        "Ticket 06 尚未實作：目前沒有哭泣辨識、Care Cue 分類或自主回應。"
     ),
-    actors=("person",),
-    steps=(
-        ScenarioStep("收到", "觀察到哭泣跡象", "由腳本注入 visual Care Cue。"),
-        ScenarioStep("決定", "先詢問是否需要幫忙", "不靠近、不碰觸、不預設答案。"),
-        ScenarioStep(
-            "模擬動作",
-            "「你需要我幫忙嗎？」",
-            "詢問一次後結束，不把線索當成診斷。",
+    preview=(
+        PresentationBeat(
+            "input", "預計收到", "可觀察的哭泣跡象", "保留不確定性，不診斷情緒。"
         ),
-    ),
-    inputs=(
-        ScheduledInput(
-            at_s=0.5,
-            input=TimedText(
-                text="A person nearby appears to be crying.",
-                evidence_kind=EvidenceKind.VISUAL,
-                cue_kind=CueKind.CARE_CUE,
-            ),
+        PresentationBeat(
+            "decision", "預計決定", "由 LLM 選擇是否介入", "不固定映射成安慰台詞。"
         ),
-    ),
-    decisions=(
-        Decision(
-            tool="speak",
-            args={"text": "你需要我幫忙嗎？"},
-            tokens_in=22,
-            tokens_out=7,
+        PresentationBeat(
+            "effect",
+            "預計動作",
+            "詢問、觀察或保持距離",
+            "實際可接受結果將由 ticket 06 定義。",
         ),
-        Decision(tool="done", args={}, tokens_in=30, tokens_out=1),
     ),
 )
 
 
-SPEAKER_HANDOFF = AcceptanceScenario(
+SPEAKER_HANDOFF = PlannedScenario(
     name="speaker-handoff",
     title="A 聊完後，切換成 B",
-    subtitle="結束 A 的互動，再把 B 當成新的對話對象。",
-    availability=ScenarioAvailability.SCRIPTED_ONLY,
+    subtitle="未來將結束 A 的互動，再由 B 開啟新 Episode。",
+    availability=ScenarioAvailability.PLANNED,
+    ticket="08",
     limitation=(
-        "A/B 標記由腳本注入，沒有執行人物辨識；兩次互動使用兩個獨立 "
-        "Episode，也沒有連接 Misty II。"
+        "Ticket 08 尚未實作：目前沒有 target ownership、Cue queue 或人物交接。"
     ),
-    actors=("A", "B"),
-    steps=(
-        ScenarioStep(
-            "收到",
-            "A 先問候，接著 B 叫 Misty",
-            "腳本依序送入兩個 Explicit Request。",
+    preview=(
+        PresentationBeat(
+            "input",
+            "預計收到",
+            "A 互動期間，B 明確呼叫 Misty",
+            "B 的 request 將先進入 Cue queue。",
         ),
-        ScenarioStep(
-            "決定",
-            "先結束 A，再回應 B",
-            "A 與 B 各自擁有一個 bounded Episode。",
+        PresentationBeat(
+            "decision",
+            "預計決定",
+            "先安全結束 A",
+            "不平行開啟第二個 Episode。",
         ),
-        ScenarioStep(
-            "模擬動作",
-            "向 B 開始新的對話",
-            "A 的 Episode Journal 不會混入 B 的內容。",
+        PresentationBeat(
+            "effect",
+            "預計動作",
+            "再向 B 開始新互動",
+            "完整 target handoff 將由 ticket 08 驗收。",
         ),
-    ),
-    inputs=(
-        ScheduledInput(at_s=0.2, input=TimedText(text="A: Misty，你今天好嗎？")),
-        ScheduledInput(at_s=0.6, input=TimedText(text="B: Misty，也跟我打聲招呼。")),
-    ),
-    decisions=(
-        Decision(
-            tool="speak",
-            args={"text": "A，你好！我今天很好。"},
-            tokens_in=24,
-            tokens_out=8,
-        ),
-        Decision(tool="done", args={}, tokens_in=31, tokens_out=1),
-        Decision(
-            tool="speak",
-            args={"text": "B，你好！很高興也認識你。"},
-            tokens_in=23,
-            tokens_out=9,
-        ),
-        Decision(tool="done", args={}, tokens_in=32, tokens_out=1),
     ),
 )
 
@@ -204,8 +196,10 @@ __all__ = [
     "CRYING_CARE",
     "DEMO_SCENARIOS",
     "EXPLICIT_TEXT_REQUEST",
+    "PlannedScenario",
+    "PresentationBeat",
     "SPEAKER_HANDOFF",
+    "ScenarioCard",
     "ScenarioAvailability",
-    "ScenarioStep",
     "ScenarioModel",
 ]

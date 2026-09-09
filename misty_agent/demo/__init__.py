@@ -47,7 +47,12 @@ from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Mapping, Optional, Tuple
 
-from misty_agent.agent.journal import from_jsonl, to_jsonl
+from misty_agent.agent.journal import (
+    Observation,
+    ToolCalled,
+    from_jsonl,
+    to_jsonl,
+)
 from misty_agent.agent.model import MissingApiKey, OpenAIModel
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.app import (
@@ -69,6 +74,8 @@ from misty_agent.runtime import (
     EpisodeCompleted,
     EpisodeOpened,
     RuntimeFailed,
+    RuntimeEpisode,
+    RuntimeEnding,
     RuntimeRecord,
     RuntimeResult,
     ScenarioInputAdapter,
@@ -80,6 +87,8 @@ from misty_agent.scenarios import (
     DEMO_SCENARIOS,
     EXPLICIT_TEXT_REQUEST,
     AcceptanceScenario,
+    PresentationBeat,
+    ScenarioCard,
     ScenarioModel,
 )
 
@@ -257,15 +266,16 @@ def _scenario_run_name(path: str) -> Optional[str]:
     return name if name and "/" not in name else None
 
 
-def _scenario_payload(case: AcceptanceScenario) -> dict:
+def _scenario_payload(case: ScenarioCard) -> dict:
     """The stable, human-readable facts displayed on a scenario card."""
     return {
         "name": case.name,
         "title": case.title,
         "subtitle": case.subtitle,
         "availability": case.availability,
+        "ticket": case.ticket,
         "limitation": case.limitation,
-        "steps": [asdict(step) for step in case.steps],
+        "preview": [asdict(beat) for beat in case.preview],
     }
 
 
@@ -274,6 +284,16 @@ def _run_scenario(name: str) -> Reply:
     case = next((item for item in DEMO_SCENARIOS if item.name == name), None)
     if case is None:
         return _json(404, {"error": f"there is no scenario called {name!r}"})
+    if not isinstance(case, AcceptanceScenario):
+        return _json(
+            409,
+            {
+                "error": (
+                    f"scenario {name!r} is planned for ticket {case.ticket}"
+                ),
+                "ticket": case.ticket,
+            },
+        )
 
     clock = FakeClock()
     session = simulated_session(
@@ -314,10 +334,98 @@ def _run_scenario(name: str) -> Reply:
         200,
         {
             "scenario": _scenario_payload(case),
+            "execution": _scenario_execution(result, result.episodes[0]),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
         },
     )
+
+
+def _scenario_execution(
+    result: RuntimeResult, episode: RuntimeEpisode
+) -> Mapping[str, Any]:
+    """Human-readable evidence derived from this run, not its preview."""
+    cue = next(
+        record for record in result.records if isinstance(record, CueDetected)
+    )
+    observations = {
+        record.turn: record
+        for record in episode.journal.records
+        if isinstance(record, Observation)
+    }
+    flow = [
+        PresentationBeat(
+            "input", "人說", f"「{cue.text}」", "這段輸入由案例預先定義。"
+        ),
+        PresentationBeat(
+            "cue", "系統判定", "明確互動請求", "Explicit Request"
+        ),
+    ]
+    for record in episode.journal.records:
+        if not isinstance(record, ToolCalled):
+            continue
+        if record.tool == "speak":
+            flow.append(
+                PresentationBeat(
+                    "decision", "Misty 選擇", "說話", "speak Tool"
+                )
+            )
+            observation = observations.get(record.turn)
+            succeeded = (
+                observation is not None
+                and observation.result.get("ok") is True
+            )
+            flow.append(
+                PresentationBeat(
+                    "effect",
+                    "模擬 Misty",
+                    f"「{record.args['text']}」",
+                    "模擬說話成功" if succeeded else "模擬說話未成功",
+                )
+            )
+        elif record.tool == "done":
+            flow.append(
+                PresentationBeat(
+                    "decision", "Misty 選擇", "結束互動", "done Tool"
+                )
+            )
+    completed = (
+        result.ending is RuntimeEnding.INPUT_EXHAUSTED
+        and episode.outcome.outcome == "done"
+    )
+    flow.append(
+        PresentationBeat(
+            "ending",
+            "結果",
+            "情境執行完成" if completed else "情境未正常完成",
+            (
+                "有限情境已播放完畢，Runtime 正常停止。"
+                if completed
+                else (
+                    f"Episode: {episode.outcome.outcome}; "
+                    f"Runtime: {result.ending.value}"
+                )
+            ),
+        )
+    )
+    return {
+        "provenance": {
+            "kind": "scripted_current_run",
+            "headline": "這是剛剛執行的模擬結果",
+            "model": "預設腳本模型",
+            "robot": "模擬 Misty",
+            "detail": (
+                "輸入與模型決策預先定義；Runtime、Tool 與 Journal 由目前程式"
+                "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
+            ),
+        },
+        "flow": [asdict(beat) for beat in flow],
+        "decision_explanation": {
+            "available": False,
+            "headline": "Ticket 01 尚無 Decision Note",
+            "detail": "目前可驗證的是 Tool choice；決策說明將由 ticket 02 加入。",
+        },
+    }
 
 
 def _example(name: str) -> Reply:

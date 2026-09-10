@@ -2529,7 +2529,8 @@ Demo 從此遵守以下展示契約：
 Ticket 02 把 Episode 第一個 Turn 的鬆散 `{trigger, said}` 改成 typed Trigger Evidence。它攜帶
 來源、runtime-relative time、selected facts、transcript、不確定性與可選的 bounded selected
 image；這份 Evidence 在任何 Observation 之前交給 model，而 Tool 完成後取得的 cheap Snapshot
-仍只屬於 Observation。兩者不得互相冒充。
+仍只屬於 Observation。兩者不得互相冒充。Selected image value type 本身驗證 strict base64 並限制
+decoded bytes 為 8 MiB；Episode 完成後的 RuntimeResult 只保留 MIME metadata，不再持有圖片 bytes。
 
 Model Interface 使用 provider-neutral 的 native function-calling message shape。正式 OpenAI adapter
 保留 assistant Tool call identity，並以 matching `tool` role result 接回下一個 Turn；request 明確
@@ -2543,3 +2544,8 @@ chain-of-thought，也受 §4 的 control-parameter guard 約束。Demo 問候�
 預先定義的 scripted fixture，但 Trigger Evidence、native context、Tool dispatch、Observation、
 Decision Note 與 Journal 都是按 Run 後由目前程式重新產生。圖片只作為明確 request 的 selected
 Evidence；autonomous visual cue classification 仍屬後續 tickets。
+
+Review 也收緊了三個接縫：Cue 與 Trigger Evidence 共用 input 抵達時的同一個 runtime timestamp；
+`Session.episode()` 與 `run_episode()` 只接受 typed Trigger Evidence，不再各自保留 trigger string
+compatibility branch；Decision Note 驗證失敗會記為 model-phase `ExecutionFailed`，並以
+`EpisodeFinished(outcome="error")` 封口，而不是讓例外逃到 Runtime 外層。

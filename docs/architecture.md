@@ -41,9 +41,11 @@ hardware measurement.
 
 The Demo's Run button is itself an Explicit Request. Its typed Trigger Evidence
 contains source, runtime-relative time, selected facts, uncertainty, transcript
-and an optional bounded image. The first model Turn receives it before any
-Observation. An uploaded image remains evidence for that deliberate request;
-it is not an autonomously classified visual cue.
+and an optional image that is strict base64 and capped at 8 MiB decoded. The
+first model Turn receives it before any Observation. A completed runtime result
+keeps only the selected image's media type, not its bytes. An uploaded image
+remains evidence for that deliberate request; it is not an autonomously
+classified visual cue.
 
 Each model Turn uses a provider-neutral representation of the native function-
 calling protocol. The OpenAI adapter preserves assistant Tool call identity,

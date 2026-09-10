@@ -30,3 +30,5 @@
 - provider-neutral context 保留 assistant Tool call 與 matching `tool_call_id`；OpenAI adapter 明確送出 `parallel_tool_calls=False` 並拒絕多 calls。
 - Decision Note 是 240 字內的公開 Journal record，Storyboard 與 Demo 可重播；persona 明確不要求 private reasoning。
 - 預設驗收使用 scripted provider、fake clock 與 simulated Misty，不需 API key、網路或硬體；本專案仍未曾連接 Misty II。
+- Review 後補強：selected image 由 value type 驗證 strict base64 與 8 MiB decoded
+  上限，完成結果只保留 MIME metadata；違規 Decision Note 也會以 typed error 正常封口 Episode。

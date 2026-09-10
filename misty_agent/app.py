@@ -51,7 +51,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional, Tuple
 
-from misty_agent.agent.evidence import TriggerEvidence, legacy_evidence
+from misty_agent.agent.evidence import TriggerEvidence
 from misty_agent.agent.journal import (
     Journal,
     JsonlFile,
@@ -278,13 +278,12 @@ class Session:
 
     def episode(
         self,
-        evidence: TriggerEvidence | str,
-        said: str = "",
+        evidence: TriggerEvidence,
         *,
         render: bool = True,
         journal_path: Optional[pathlib.Path] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
-        """Run one Episode from one trigger, and hand back what happened.
+        """Run one Episode from typed Trigger Evidence and return its result.
 
         `journal_path` writes the Journal to disk as it happens. Per Episode
         rather than per Session, because one file holds one Episode: that is
@@ -299,8 +298,6 @@ class Session:
         # Counted as well as stamped: two Episodes inside the same second
         # are ordinary, and two Journals sharing an id would be
         # indistinguishable in a directory of them.
-        if isinstance(evidence, str):
-            evidence = legacy_evidence(evidence, said)
         self._episodes += 1
         episode_id = f"ep-{int(time.time())}-{self._episodes}"
         subscribers: list = [TerminalRenderer()] if render else []

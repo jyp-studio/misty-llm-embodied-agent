@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from misty_agent.agent.evidence import EvidenceKind, TriggerEvidence
 from misty_agent.agent.journal import EpisodeFinished, Snapshot, StopRequested
 from misty_agent.agent.memory import Memory
 from misty_agent.agent.persona import PERSONA
@@ -117,15 +118,23 @@ def a_session(
     )
 
 
+def speech(text=""):
+    return TriggerEvidence(
+        source=EvidenceKind.SPEECH,
+        observed_at_s=0.0,
+        transcript=text,
+    )
+
+
 # ---------------------------------------------------------------------------
 # One Episode
 # ---------------------------------------------------------------------------
 
 def test_a_session_runs_one_episode_and_hands_back_its_journal():
-    """`PLAN.md` §15.1: one trigger in, one Episode. No outer loop."""
+    """`PLAN.md` §15.1: one typed evidence input, one Episode. No outer loop."""
     session = a_session()
 
-    outcome, journal = session.episode("speech", "hello", render=False)
+    outcome, journal = session.episode(speech("hello"), render=False)
 
     assert outcome.outcome == "done"
     assert isinstance(journal.records[-1], EpisodeFinished)
@@ -139,7 +148,7 @@ def test_the_session_tells_the_model_what_it_is():
     model = Says()
     session = a_session(model=model)
 
-    session.episode("speech", "hello", render=False)
+    session.episode(speech("hello"), render=False)
 
     assert model.contexts[0][0] == {"role": "system", "content": PERSONA}
 
@@ -155,7 +164,7 @@ def test_the_instructions_a_session_was_built_with_are_the_ones_it_sends():
     model = Says()
     session = a_session(model=model, instructions="You are a lamp.")
 
-    session.episode("speech", "hello", render=False)
+    session.episode(speech("hello"), render=False)
 
     told = [e["content"] for e in model.contexts[0] if e["role"] == "system"]
     assert told == ["You are a lamp."]
@@ -174,7 +183,9 @@ def test_a_session_will_not_write_an_episode_into_an_existing_journal(tmp_path):
     session = a_session()
 
     with pytest.raises(FileExistsError):
-        session.episode("speech", "hi", render=False, journal_path=someone_elses)
+        session.episode(
+            speech("hi"), render=False, journal_path=someone_elses
+        )
 
     assert someone_elses.read_text() == ""
 
@@ -185,8 +196,8 @@ def test_every_episode_gets_its_own_journal():
     the second."""
     session = a_session()
 
-    _, first = session.episode("speech", "one", render=False)
-    _, second = session.episode("speech", "two", render=False)
+    _, first = session.episode(speech("one"), render=False)
+    _, second = session.episode(speech("two"), render=False)
 
     assert first is not second
     assert first.records[0].episode_id != second.records[0].episode_id
@@ -197,8 +208,8 @@ def test_memory_carries_across_episodes():
     memory rather than working context (`CONTEXT.md`)."""
     session = a_session(model=Says("speak", "done"))
 
-    session.episode("speech", "I am Ana", render=False)
-    session.episode("speech", "who am I?", render=False)
+    session.episode(speech("I am Ana"), render=False)
+    session.episode(speech("who am I?"), render=False)
 
     assert [exchange.said for exchange in session.memory.exchanges] == [
         "I am Ana",
@@ -226,7 +237,7 @@ def test_everything_shares_the_session_clock():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     session.model = Slow()
-    _, journal = session.episode("speech", render=False)
+    _, journal = session.episode(speech(), render=False)
 
     called = next(r for r in journal.records if r.type == "model_called")
     assert called.latency_ms == 1500
@@ -332,7 +343,7 @@ def test_pressing_the_bumper_during_an_episode_aborts_it():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     session.model = PressesMidEpisode()
-    outcome, journal = session.episode("speech", render=False)
+    outcome, journal = session.episode(speech(), render=False)
 
     assert outcome.outcome == "aborted"
     assert any(isinstance(r, StopRequested) for r in journal.records)
@@ -349,7 +360,7 @@ def test_the_stop_lands_in_the_journal_of_the_episode_that_was_running():
     session.watch_the_bumper()
     press = events.subscriptions[0][1]["on_event"]
 
-    _, quiet = session.episode("speech", render=False)
+    _, quiet = session.episode(speech(), render=False)
 
     class PressesMidEpisode:
         def decide(self, working_context, tools):
@@ -357,7 +368,7 @@ def test_the_stop_lands_in_the_journal_of_the_episode_that_was_running():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     session.model = PressesMidEpisode()
-    _, interrupted = session.episode("speech", render=False)
+    _, interrupted = session.episode(speech(), render=False)
 
     assert not any(isinstance(r, StopRequested) for r in quiet.records)
     assert any(isinstance(r, StopRequested) for r in interrupted.records)
@@ -375,7 +386,7 @@ def test_pressing_the_bumper_between_episodes_still_halts_the_robot():
     robot = RecordingCommands()
     events = Events()
     session = a_session(events=events, robot=robot)
-    session.episode("speech", "hello", render=False)
+    session.episode(speech("hello"), render=False)
     robot.clear()
 
     events.subscriptions[0][1]["on_event"]({})
@@ -413,7 +424,7 @@ def test_a_press_while_memory_is_consolidating_still_stops_the_robot():
         summariser=None, extractor=PressesWhileConsolidating(), window=6
     )
 
-    _, journal = session.episode("speech", "hello", render=False)
+    _, journal = session.episode(speech("hello"), render=False)
 
     assert pressed, "the press never happened, so this tested nothing"
     assert "halt" in robot.endpoints, (
@@ -441,7 +452,7 @@ def test_a_live_episode_is_halted_once_not_twice():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     session.model = PressesMidEpisode()
-    session.episode("speech", render=False)
+    session.episode(speech(), render=False)
 
     assert robot.endpoints.count("halt") == 1
 
@@ -460,7 +471,7 @@ def test_a_press_in_a_later_episode_aborts_that_episode():
     session = a_session(events=events, robot=robot)
     press = events.subscriptions[0][1]["on_event"]
 
-    session.episode("speech", "the first one", render=False)
+    session.episode(speech("the first one"), render=False)
 
     class PressesMidEpisode:
         def decide(self, working_context, tools):
@@ -468,7 +479,7 @@ def test_a_press_in_a_later_episode_aborts_that_episode():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     session.model = PressesMidEpisode()
-    outcome, journal = session.episode("speech", "the second one", render=False)
+    outcome, journal = session.episode(speech("the second one"), render=False)
 
     assert outcome.outcome == "aborted"
     assert any(r.type == "stop_requested" for r in journal.records)
@@ -495,7 +506,7 @@ def test_a_press_after_the_episode_closed_does_not_forge_a_record():
     session.memory = Memory(
         summariser=None, extractor=PressesWhileConsolidating(), window=6
     )
-    _, journal = session.episode("speech", "hello", render=False)
+    _, journal = session.episode(speech("hello"), render=False)
 
     kinds = [record.type for record in journal.records]
     assert kinds.count("episode_finished") == 1
@@ -509,7 +520,7 @@ def test_a_session_with_no_event_stream_still_runs():
     session = a_session(events=None)
 
     session.watch_the_bumper()
-    outcome, _ = session.episode("speech", render=False)
+    outcome, _ = session.episode(speech(), render=False)
 
     assert outcome.outcome == "done"
 
@@ -524,7 +535,7 @@ def test_speaking_shuts_the_microphone_through_the_session():
     ears = Ears()
     session = a_session(model=Says("speak", "done"), ears=ears)
 
-    session.episode("speech", render=False)
+    session.episode(speech(), render=False)
 
     assert ears.muted_for and ears.muted_for[0] > 0
 

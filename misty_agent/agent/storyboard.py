@@ -86,6 +86,11 @@ _LIFTED_TO_THE_STORYBOARD = {
     "episode_finished": ("outcome", "turns", "steps"),
 }
 
+#: Prose fields already used as the Moment's human-readable detail.
+_DESCRIBED_ON_THE_MOMENT = {
+    "decision_noted": ("note",),
+}
+
 #: The key `look_around` reports its stopping angle under. Read from the
 #: result rather than assumed from the Tool's name, the way `_steps_in` reads
 #: the Step count: a Tool that started reporting one would be handled, and a
@@ -208,8 +213,10 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
 
 def _facts(record: Record) -> Dict[str, Any]:
     """Everything the record carries that is not already somewhere else here."""
-    elsewhere = _ALREADY_ON_THE_MOMENT + _LIFTED_TO_THE_STORYBOARD.get(
-        record.type, ()
+    elsewhere = (
+        _ALREADY_ON_THE_MOMENT
+        + _LIFTED_TO_THE_STORYBOARD.get(record.type, ())
+        + _DESCRIBED_ON_THE_MOMENT.get(record.type, ())
     )
     return {
         name: value

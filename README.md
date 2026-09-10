@@ -20,7 +20,8 @@ calibration, latency, and safety remain hardware-unverified.
   selected facts, uncertainty, transcript and an optional bounded image. The
   hosted adapter preserves native Tool call identity and matching Tool-result
   roles, rejects multiple calls in one Turn, and records short public Decision
-  Notes without requesting private reasoning.
+  Notes without requesting private reasoning. Selected images are strict
+  base64, capped at 8 MiB decoded, and removed from completed runtime results.
 - Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
   Episode cap all close with observable bounded endings.
 - The local Demo leads with three social-robot stories. The ticket 02 greeting

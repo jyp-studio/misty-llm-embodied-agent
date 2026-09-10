@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional, Tuple
+
+
+#: Enough for a deliberately selected frame while keeping the first Turn
+#: bounded independently of whichever InputSource produced it.
+MAX_SELECTED_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 class EvidenceKind(str, Enum):
@@ -26,6 +33,47 @@ class SelectedImageEvidence:
             raise ValueError("selected image evidence needs an image media type")
         if not self.data_base64:
             raise ValueError("selected image evidence cannot be empty")
+        try:
+            decoded_size = len(
+                base64.b64decode(self.data_base64, validate=True)
+            )
+        except (binascii.Error, ValueError) as error:
+            raise ValueError(
+                "selected image evidence must be strict base64"
+            ) from error
+        if decoded_size > MAX_SELECTED_IMAGE_BYTES:
+            raise ValueError(
+                "selected image evidence is too large: "
+                f"{decoded_size} bytes exceeds {MAX_SELECTED_IMAGE_BYTES}"
+            )
+
+
+@dataclass(frozen=True)
+class TriggerEvidenceSummary:
+    """Completed-run evidence metadata with ephemeral image bytes removed."""
+
+    source: EvidenceKind
+    observed_at_s: float
+    facts: Mapping[str, Any]
+    transcript: str
+    uncertainty: Tuple[str, ...]
+    selected_image_media_type: Optional[str]
+
+    @classmethod
+    def from_evidence(
+        cls, evidence: "TriggerEvidence"
+    ) -> "TriggerEvidenceSummary":
+        selected = evidence.selected_image
+        return cls(
+            source=evidence.source,
+            observed_at_s=evidence.observed_at_s,
+            facts=dict(evidence.facts),
+            transcript=evidence.transcript,
+            uncertainty=tuple(evidence.uncertainty),
+            selected_image_media_type=(
+                selected.media_type if selected is not None else None
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -70,19 +118,10 @@ class TriggerEvidence:
         return {"role": "user", "content": content}
 
 
-def legacy_evidence(trigger: str, said: str) -> TriggerEvidence:
-    """Keep direct Episode callers working while Runtime owns the new seam."""
-    return TriggerEvidence(
-        source=EvidenceKind(trigger),
-        observed_at_s=0.0,
-        facts={},
-        transcript=said,
-    )
-
-
 __all__ = [
     "EvidenceKind",
+    "MAX_SELECTED_IMAGE_BYTES",
     "SelectedImageEvidence",
     "TriggerEvidence",
-    "legacy_evidence",
+    "TriggerEvidenceSummary",
 ]

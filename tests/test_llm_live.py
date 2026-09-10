@@ -37,6 +37,7 @@ from __future__ import annotations
 import pytest
 
 from episode_invariants import Episode, violations
+from misty_agent.agent.evidence import EvidenceKind, TriggerEvidence
 from misty_agent.agent.journal import Journal, Snapshot, ToolCalled
 from misty_agent.agent.memory import Memory
 from misty_agent.agent.model import MissingApiKey, OpenAIModel, api_key_available
@@ -133,8 +134,11 @@ def a_live_episode(model, trigger, said, distance_cm, *, config=None):
 
     counting = Counting(model)
     outcome = run_episode(
-        trigger,
-        said=said,
+        TriggerEvidence(
+            source=EvidenceKind(trigger),
+            observed_at_s=0.0,
+            transcript=said,
+        ),
         model=counting,
         registry=build_registry(),
         ctx=ctx,

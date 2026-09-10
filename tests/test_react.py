@@ -36,6 +36,7 @@ import threading
 import pytest
 
 from journal_diff import first_difference
+from misty_agent.agent.evidence import EvidenceKind, TriggerEvidence
 from misty_agent.agent.journal import (
     EpisodeFinished,
     EpisodeStarted,
@@ -136,6 +137,14 @@ def a_reading(distance_cm=154):
     )
 
 
+def evidence(source="speech", transcript=""):
+    return TriggerEvidence(
+        source=EvidenceKind(source),
+        observed_at_s=0.0,
+        transcript=transcript,
+    )
+
+
 def an_episode(
     *,
     episode_id,
@@ -161,7 +170,7 @@ def an_episode(
     )
     model = ScriptedModel(clock, *script)
     outcome = run_episode(
-        trigger,
+        evidence(trigger),
         model=model,
         registry=build_registry(),
         ctx=ctx,
@@ -234,7 +243,7 @@ def fails_during_model_call():
 
     model = ModelFails()
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=model,
         registry=build_registry(),
         ctx=ToolContext(
@@ -340,7 +349,7 @@ def test_a_model_failure_ends_the_episode_records_why_and_halts():
             raise RuntimeError("model connection failed")
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ModelFails(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -384,7 +393,7 @@ def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
             raise AssertionError("a failed setup must not derive memory")
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
@@ -418,7 +427,7 @@ def test_a_tool_failure_ends_the_episode_records_why_and_halts():
 
     robot = MotorFails()
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ScriptedModel(clock, ("move_head", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
@@ -455,7 +464,7 @@ def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
         return {"not_json": object()}
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ScriptedModel(clock, ("bad_result", {}, 10, 1, 1)),
         registry=registry,
         ctx=ToolContext(
@@ -488,7 +497,7 @@ def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
             raise RuntimeError("camera pipeline failed")
 
     outcome = run_episode(
-        "visual",
+        evidence("visual"),
         model=ScriptedModel(clock, ("move_head", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
@@ -533,7 +542,7 @@ def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal(leak)
             raise RuntimeError(leak)
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=LeakyFailure(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -568,7 +577,7 @@ def test_a_failed_error_halt_cannot_reopen_the_episode():
             raise RuntimeError("model failed")
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ModelFails(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -651,7 +660,7 @@ def test_ending_is_read_from_the_registry_not_from_the_tool_name():
     )
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1), ("done", {}, 10, 1, 1)),
         registry=registry,
         ctx=ctx,
@@ -856,7 +865,7 @@ def test_the_instructions_the_caller_gave_are_the_ones_the_model_reads():
     scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
 
     run_episode(
-        "speech",
+        evidence(),
         instructions="You are a lamp. You do not move.",
         model=scripted,
         registry=build_registry(),
@@ -883,7 +892,7 @@ def test_an_episode_can_be_run_without_a_persona_but_must_ask():
     scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
 
     run_episode(
-        "speech",
+        evidence(),
         instructions="",
         model=scripted,
         registry=build_registry(),
@@ -951,8 +960,7 @@ def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
     model = NativeScript()
     journal = Journal(episode_id="ep-native-protocol", clock=clock)
     run_episode(
-        "speech",
-        said="hello",
+        evidence(transcript="hello"),
         model=model,
         registry=build_registry(),
         ctx=ToolContext(
@@ -1095,7 +1103,7 @@ def test_the_model_cannot_edit_the_loops_working_context():
     meddler = Meddler(clock)
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=meddler,
         registry=build_registry(),
         ctx=ctx,
@@ -1192,7 +1200,7 @@ def is_aborted():
     )
     model = ScriptedModel(clock, ("approach", {}, 1024, 811, 15))
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=model,
         registry=build_registry(),
         ctx=ctx,
@@ -1331,7 +1339,7 @@ def test_a_stop_between_turns_starts_no_new_action():
             return Decision(tool="approach", args={}, tokens_in=1, tokens_out=1)
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=PressesWhileThinking(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -1369,7 +1377,7 @@ def test_a_halt_that_fails_still_ends_the_episode():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=PressesWhileThinking(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -1407,7 +1415,7 @@ def test_an_abort_arriving_from_a_real_thread_still_ends_the_episode():
             return Decision(tool="done", args={}, tokens_in=1, tokens_out=1)
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=WaitsForTheBumper(),
         registry=build_registry(),
         ctx=ToolContext(
@@ -1452,8 +1460,7 @@ def test_a_long_episode_derives_memory_exactly_once():
     journal = Journal(episode_id="ep-mem", clock=clock, wall_clock=lambda: WALL_CLOCK)
 
     outcome = run_episode(
-        "speech",
-        said="hello there",
+        evidence(transcript="hello there"),
         memory=memory,
         model=ScriptedModel(
             clock, *[("look_around", {}, 10, 1, 1) for _ in range(cap)]
@@ -1483,8 +1490,7 @@ def test_what_the_robot_said_is_what_gets_remembered():
     journal = Journal(episode_id="ep-say", clock=clock, wall_clock=lambda: WALL_CLOCK)
 
     run_episode(
-        "speech",
-        said="are you there?",
+        evidence(transcript="are you there?"),
         memory=memory,
         model=ScriptedModel(
             clock,
@@ -1514,8 +1520,7 @@ def test_an_episode_where_the_robot_says_nothing_still_records_the_exchange():
     journal = Journal(episode_id="ep-mute", clock=clock, wall_clock=lambda: WALL_CLOCK)
 
     run_episode(
-        "speech",
-        said="hello?",
+        evidence(transcript="hello?"),
         memory=memory,
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
@@ -1551,8 +1556,7 @@ def test_the_models_message_list_is_never_stored_as_memory(tmp_path):
         ("done", {}, 10, 1, 1),
     )
     run_episode(
-        "speech",
-        said="come here",
+        evidence(transcript="come here"),
         memory=memory,
         model=scripted,
         registry=build_registry(),
@@ -1585,8 +1589,7 @@ def test_what_memory_knows_reaches_the_model_after_the_persona():
 
     scripted = ScriptedModel(clock, ("done", {}, 10, 1, 1))
     run_episode(
-        "speech",
-        said="hello again",
+        evidence(transcript="hello again"),
         memory=memory,
         model=scripted,
         registry=build_registry(),
@@ -1635,8 +1638,7 @@ def test_memory_is_derived_after_the_episode_has_already_ended():
     memory = Memory(summariser=None, extractor=NotesWhenItRan(), window=6)
 
     run_episode(
-        "speech",
-        said="hello",
+        evidence(transcript="hello"),
         memory=memory,
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
@@ -1672,7 +1674,7 @@ def test_post_episode_memory_failure_cannot_hide_the_completed_journal():
             raise RuntimeError("fact extractor failed")
 
     outcome = run_episode(
-        "speech",
+        evidence(),
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
@@ -1705,8 +1707,7 @@ def test_an_episode_that_speaks_shuts_the_microphone_for_that_long():
     journal = Journal(episode_id="ep-mute", clock=clock, wall_clock=lambda: WALL_CLOCK)
 
     run_episode(
-        "speech",
-        said="are you there?",
+        evidence(transcript="are you there?"),
         model=ScriptedModel(
             clock,
             ("speak", {"text": "Coming over."}, 10, 1, 1),

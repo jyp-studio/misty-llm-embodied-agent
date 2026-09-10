@@ -456,7 +456,7 @@ def _scenario_execution(
             "facts": dict(evidence.facts),
             "transcript": evidence.transcript,
             "uncertainty": list(evidence.uncertainty),
-            "selected_image": evidence.selected_image is not None,
+            "selected_image": evidence.selected_image_media_type is not None,
         },
         "flow": [asdict(beat) for beat in flow],
         "decision_explanation": {
@@ -756,19 +756,22 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         picture = _decoded(asked, "image")
         if picture is None:
             return _json(400, {"error": "the image is not base64"})
-        frame = decode_image(picture)
-        if frame is None:
-            return _json(400, {"error": "that image could not be decoded"})
-        seen = look_at(frame)
         media_type = str(asked.get("image_media_type") or "image/jpeg")
         if not media_type.startswith("image/"):
             return _json(
                 400, {"error": "image_media_type must be an image type"}
             )
-        selected_image = SelectedImageEvidence(
-            media_type=media_type,
-            data_base64=str(asked["image"]),
-        )
+        try:
+            selected_image = SelectedImageEvidence(
+                media_type=media_type,
+                data_base64=str(asked["image"]),
+            )
+        except ValueError as error:
+            return _json(400, {"error": str(error)})
+        frame = decode_image(picture)
+        if frame is None:
+            return _json(400, {"error": "that image could not be decoded"})
+        seen = look_at(frame)
 
     perceived = {
         "face_present": bool(seen.has_human) if seen else False,

@@ -31,6 +31,8 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
    calls rather than silently dropping extras.
 9. Short public Decision Notes are typed Journal records and Demo Moments; no
    private reasoning or chain-of-thought is requested or stored.
+10. Selected image evidence is strict base64, capped at 8 MiB decoded, and
+    removed from completed runtime results; only its media type remains.
 
 Ticket 01's completed follow-up is `b749d6b`; ticket 02 is the current HEAD.
 

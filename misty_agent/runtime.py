@@ -16,15 +16,17 @@ exercise time without sleeping in real life.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, Tuple, Union
 
 from misty_agent.agent.evidence import (
     EvidenceKind,
+    MAX_SELECTED_IMAGE_BYTES,
     SelectedImageEvidence,
     TriggerEvidence,
+    TriggerEvidenceSummary,
 )
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
@@ -233,7 +235,7 @@ class RuntimeEpisode:
     cue_id: str
     cue_kind: CueKind
     input: RuntimeInput
-    evidence: TriggerEvidence
+    evidence: TriggerEvidenceSummary
     outcome: EpisodeOutcome
     journal: Journal
 
@@ -292,6 +294,7 @@ class SocialAgentRuntime:
                 item = self._source.read()
                 if item is None or self._stop_requested.is_set():
                     break
+                observed_at_s = self._elapsed()
                 phase = RuntimePhase.CUE_SELECTION
                 if not isinstance(item, TimedText):
                     raise TypeError(
@@ -301,7 +304,7 @@ class SocialAgentRuntime:
                 cue_id = f"cue-{len(episodes) + 1}"
                 records.append(
                     CueDetected(
-                        t=self._elapsed(),
+                        t=observed_at_s,
                         cue_id=cue_id,
                         cue_kind=CueKind.EXPLICIT_REQUEST,
                         evidence_kind=item.evidence_kind,
@@ -318,7 +321,7 @@ class SocialAgentRuntime:
                 )
                 evidence = TriggerEvidence(
                     source=item.evidence_kind,
-                    observed_at_s=self._elapsed(),
+                    observed_at_s=observed_at_s,
                     facts=item.facts,
                     transcript=item.text,
                     uncertainty=item.uncertainty,
@@ -334,8 +337,8 @@ class SocialAgentRuntime:
                     RuntimeEpisode(
                         cue_id=cue_id,
                         cue_kind=CueKind.EXPLICIT_REQUEST,
-                        input=item,
-                        evidence=evidence,
+                        input=replace(item, selected_image=None),
+                        evidence=TriggerEvidenceSummary.from_evidence(evidence),
                         outcome=outcome,
                         journal=journal,
                     )
@@ -416,6 +419,7 @@ __all__ = [
     "CueKind",
     "CueDetected",
     "EvidenceKind",
+    "MAX_SELECTED_IMAGE_BYTES",
     "EpisodeCompleted",
     "EpisodeOpened",
     "EpisodeSession",
@@ -435,4 +439,5 @@ __all__ = [
     "SocialAgentRuntime",
     "TimedText",
     "TriggerEvidence",
+    "TriggerEvidenceSummary",
 ]

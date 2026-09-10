@@ -7,12 +7,16 @@ Loop that this effort exists to add.
 
 from __future__ import annotations
 
+import base64
 import json
 import threading
+
+import pytest
 
 from misty_agent.agent.journal import (
     DecisionNoted,
     EpisodeFinished,
+    ExecutionFailed,
     StopRequested,
 )
 from misty_agent.agent.memory import Memory
@@ -23,6 +27,8 @@ from misty_agent.demo import answer
 from misty_agent.fakes import FakeClock
 from misty_agent.runtime import (
     EvidenceKind,
+    MAX_SELECTED_IMAGE_BYTES,
+    RuntimeEnding,
     RuntimeState,
     ScenarioInputAdapter,
     ScheduledInput,
@@ -143,6 +149,74 @@ def test_trigger_evidence_reaches_the_first_turn_before_any_observation():
     assert "snapshot" in observation["content"]
     assert "trigger_evidence" not in observation["content"]
     assert result.episodes[0].evidence.observed_at_s == 0.25
+    assert result.episodes[0].input.selected_image is None
+    assert (
+        result.episodes[0].evidence.selected_image_media_type == "image/png"
+    )
+    assert "c2VsZWN0ZWQtaW1hZ2U=" not in repr(result)
+
+
+def test_selected_image_evidence_owns_its_encoding_and_size_boundaries():
+    with pytest.raises(ValueError, match="base64"):
+        SelectedImageEvidence(media_type="image/png", data_base64="not base64!")
+
+    too_large = base64.b64encode(
+        b"x" * (MAX_SELECTED_IMAGE_BYTES + 1)
+    ).decode()
+    with pytest.raises(ValueError, match="too large"):
+        SelectedImageEvidence(media_type="image/png", data_base64=too_large)
+
+
+def test_an_invalid_decision_note_still_closes_the_episode_as_an_error():
+    clock = FakeClock()
+    decision = Decision(
+        tool="done",
+        args={},
+        tokens_in=1,
+        tokens_out=1,
+        note="Use linearVelocity to finish.",
+    )
+    session = simulated_session(
+        None, model=ScenarioModel((decision,)), clock=clock
+    )
+
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(clock, [text_at(0.0, "Hello Misty")]),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert result.ending is RuntimeEnding.EPISODE_ERROR
+    assert len(result.episodes) == 1
+    records = result.episodes[0].journal.records
+    assert any(
+        isinstance(record, ExecutionFailed) and record.phase == "model"
+        for record in records
+    )
+    assert isinstance(records[-1], EpisodeFinished)
+    assert records[-1].outcome == "error"
+
+
+def test_trigger_evidence_reuses_the_cue_detection_timestamp(tmp_path):
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        clock=clock,
+    )
+
+    def slow_journal_path(_episode_number):
+        clock.sleep(9.0)
+        return tmp_path / "episode.jsonl"
+
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(clock, [text_at(0.25, "Hello Misty")]),
+        session=session,
+        clock=clock,
+    ).run(journal_path_for_episode=slow_journal_path)
+
+    cue = result.records[1]
+    assert result.episodes[0].evidence.observed_at_s == cue.t == 0.25
 
 
 def test_a_public_decision_note_is_recorded_without_private_reasoning():

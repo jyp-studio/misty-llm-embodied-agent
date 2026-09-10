@@ -56,7 +56,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
-from misty_agent.agent.evidence import TriggerEvidence, legacy_evidence
+from misty_agent.agent.evidence import TriggerEvidence
 from misty_agent.agent.journal import (
     DecisionNoted,
     ExecutionFailed,
@@ -125,7 +125,7 @@ class EpisodeOutcome:
 
 
 def run_episode(
-    evidence: TriggerEvidence | str,
+    evidence: TriggerEvidence,
     *,
     model: Model,
     registry: ToolRegistry,
@@ -133,7 +133,6 @@ def run_episode(
     journal: Journal,
     perception: Perception,
     stop: Stop = NEVER_STOPS,
-    said: str = "",
     memory: Remembers = NO_MEMORY,
     instructions: str = PERSONA,
 ) -> EpisodeOutcome:
@@ -145,8 +144,6 @@ def run_episode(
     """
     config = ctx.config
     clock = ctx.clock
-    if isinstance(evidence, str):
-        evidence = legacy_evidence(evidence, said)
     journal.record(EpisodeStarted, trigger=evidence.source.value)
 
     # What the model is shown, and only this. The persona and memory go in at
@@ -201,13 +198,18 @@ def run_episode(
             tokens_out=decision.tokens_out,
         )
         tool_call_id = decision.tool_call_id or f"turn-{turn}-tool"
-        if decision.note.strip():
-            journal.record(
-                DecisionNoted,
-                turn=turn,
-                tool_call_id=tool_call_id,
-                note=decision.note.strip(),
-            )
+        try:
+            if decision.note.strip():
+                journal.record(
+                    DecisionNoted,
+                    turn=turn,
+                    tool_call_id=tool_call_id,
+                    note=decision.note.strip(),
+                )
+        except Exception as error:
+            _record_failure_and_halt(journal, ctx.robot, "model", error)
+            outcome = "error"
+            break
         working_context.append(_asked_for(decision, tool_call_id))
 
         # Checked here as well as at the end of the Turn, and the two are not

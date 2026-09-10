@@ -265,6 +265,18 @@ def test_nothing_the_moment_already_says_is_repeated_in_its_facts():
             assert already_said not in moment.facts, (moment.kind, already_said)
 
 
+def test_a_decision_note_has_one_home_on_its_moment():
+    note = next(
+        moment
+        for moment in storyboard_of(one_of_every_kind().records).moments
+        if moment.kind == "decision_noted"
+    )
+
+    assert note.detail == "Acknowledge the greeting."
+    assert "note" not in note.facts
+    assert note.facts == {"tool_call_id": "call-one"}
+
+
 def test_a_refusal_carries_the_reason_it_was_refused():
     """`PLAN.md` §14.6: being able to watch the agent get it wrong *and* see
     the system stop it is half the point of validating arguments at all."""

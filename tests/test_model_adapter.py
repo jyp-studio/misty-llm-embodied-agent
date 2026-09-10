@@ -17,6 +17,7 @@ from misty_agent.agent.model import (
     API_KEY_FILE,
     API_KEY_VARIABLE,
     MissingApiKey,
+    ModelProtocolError,
     ModelSaidNothing,
     OpenAIModel,
     _as_arguments,
@@ -40,10 +41,20 @@ class FakeClient:
         self.chat = type("Chat", (), {"completions": FakeCompletions(response)})()
 
 
-def a_response(tool="done", arguments="{}", prompt=800, completion=12, calls=True):
+def a_response(
+    tool="done",
+    arguments="{}",
+    prompt=800,
+    completion=12,
+    calls=True,
+    call_id="call-provider-1",
+    note="Finish this bounded interaction.",
+):
     function = type("Function", (), {"name": tool, "arguments": arguments})()
-    call = type("Call", (), {"function": function})()
-    message = type("Message", (), {"tool_calls": [call] if calls else []})()
+    call = type("Call", (), {"id": call_id, "function": function})()
+    message = type(
+        "Message", (), {"content": note, "tool_calls": [call] if calls else []}
+    )()
     choice = type("Choice", (), {"message": message})()
     usage = type("Usage", (), {"prompt_tokens": prompt, "completion_tokens": completion})()
     return type("Response", (), {"choices": [choice], "usage": usage})()
@@ -65,6 +76,8 @@ def test_a_tool_call_becomes_a_decision():
 
     assert decision.tool == "speak"
     assert decision.args == {"text": "hello"}
+    assert decision.tool_call_id == "call-provider-1"
+    assert decision.note == "Finish this bounded interaction."
 
 
 def test_the_token_counts_come_from_the_response():
@@ -88,6 +101,25 @@ def test_a_response_with_no_tool_call_is_an_error_not_a_guess():
         model.decide([], [])
 
 
+def test_multiple_tool_calls_are_rejected_instead_of_silently_truncated():
+    response = a_response()
+    first = response.choices[0].message.tool_calls[0]
+    response.choices[0].message.tool_calls = [first, first]
+    model, _ = a_model(response)
+
+    with pytest.raises(ModelProtocolError, match="2 Tool calls"):
+        model.decide([], [])
+
+
+def test_a_decision_note_cannot_expand_into_a_reasoning_transcript():
+    from misty_agent.agent.journal import MAX_DECISION_NOTE_CHARS
+
+    model, _ = a_model(a_response(note="x" * (MAX_DECISION_NOTE_CHARS + 1)))
+
+    with pytest.raises(ModelProtocolError, match="Decision Note"):
+        model.decide([], [])
+
+
 # ---------------------------------------------------------------------------
 # What goes out
 # ---------------------------------------------------------------------------
@@ -98,6 +130,14 @@ def test_the_model_is_required_to_choose_a_tool():
     model.decide([], [{"type": "function", "function": {"name": "done"}}])
 
     assert client.chat.completions.calls[0]["tool_choice"] == "required"
+
+
+def test_parallel_tool_calls_are_disabled_at_the_provider_boundary():
+    model, client = a_model()
+
+    model.decide([], [])
+
+    assert client.chat.completions.calls[0]["parallel_tool_calls"] is False
 
 
 def test_the_tool_schemas_are_passed_through_untouched():
@@ -117,7 +157,11 @@ def test_structured_content_is_serialised_rather_than_stringified():
     and `None` — which is not JSON and not what the model was trained on.
     """
     message = _as_message(
-        {"role": "tool", "content": {"result": {"ok": True}, "n": None}}
+        {
+            "role": "tool",
+            "tool_call_id": "call-one",
+            "content": {"result": {"ok": True}, "n": None},
+        }
     )
 
     assert json.loads(message["content"]) == {"result": {"ok": True}, "n": None}
@@ -129,13 +173,78 @@ def test_a_string_content_is_left_alone():
     ] == "remember this"
 
 
-def test_the_system_role_survives_and_everything_else_becomes_user():
-    """The loop's `tool` role is not the API's `tool` role — that one has to
-    answer a specific `tool_call_id`, which the loop deliberately does not
-    carry. Sending it as such would be rejected by the API."""
+def test_native_assistant_and_tool_roles_keep_their_call_identity():
+    assistant = _as_message(
+        {
+            "role": "assistant",
+            "content": "Acknowledge the greeting.",
+            "tool_calls": [
+                {
+                    "id": "call-one",
+                    "type": "function",
+                    "function": {
+                        "name": "speak",
+                        "arguments": {"text": "hello"},
+                    },
+                }
+            ],
+        }
+    )
+    tool_result = _as_message(
+        {
+            "role": "tool",
+            "tool_call_id": "call-one",
+            "content": {"result": {"ok": True}},
+        }
+    )
+
     assert _as_message({"role": "system", "content": "x"})["role"] == "system"
-    assert _as_message({"role": "tool", "content": "x"})["role"] == "user"
-    assert _as_message({"role": "assistant", "content": "x"})["role"] == "user"
+    assert assistant == {
+        "role": "assistant",
+        "content": "Acknowledge the greeting.",
+        "tool_calls": [
+            {
+                "id": "call-one",
+                "type": "function",
+                "function": {
+                    "name": "speak",
+                    "arguments": '{"text": "hello"}',
+                },
+            }
+        ],
+    }
+    assert tool_result == {
+        "role": "tool",
+        "tool_call_id": "call-one",
+        "content": '{"result": {"ok": true}}',
+    }
+
+
+def test_provider_neutral_image_evidence_becomes_openai_image_content():
+    message = _as_message(
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": {"face_present": True}},
+                {
+                    "type": "image",
+                    "media_type": "image/png",
+                    "data_base64": "cGljdHVyZQ==",
+                },
+            ],
+        }
+    )
+
+    assert message == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": '{"face_present": true}'},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,cGljdHVyZQ=="},
+            },
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

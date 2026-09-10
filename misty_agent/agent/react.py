@@ -56,7 +56,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
+from misty_agent.agent.evidence import TriggerEvidence, legacy_evidence
 from misty_agent.agent.journal import (
+    DecisionNoted,
     ExecutionFailed,
     EpisodeFinished,
     EpisodeStarted,
@@ -93,6 +95,8 @@ class Decision:
     args: Mapping[str, Any]
     tokens_in: int
     tokens_out: int
+    tool_call_id: str = ""
+    note: str = ""
 
 
 class Model(Protocol):
@@ -121,7 +125,7 @@ class EpisodeOutcome:
 
 
 def run_episode(
-    trigger: str,
+    evidence: TriggerEvidence | str,
     *,
     model: Model,
     registry: ToolRegistry,
@@ -141,7 +145,9 @@ def run_episode(
     """
     config = ctx.config
     clock = ctx.clock
-    journal.record(EpisodeStarted, trigger=trigger)
+    if isinstance(evidence, str):
+        evidence = legacy_evidence(evidence, said)
+    journal.record(EpisodeStarted, trigger=evidence.source.value)
 
     # What the model is shown, and only this. The persona and memory go in at
     # the top as blocks of prose; everything after them is this Episode's own
@@ -162,9 +168,7 @@ def run_episode(
         return EpisodeOutcome(outcome="error", turns=0, steps=0)
     if remembered:
         working_context.append({"role": "system", "content": remembered})
-    working_context.append(
-        {"role": "user", "content": {"trigger": trigger, "said": said}}
-    )
+    working_context.append(dict(evidence.model_message()))
 
     # What the robot says aloud this Episode, for the other half of the
     # Exchange. Collected from what each Tool declares it speaks, so the loop
@@ -196,7 +200,15 @@ def run_episode(
             tokens_in=decision.tokens_in,
             tokens_out=decision.tokens_out,
         )
-        working_context.append(_asked_for(decision))
+        tool_call_id = decision.tool_call_id or f"turn-{turn}-tool"
+        if decision.note.strip():
+            journal.record(
+                DecisionNoted,
+                turn=turn,
+                tool_call_id=tool_call_id,
+                note=decision.note.strip(),
+            )
+        working_context.append(_asked_for(decision, tool_call_id))
 
         # Checked here as well as at the end of the Turn, and the two are not
         # the same check. This one refuses to *begin* a physical action after
@@ -226,7 +238,9 @@ def run_episode(
             # The reason is the Observation, in the sense that matters: it is
             # what the model reads next Turn. Recording one as well would be
             # the same fact in two records.
-            working_context.append(_refused(decision, dispatched))
+            working_context.append(
+                _refused(dispatched, tool_call_id)
+            )
             continue
 
         try:
@@ -246,7 +260,7 @@ def run_episode(
             _record_failure_and_halt(journal, ctx.robot, "tool", error)
             outcome = "error"
             break
-        working_context.append(_observed(observation))
+        working_context.append(_observed(observation, tool_call_id))
 
         # The stop may have arrived while the Tool was running. Python cannot
         # interrupt a call that has not returned, so the Tool finished and its
@@ -267,7 +281,9 @@ def run_episode(
     # subject spoke once, and re-extracting each Turn asks about a record that
     # has not changed (`PLAN.md` §15.5).
     try:
-        memory.remember(Exchange(said=said, replied=" ".join(spoken)))
+        memory.remember(
+            Exchange(said=evidence.transcript, replied=" ".join(spoken))
+        )
         memory.close_episode()
     except Exception:
         # The Episode is already closed and its timing intentionally excludes
@@ -278,21 +294,34 @@ def run_episode(
     return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
 
 
-def _asked_for(decision: Decision) -> Dict[str, Any]:
+def _asked_for(decision: Decision, tool_call_id: str) -> Dict[str, Any]:
     return {
         "role": "assistant",
-        "content": {"tool": decision.tool, "args": dict(decision.args)},
+        "content": decision.note,
+        "tool_calls": [
+            {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": decision.tool,
+                    "arguments": dict(decision.args),
+                },
+            }
+        ],
     }
 
 
-def _refused(decision: Decision, dispatched: Dispatched) -> Dict[str, Any]:
+def _refused(dispatched: Dispatched, tool_call_id: str) -> Dict[str, Any]:
     return {
         "role": "tool",
-        "content": {"tool": decision.tool, "refused": dispatched.reason},
+        "tool_call_id": tool_call_id,
+        "content": {"refused": dispatched.reason},
     }
 
 
-def _observed(observation: Observation) -> Dict[str, Any]:
+def _observed(
+    observation: Observation, tool_call_id: str
+) -> Dict[str, Any]:
     """The Observation the model reads, as JSON and only as JSON.
 
     `PLAN.md` §15.4 turned down putting a prose summary beside it: the same
@@ -301,6 +330,7 @@ def _observed(observation: Observation) -> Dict[str, Any]:
     """
     return {
         "role": "tool",
+        "tool_call_id": tool_call_id,
         "content": {
             "result": dict(observation.result),
             "snapshot": {

@@ -400,7 +400,10 @@ async function runLive() {
   const picture = byId("picture").files[0];
   const recording = byId("recording").files[0];
   const asked = { said, evidence_kind: said || recording ? "speech" : "visual" };
-  if (picture) asked.image = await asBase64(picture);
+  if (picture) {
+    asked.image = await asBase64(picture);
+    asked.image_media_type = picture.type || "image/jpeg";
+  }
   if (recording) asked.audio = await asBase64(recording);
   const note = byId("liveNote");
   note.className = "live-note";

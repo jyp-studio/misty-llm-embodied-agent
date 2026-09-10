@@ -36,6 +36,7 @@ import pytest
 from misty_agent.agent.journal import (
     JOURNAL_SCHEMA,
     OUTCOMES,
+    DecisionNoted,
     EpisodeFinished,
     EpisodeStarted,
     ExecutionFailed,
@@ -82,6 +83,12 @@ def one_of_every_kind():
     journal.record(EpisodeStarted, trigger="speech")
     journal.record(TurnStarted, turn=1)
     journal.record(ModelCalled, turn=1, latency_ms=412, tokens_in=930, tokens_out=17)
+    journal.record(
+        DecisionNoted,
+        turn=1,
+        tool_call_id="call-one",
+        note="Acknowledge the greeting.",
+    )
     journal.record(ToolCalled, turn=1, tool="change_led", args={"red": 255, "green": 0, "blue": 0})
     journal.record(Observation, turn=1, result={"ok": True}, snapshot=a_snapshot())
     journal.record(ToolRejected, turn=2, tool="move_head", reason="pitch=90 is above the maximum 26")
@@ -191,6 +198,7 @@ def test_every_record_kind_becomes_a_moment():
         "episode_started",
         "turn_started",
         "model_called",
+        "decision_noted",
         "tool_called",
         "observation",
         "tool_rejected",

@@ -23,6 +23,7 @@ import json
 import pytest
 
 from misty_agent.agent.journal import (
+    DecisionNoted,
     ExecutionFailed,
     JOURNAL_SCHEMA,
     OUTCOMES,
@@ -71,6 +72,13 @@ def one_of_each():
             latency_ms=1840,
             tokens_in=1203,
             tokens_out=47,
+        ),
+        DecisionNoted(
+            t=1.855,
+            episode_id="ep-1",
+            turn=1,
+            tool_call_id="call-one",
+            note="Acknowledge the greeting.",
         ),
         ToolCalled(
             t=1.86,

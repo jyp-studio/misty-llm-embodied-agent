@@ -51,6 +51,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional, Tuple
 
+from misty_agent.agent.evidence import TriggerEvidence, legacy_evidence
 from misty_agent.agent.journal import (
     Journal,
     JsonlFile,
@@ -277,7 +278,7 @@ class Session:
 
     def episode(
         self,
-        trigger: str,
+        evidence: TriggerEvidence | str,
         said: str = "",
         *,
         render: bool = True,
@@ -298,6 +299,8 @@ class Session:
         # Counted as well as stamped: two Episodes inside the same second
         # are ordinary, and two Journals sharing an id would be
         # indistinguishable in a directory of them.
+        if isinstance(evidence, str):
+            evidence = legacy_evidence(evidence, said)
         self._episodes += 1
         episode_id = f"ep-{int(time.time())}-{self._episodes}"
         subscribers: list = [TerminalRenderer()] if render else []
@@ -310,8 +313,7 @@ class Session:
         self._running = stop
         try:
             outcome = run_episode(
-                trigger,
-                said=said,
+                evidence,
                 model=self.model,
                 registry=build_registry(),
                 ctx=ToolContext(

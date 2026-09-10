@@ -20,7 +20,9 @@ import time
 import pytest
 
 from misty_agent.agent.journal import (
+    MAX_DECISION_NOTE_CHARS,
     TONES,
+    DecisionNoted,
     Described,
     EpisodeFinished,
     EpisodeStarted,
@@ -640,6 +642,28 @@ def test_the_renderer_says_something_about_a_refused_tool_call():
     assert "move_head" in line and "pitch out of range" in line
 
 
+def test_a_decision_note_is_bounded_public_copy():
+    with pytest.raises(ValueError, match="shorter than"):
+        DecisionNoted(
+            t=0.0,
+            episode_id="ep-1",
+            turn=1,
+            tool_call_id="call-one",
+            note="x" * (MAX_DECISION_NOTE_CHARS + 1),
+        )
+
+
+def test_a_decision_note_cannot_leak_a_physical_control_parameter():
+    with pytest.raises(ValueError, match="control parameter"):
+        DecisionNoted(
+            t=0.0,
+            episode_id="ep-1",
+            turn=1,
+            tool_call_id="call-one",
+            note="Drive with linearVelocity 20.",
+        )
+
+
 def test_the_renderer_says_something_about_a_stop_request():
     assert "foot_bumper" in render(StopRequested, source="foot_bumper")
 
@@ -736,6 +760,13 @@ SAMPLES = {
         t=0.2, episode_id="ep-1", turn=3,
         latency_ms=1840, tokens_in=812, tokens_out=11,
     ),
+    "decision_noted": DecisionNoted(
+        t=0.25,
+        episode_id="ep-1",
+        turn=3,
+        tool_call_id="call-one",
+        note="Acknowledge the greeting.",
+    ),
     "tool_called": ToolCalled(
         t=0.3, episode_id="ep-1", turn=3, tool="speak",
         args={"text": "hello"},
@@ -816,6 +847,7 @@ LINES = {
     "episode_started": "episode began, woken by speech",
     "turn_started": "turn 3",
     "model_called": "  model replied in 1840ms, 812+11 tokens",
+    "decision_noted": "  decision note, Acknowledge the greeting.",
     "tool_called": "  speak(text='hello')",
     "tool_rejected": "  move_head refused: pitch 140 is outside the permitted range",
     "observation": "  -> ok, 142cm away",

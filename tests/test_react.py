@@ -810,7 +810,23 @@ def test_the_trigger_is_what_the_model_is_told_about_this_episode():
 
     from_the_world = [e for e in first_context if e["role"] == "user"]
     assert from_the_world == [
-        {"role": "user", "content": {"trigger": "speech", "said": ""}}
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": {
+                        "trigger_evidence": {
+                            "source": "speech",
+                            "observed_at_s": 0.0,
+                            "facts": {},
+                            "transcript": "",
+                            "uncertainty": [],
+                        }
+                    },
+                }
+            ],
+        }
     ]
 
 
@@ -892,7 +908,87 @@ def test_the_model_is_shown_what_it_asked_for_last_turn():
 
     asked = [e for e in second_context if e["role"] == "assistant"]
     assert asked
-    assert asked[0]["content"] == {"tool": "move_head", "args": {"pitch": 140}}
+    assert asked[0]["tool_calls"] == [
+        {
+            "id": "turn-1-tool",
+            "type": "function",
+            "function": {
+                "name": "move_head",
+                "arguments": {"pitch": 140},
+            },
+        }
+    ]
+
+
+def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
+    class NativeScript:
+        def __init__(self):
+            self.contexts = []
+            self.decisions = [
+                Decision(
+                    tool="speak",
+                    args={"text": "hello"},
+                    tokens_in=10,
+                    tokens_out=2,
+                    tool_call_id="call-one",
+                    note="Acknowledge the greeting.",
+                ),
+                Decision(
+                    tool="done",
+                    args={},
+                    tokens_in=14,
+                    tokens_out=1,
+                    tool_call_id="call-two",
+                    note="The greeting is complete.",
+                ),
+            ]
+
+        def decide(self, working_context, tools):
+            self.contexts.append(tuple(working_context))
+            return self.decisions.pop(0)
+
+    clock = FakeClock()
+    model = NativeScript()
+    journal = Journal(episode_id="ep-native-protocol", clock=clock)
+    run_episode(
+        "speech",
+        said="hello",
+        model=model,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RecordingCommands(),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock,
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(142)),
+    )
+
+    second_turn = model.contexts[1]
+    assistant = next(entry for entry in second_turn if entry["role"] == "assistant")
+    assert assistant == {
+        "role": "assistant",
+        "content": "Acknowledge the greeting.",
+        "tool_calls": [
+            {
+                "id": "call-one",
+                "type": "function",
+                "function": {
+                    "name": "speak",
+                    "arguments": {"text": "hello"},
+                },
+            }
+        ],
+    }
+    tool_result = next(entry for entry in second_turn if entry["role"] == "tool")
+    assert tool_result["tool_call_id"] == "call-one"
+    assert tool_result["content"]["result"]["ok"] is True
+    assert tool_result["content"]["snapshot"] == {
+        "distance_cm": 142,
+        "face_present": True,
+        "new_speech": None,
+    }
 
 
 def test_the_context_grows_by_the_turn_and_keeps_its_order():

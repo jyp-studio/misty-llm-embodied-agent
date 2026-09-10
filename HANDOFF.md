@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-09 · branch `refactor/react-agent`
+Last updated: 2026-09-10 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,9 +8,8 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime ticket 01 is implemented. `SocialAgentRuntime` is now the
-highest product seam for the CLI, local Demo, and acceptance coverage. Its
-first tracer bullet is deliberately narrow:
+Social runtime tickets 01 and 02 are implemented. `SocialAgentRuntime` is the
+highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
    clock.
@@ -25,9 +24,15 @@ first tracer bullet is deliberately narrow:
 6. Offline scenario execution is visually and mechanically separate from the
    optional Live AI panel, so the no-key path no longer looks blocked by a
    hosted-model requirement.
+7. Typed Trigger Evidence reaches the first Turn with source, time, facts,
+   transcript, uncertainty and an optional selected image, before any Snapshot.
+8. Model context preserves native assistant Tool calls and matching `tool`
+   results. The OpenAI adapter disables parallel calls and rejects multiple
+   calls rather than silently dropping extras.
+9. Short public Decision Notes are typed Journal records and Demo Moments; no
+   private reasoning or chain-of-thought is requested or stored.
 
-The implementation commit is `7bd0a02`; review hardening starts at `1ac7b31`,
-and the current HEAD includes the follow-up resolution check.
+Ticket 01's completed follow-up is `b749d6b`; ticket 02 is the current HEAD.
 
 ## Verification
 
@@ -60,8 +65,8 @@ decisions, and simulated robot effects. Retained real-driver code has request
 contract tests only; physical behaviour, timing, calibration, and safety are
 hardware-unverified.
 
-The initial social runtime does not yet implement wake detection, visual cue
-classification, Trigger Evidence beyond the explicit input, cue queues,
+The current social runtime does not yet implement wake detection, visual cue
+classification, cue queues,
 identity-aware handoff, Skills, target-aware movement, or a live input adapter.
 The crying and A-to-B cards are roadmap previews only. They do not inject a
 Care Cue or person labels and cannot be run until their corresponding vertical
@@ -69,8 +74,8 @@ tickets implement the capability.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/02-*.md` only after ticket
-01's two-axis review commit is present. Preserve the architecture rule that
+Continue with `.scratch/social-react-runtime/issues/03-*.md`. Preserve the
+architecture rule that
 `Session.episode()` is an internal one-Episode dependency; new behaviour is
 accepted at `SocialAgentRuntime` through `ScenarioInputAdapter`.
 

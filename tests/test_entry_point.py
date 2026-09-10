@@ -64,6 +64,13 @@ def snapshots_the_model_read(model):
     ]
 
 
+def trigger_evidence_the_model_read(model):
+    message = next(
+        entry for entry in model.contexts[0] if entry["role"] == "user"
+    )
+    return message["content"][0]["text"]["trigger_evidence"]
+
+
 # ---------------------------------------------------------------------------
 # One command, one finite runtime scenario
 # ---------------------------------------------------------------------------
@@ -87,10 +94,9 @@ def test_the_trigger_and_what_was_said_are_what_the_model_is_asked_about():
         clock=FakeClock(),
     )
 
-    asked = [e for e in model.contexts[0] if e["role"] == "user"]
-    assert asked == [
-        {"role": "user", "content": {"trigger": "visual", "said": "are you there"}}
-    ]
+    evidence = trigger_evidence_the_model_read(model)
+    assert evidence["source"] == "visual"
+    assert evidence["transcript"] == "are you there"
 
 
 def test_the_default_trigger_is_speech():
@@ -98,8 +104,7 @@ def test_the_default_trigger_is_speech():
 
     main(["--said", "hello"], model=model, clock=FakeClock())
 
-    asked = [e for e in model.contexts[0] if e["role"] == "user"]
-    assert asked[0]["content"]["trigger"] == "speech"
+    assert trigger_evidence_the_model_read(model)["source"] == "speech"
 
 
 def test_an_unknown_trigger_is_refused_rather_than_recorded():

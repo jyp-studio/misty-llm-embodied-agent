@@ -89,6 +89,10 @@ TIME_PLACES = 3
 #: and ending after several — are both the model choosing to stop.
 OUTCOMES = ("done", "turn_limit", "aborted", "error")
 
+#: A Decision Note is UI copy, not a reasoning transcript.  This bound keeps
+#: a provider response from turning the Journal into an unbounded text channel.
+MAX_DECISION_NOTE_CHARS = 240
+
 #: What a mapping field may contain. Anything else does not survive JSON: a
 #: tuple comes back as a list and quietly breaks equality against a golden.
 JSON_TYPES = (str, int, float, bool, type(None), list, dict)
@@ -200,6 +204,29 @@ class ModelCalled(Record):
     tokens_in: int
     tokens_out: int
     type: str = "model_called"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DecisionNoted(Record):
+    """A short public purpose for one Tool choice, never private reasoning."""
+
+    turn: int
+    tool_call_id: str
+    note: str
+    type: str = "decision_noted"
+
+    def __post_init__(self) -> None:
+        offending = mentions_control_parameter(self.note)
+        if offending is not None:
+            raise ValueError(
+                f"Decision Note may not mention control parameter "
+                f"{offending!r}; physical control belongs to the control layer"
+            )
+        if len(self.note) > MAX_DECISION_NOTE_CHARS:
+            raise ValueError(
+                f"a Decision Note must be shorter than "
+                f"{MAX_DECISION_NOTE_CHARS + 1} characters"
+            )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -376,6 +403,7 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
         EpisodeStarted,
         TurnStarted,
         ModelCalled,
+        DecisionNoted,
         ToolCalled,
         ToolRejected,
         Observation,
@@ -718,6 +746,8 @@ def describe(record: Record) -> Described:
             f"model replied in {record.latency_ms}ms",
             f"{record.tokens_in}+{record.tokens_out} tokens",
         )
+    if isinstance(record, DecisionNoted):
+        return Described("decision note", record.note)
     if isinstance(record, ToolCalled):
         arguments = ", ".join(f"{k}={v!r}" for k, v in sorted(record.args.items()))
         return Described(f"{record.tool}({arguments})")

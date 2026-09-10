@@ -137,6 +137,11 @@ def test_the_persona_closes_the_door_on_acting_without_a_tool():
     assert "if you cannot do it with a tool, you cannot do it" in FLAT
 
 
+def test_the_persona_requests_only_a_short_public_decision_note():
+    assert "short public decision note" in FLAT
+    assert "do not provide private reasoning" in FLAT
+
+
 def test_the_persona_says_that_stopping_is_the_models_own_choice():
     """`PLAN.md` §4: self-termination is what makes a ReAct loop one, and the
     model cannot choose something nobody told it about.

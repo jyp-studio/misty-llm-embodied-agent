@@ -10,7 +10,11 @@ from __future__ import annotations
 import json
 import threading
 
-from misty_agent.agent.journal import EpisodeFinished, StopRequested
+from misty_agent.agent.journal import (
+    DecisionNoted,
+    EpisodeFinished,
+    StopRequested,
+)
 from misty_agent.agent.memory import Memory
 from misty_agent.agent.react import Decision
 from misty_agent.app import SystemClock, simulated_session
@@ -18,9 +22,11 @@ from misty_agent.config import Settings
 from misty_agent.demo import answer
 from misty_agent.fakes import FakeClock
 from misty_agent.runtime import (
+    EvidenceKind,
     RuntimeState,
     ScenarioInputAdapter,
     ScheduledInput,
+    SelectedImageEvidence,
     SocialAgentRuntime,
     TimedText,
 )
@@ -64,6 +70,127 @@ def test_a_timed_explicit_request_runs_from_attention_to_a_simulated_effect():
     assert episode.outcome.outcome == "done"
     assert isinstance(episode.journal.records[-1], EpisodeFinished)
     assert "tts/speak" in session.robot.endpoints
+
+
+def test_trigger_evidence_reaches_the_first_turn_before_any_observation():
+    """Ticket 02 begins at the runtime seam, not inside ``run_episode``."""
+
+    class CapturesFirstTurn(ScenarioModel):
+        def __init__(self):
+            super().__init__(EXPLICIT_TEXT_REQUEST.decisions)
+            self.contexts = []
+
+        def decide(self, working_context, tools):
+            self.contexts.append(tuple(working_context))
+            return super().decide(working_context, tools)
+
+    clock = FakeClock()
+    model = CapturesFirstTurn()
+    selected = SelectedImageEvidence(
+        media_type="image/png",
+        data_base64="c2VsZWN0ZWQtaW1hZ2U=",
+    )
+    source = ScenarioInputAdapter(
+        clock,
+        [
+            ScheduledInput(
+                at_s=0.25,
+                input=TimedText(
+                    text="Misty, can you see me?",
+                    evidence_kind=EvidenceKind.VISUAL,
+                    facts={"face_present": True, "is_looking": True},
+                    uncertainty=("distance is a monocular estimate",),
+                    selected_image=selected,
+                ),
+            )
+        ],
+    )
+    session = simulated_session(None, model=model, clock=clock)
+
+    result = SocialAgentRuntime(
+        source=source, session=session, clock=clock
+    ).run()
+
+    first_turn = model.contexts[0]
+    evidence_message = next(
+        entry for entry in first_turn if entry["role"] == "user"
+    )
+    assert evidence_message["content"] == [
+        {
+            "type": "text",
+            "text": {
+                "trigger_evidence": {
+                    "source": "visual",
+                    "observed_at_s": 0.25,
+                    "facts": {
+                        "face_present": True,
+                        "is_looking": True,
+                    },
+                    "transcript": "Misty, can you see me?",
+                    "uncertainty": ["distance is a monocular estimate"],
+                }
+            },
+        },
+        {
+            "type": "image",
+            "media_type": "image/png",
+            "data_base64": "c2VsZWN0ZWQtaW1hZ2U=",
+        },
+    ]
+    assert not any(entry["role"] == "tool" for entry in first_turn)
+    second_turn = model.contexts[1]
+    observation = next(entry for entry in second_turn if entry["role"] == "tool")
+    assert "snapshot" in observation["content"]
+    assert "trigger_evidence" not in observation["content"]
+    assert result.episodes[0].evidence.observed_at_s == 0.25
+
+
+def test_a_public_decision_note_is_recorded_without_private_reasoning():
+    clock = FakeClock()
+    decisions = (
+        Decision(
+            tool="speak",
+            args={"text": "Hello."},
+            tokens_in=10,
+            tokens_out=2,
+            tool_call_id="call-greet",
+            note="Acknowledge the person's explicit greeting.",
+        ),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=14,
+            tokens_out=1,
+            tool_call_id="call-finish",
+            note="The greeting has been answered.",
+        ),
+    )
+    session = simulated_session(
+        None, model=ScenarioModel(decisions), clock=clock
+    )
+
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(clock, [text_at(0.0, "Hello Misty")]),
+        session=session,
+        clock=clock,
+    ).run()
+
+    notes = [
+        record
+        for record in result.episodes[0].journal.records
+        if isinstance(record, DecisionNoted)
+    ]
+    assert [note.note for note in notes] == [
+        "Acknowledge the person's explicit greeting.",
+        "The greeting has been answered.",
+    ]
+    assert [note.tool_call_id for note in notes] == [
+        "call-greet",
+        "call-finish",
+    ]
+    assert all(set(note.__dataclass_fields__) == {
+        "t", "episode_id", "turn", "tool_call_id", "note", "type"
+    } for note in notes)
 
 
 def test_an_input_source_does_not_have_to_invent_scenario_timing():

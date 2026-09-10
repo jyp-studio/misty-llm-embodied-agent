@@ -48,6 +48,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Mapping, Optional, Tuple
 
 from misty_agent.agent.journal import (
+    DecisionNoted,
     Observation,
     ToolCalled,
     from_jsonl,
@@ -80,6 +81,7 @@ from misty_agent.runtime import (
     RuntimeResult,
     ScenarioInputAdapter,
     ScheduledInput,
+    SelectedImageEvidence,
     SocialAgentRuntime,
     TimedText,
 )
@@ -348,14 +350,32 @@ def _scenario_execution(
     cue = next(
         record for record in result.records if isinstance(record, CueDetected)
     )
+    evidence = episode.evidence
     observations = {
         record.turn: record
         for record in episode.journal.records
         if isinstance(record, Observation)
     }
+    notes = {
+        record.turn: record
+        for record in episode.journal.records
+        if isinstance(record, DecisionNoted)
+    }
+    uncertainty = (
+        "、".join(evidence.uncertainty)
+        if evidence.uncertainty
+        else "沒有額外不確定性註記"
+    )
     flow = [
         PresentationBeat(
             "input", "人說", f"「{cue.text}」", "這段輸入由案例預先定義。"
+        ),
+        PresentationBeat(
+            "evidence",
+            "Trigger Evidence",
+            f"{'語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
+            f"{evidence.observed_at_s:g} 秒",
+            f"{len(evidence.facts)} 個可觀察 facts；不確定性：{uncertainty}",
         ),
         PresentationBeat(
             "cue", "系統判定", "明確互動請求", "Explicit Request"
@@ -364,12 +384,25 @@ def _scenario_execution(
     for record in episode.journal.records:
         if not isinstance(record, ToolCalled):
             continue
-        if record.tool == "speak":
+        noted = notes.get(record.turn)
+        tool_call_id = (
+            noted.tool_call_id if noted is not None else f"turn-{record.turn}-tool"
+        )
+        if noted is not None:
             flow.append(
                 PresentationBeat(
-                    "decision", "Misty 選擇", "說話", "speak Tool"
+                    "decision_note",
+                    "Decision Note",
+                    noted.note,
+                    "公開目的，不是私有推理。",
                 )
             )
+        flow.append(
+            PresentationBeat(
+                "tool_call", "Tool call", record.tool, tool_call_id
+            )
+        )
+        if record.tool == "speak":
             observation = observations.get(record.turn)
             succeeded = (
                 observation is not None
@@ -377,16 +410,14 @@ def _scenario_execution(
             )
             flow.append(
                 PresentationBeat(
-                    "effect",
-                    "模擬 Misty",
+                    "observation",
+                    "Observation",
                     f"「{record.args['text']}」",
-                    "模擬說話成功" if succeeded else "模擬說話未成功",
-                )
-            )
-        elif record.tool == "done":
-            flow.append(
-                PresentationBeat(
-                    "decision", "Misty 選擇", "結束互動", "done Tool"
+                    (
+                        "模擬說話成功；Snapshot 已附回下一個 Turn。"
+                        if succeeded
+                        else "模擬說話未成功；Snapshot 已附回下一個 Turn。"
+                    ),
                 )
             )
     completed = (
@@ -419,11 +450,27 @@ def _scenario_execution(
                 "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
             ),
         },
+        "trigger_evidence": {
+            "source": evidence.source.value,
+            "observed_at_s": evidence.observed_at_s,
+            "facts": dict(evidence.facts),
+            "transcript": evidence.transcript,
+            "uncertainty": list(evidence.uncertainty),
+            "selected_image": evidence.selected_image is not None,
+        },
         "flow": [asdict(beat) for beat in flow],
         "decision_explanation": {
-            "available": False,
-            "headline": "Ticket 01 尚無 Decision Note",
-            "detail": "目前可驗證的是 Tool choice；決策說明將由 ticket 02 加入。",
+            "available": bool(notes),
+            "headline": (
+                "Decision Note 已由本次 Journal 記錄"
+                if notes
+                else "本次 model 未提供 Decision Note"
+            ),
+            "detail": (
+                next(iter(notes.values())).note
+                if notes
+                else "Tool choice 仍可驗證，但沒有公開目的說明。"
+            ),
         },
     }
 
@@ -704,6 +751,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         said = heard or said
 
     seen = None
+    selected_image = None
     if asked.get("image"):
         picture = _decoded(asked, "image")
         if picture is None:
@@ -712,6 +760,15 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         if frame is None:
             return _json(400, {"error": "that image could not be decoded"})
         seen = look_at(frame)
+        media_type = str(asked.get("image_media_type") or "image/jpeg")
+        if not media_type.startswith("image/"):
+            return _json(
+                400, {"error": "image_media_type must be an image type"}
+            )
+        selected_image = SelectedImageEvidence(
+            media_type=media_type,
+            data_base64=str(asked["image"]),
+        )
 
     perceived = {
         "face_present": bool(seen.has_human) if seen else False,
@@ -744,6 +801,16 @@ def _run(body: bytes, *, audio: bool) -> Reply:
                     input=TimedText(
                         text=said,
                         evidence_kind=EvidenceKind(evidence_kind),
+                        facts=perceived,
+                        uncertainty=(
+                            (
+                                "face and gaze come from local perception",
+                                "distance is a monocular estimate",
+                            )
+                            if seen is not None
+                            else ()
+                        ),
+                        selected_image=selected_image,
                     ),
                 )
             ],

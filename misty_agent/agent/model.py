@@ -29,6 +29,7 @@ import json
 import os
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from misty_agent.agent.journal import MAX_DECISION_NOTE_CHARS
 from misty_agent.agent.react import Decision
 from misty_agent.config import settings
 
@@ -101,6 +102,7 @@ class OpenAIModel:
             messages=[_as_message(entry) for entry in working_context],
             tools=list(tools),
             tool_choice="required",
+            parallel_tool_calls=False,
             temperature=self._temperature,
         )
         choice = response.choices[0].message
@@ -110,13 +112,27 @@ class OpenAIModel:
                 "the model answered without calling a Tool, which "
                 "tool_choice='required' is supposed to prevent"
             )
+        if len(calls) != 1:
+            raise ModelProtocolError(
+                f"the provider returned {len(calls)} Tool calls for one Turn"
+            )
         call = calls[0]
+        call_id = getattr(call, "id", "") or ""
+        if not call_id:
+            raise ModelProtocolError("the provider Tool call has no identity")
         usage = getattr(response, "usage", None)
+        note = str(getattr(choice, "content", "") or "").strip()
+        if len(note) > MAX_DECISION_NOTE_CHARS:
+            raise ModelProtocolError(
+                f"Decision Note exceeds {MAX_DECISION_NOTE_CHARS} characters"
+            )
         return Decision(
             tool=call.function.name,
             args=_as_arguments(call.function.arguments),
             tokens_in=getattr(usage, "prompt_tokens", 0) or 0,
             tokens_out=getattr(usage, "completion_tokens", 0) or 0,
+            tool_call_id=call_id,
+            note=note,
         )
 
 
@@ -124,26 +140,79 @@ class ModelSaidNothing(RuntimeError):
     """The one shape the loop has no branch for."""
 
 
+class ModelProtocolError(RuntimeError):
+    """The provider returned a shape that cannot represent one Turn."""
+
+
 def _as_message(entry: Mapping[str, Any]) -> Dict[str, Any]:
-    """One working-context entry as something the API will accept.
+    """Translate provider-neutral context without changing its protocol."""
+    role = str(entry.get("role") or "")
+    if role == "assistant":
+        calls = []
+        for call in entry.get("tool_calls", ()):
+            function = call.get("function", {})
+            arguments = function.get("arguments", {})
+            if not isinstance(arguments, str):
+                arguments = json.dumps(arguments, ensure_ascii=False)
+            calls.append(
+                {
+                    "id": call.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": function.get("name"),
+                        "arguments": arguments,
+                    },
+                }
+            )
+        return {
+            "role": "assistant",
+            "content": str(entry.get("content") or ""),
+            "tool_calls": calls,
+        }
 
-    The loop's entries carry structured content — an Observation is a mapping,
-    because `PLAN.md` §15.4 refuses to put a prose summary beside it. The API
-    wants a string, so the mapping is serialised here and nowhere else: this
-    is a transport detail, and the loop should not be shaped by it.
+    if role == "tool":
+        call_id = str(entry.get("tool_call_id") or "")
+        if not call_id:
+            raise ModelProtocolError("a Tool result has no tool_call_id")
+        content = entry.get("content", "")
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False, sort_keys=True)
+        return {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": content,
+        }
 
-    `role` is narrowed to what the API knows. The loop uses `tool` for both
-    Observations and refusals, but a real `tool` message has to answer a
-    specific `tool_call_id` — which the loop does not carry, deliberately,
-    since its Journal is the record and not the transcript. They go over as
-    `user` content, which is what they are from the model's side: the world
-    answering back.
-    """
+    if role not in ("system", "user"):
+        raise ModelProtocolError(f"{role!r} is not a model message role")
     content = entry.get("content", "")
+    if role == "user" and isinstance(content, (list, tuple)):
+        parts = []
+        for part in content:
+            if part.get("type") == "text":
+                text = part.get("text", "")
+                if not isinstance(text, str):
+                    text = json.dumps(text, ensure_ascii=False, sort_keys=True)
+                parts.append({"type": "text", "text": text})
+            elif part.get("type") == "image":
+                media_type = part.get("media_type", "")
+                data = part.get("data_base64", "")
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{media_type};base64,{data}"
+                        },
+                    }
+                )
+            else:
+                raise ModelProtocolError(
+                    f"unknown model content part {part.get('type')!r}"
+                )
+        return {"role": "user", "content": parts}
     if not isinstance(content, str):
         content = json.dumps(content, ensure_ascii=False, sort_keys=True)
-    role = entry.get("role", "user")
-    return {"role": "system" if role == "system" else "user", "content": content}
+    return {"role": role, "content": content}
 
 
 def _as_arguments(raw: Any) -> Dict[str, Any]:

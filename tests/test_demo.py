@@ -128,6 +128,7 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
     ]
     assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
+    assert listed[0]["ticket"] == "02"
     assert listed[1]["availability"] == "planned"
     assert listed[1]["ticket"] == "06"
     assert listed[2]["availability"] == "planned"
@@ -169,6 +170,17 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
             "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
         ),
     }
+    assert execution["trigger_evidence"] == {
+        "source": "speech",
+        "observed_at_s": 0.5,
+        "facts": {
+            "addressed_robot": True,
+            "cue_kind": "explicit_request",
+        },
+        "transcript": "Misty，你好！",
+        "uncertainty": ["說話者身分未經驗證"],
+        "selected_image": False,
+    }
     assert execution["flow"] == [
         {
             "kind": "input",
@@ -177,28 +189,46 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
             "detail": "這段輸入由案例預先定義。",
         },
         {
+            "kind": "evidence",
+            "label": "Trigger Evidence",
+            "headline": "語音證據 · 0.5 秒",
+            "detail": "2 個可觀察 facts；不確定性：說話者身分未經驗證",
+        },
+        {
             "kind": "cue",
             "label": "系統判定",
             "headline": "明確互動請求",
             "detail": "Explicit Request",
         },
         {
-            "kind": "decision",
-            "label": "Misty 選擇",
-            "headline": "說話",
-            "detail": "speak Tool",
+            "kind": "decision_note",
+            "label": "Decision Note",
+            "headline": "回應對 Misty 的明確問候。",
+            "detail": "公開目的，不是私有推理。",
         },
         {
-            "kind": "effect",
-            "label": "模擬 Misty",
+            "kind": "tool_call",
+            "label": "Tool call",
+            "headline": "speak",
+            "detail": "call-greeting-speak",
+        },
+        {
+            "kind": "observation",
+            "label": "Observation",
             "headline": "「嗨！很高興見到你。」",
-            "detail": "模擬說話成功",
+            "detail": "模擬說話成功；Snapshot 已附回下一個 Turn。",
         },
         {
-            "kind": "decision",
-            "label": "Misty 選擇",
-            "headline": "結束互動",
-            "detail": "done Tool",
+            "kind": "decision_note",
+            "label": "Decision Note",
+            "headline": "問候已完成，結束這次互動。",
+            "detail": "公開目的，不是私有推理。",
+        },
+        {
+            "kind": "tool_call",
+            "label": "Tool call",
+            "headline": "done",
+            "detail": "call-greeting-done",
         },
         {
             "kind": "ending",
@@ -208,10 +238,13 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         },
     ]
     assert execution["decision_explanation"] == {
-        "available": False,
-        "headline": "Ticket 01 尚無 Decision Note",
-        "detail": "目前可驗證的是 Tool choice；決策說明將由 ticket 02 加入。",
+        "available": True,
+        "headline": "Decision Note 已由本次 Journal 記錄",
+        "detail": "回應對 Misty 的明確問候。",
     }
+    moments = payload["episodes"][0]["storyboard"]["moments"]
+    assert [moment["kind"] for moment in moments].count("decision_noted") == 2
+    assert "data_base64" not in json.dumps(payload)
 
 
 def test_the_human_ending_is_derived_from_an_abnormal_current_run(monkeypatch):
@@ -544,6 +577,13 @@ def run(
     return answer("POST", "/run", json.dumps(asked).encode(), **rest)
 
 
+def first_trigger_evidence(model):
+    message = next(
+        entry for entry in model.contexts[0] if entry["role"] == "user"
+    )
+    return message["content"][0]["text"]["trigger_evidence"]
+
+
 def test_a_photograph_from_the_page_goes_through_the_real_pipeline(monkeypatch):
     """The half that is free: mediapipe runs here, on this machine, and needs
     no key. Somebody with no key still finds out what the camera made of
@@ -556,6 +596,43 @@ def test_a_photograph_from_the_page_goes_through_the_real_pipeline(monkeypatch):
     assert seen["face_present"] is True
     assert seen["distance_cm"] == 52
     assert seen["is_looking"] is True
+
+
+def test_selected_image_and_perception_facts_reach_the_first_model_turn(
+    monkeypatch,
+):
+    asked = Says("done")
+    picture = a_portrait(0.5)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setattr("misty_agent.demo.OpenAIModel", lambda: asked)
+
+    payload = json.loads(
+        run(
+            said="Misty, can you see me?",
+            image=picture,
+            evidence_kind="visual",
+        ).body
+    )
+
+    evidence = next(
+        entry for entry in asked.contexts[0] if entry["role"] == "user"
+    )["content"]
+    assert evidence[0]["text"]["trigger_evidence"] == {
+        "source": "visual",
+        "observed_at_s": 0.0,
+        "facts": payload["perception"],
+        "transcript": "Misty, can you see me?",
+        "uncertainty": [
+            "face and gaze come from local perception",
+            "distance is a monocular estimate",
+        ],
+    }
+    assert evidence[1] == {
+        "type": "image",
+        "media_type": "image/jpeg",
+        "data_base64": base64.b64encode(picture).decode(),
+    }
+    assert "data_base64" not in json.dumps(payload)
 
 
 def test_without_a_key_it_says_why_there_are_no_decisions(monkeypatch):
@@ -609,8 +686,7 @@ def test_what_the_person_said_is_what_the_model_is_asked_about(monkeypatch):
 
     run(said="are you there")
 
-    spoken = [e for e in asked.contexts[0] if e["role"] == "user"]
-    assert spoken[0]["content"]["said"] == "are you there"
+    assert first_trigger_evidence(asked)["transcript"] == "are you there"
 
 
 def test_the_page_says_what_set_the_episode_off(monkeypatch):
@@ -624,8 +700,7 @@ def test_the_page_says_what_set_the_episode_off(monkeypatch):
 
     run(said="", image=a_portrait(), evidence_kind="visual")
 
-    told = [e for e in asked.contexts[0] if e["role"] == "user"]
-    assert told[0]["content"]["trigger"] == "visual"
+    assert first_trigger_evidence(asked)["source"] == "visual"
 
 
 def test_a_trigger_nobody_recognises_is_refused():
@@ -745,8 +820,7 @@ def test_audio_that_was_asked_for_is_transcribed_and_becomes_what_was_said(
 
     assert heard == [(4800, 16000)]
     assert payload["heard"] == "is that you"
-    spoken = [e for e in asked.contexts[0] if e["role"] == "user"]
-    assert spoken[0]["content"]["said"] == "is that you"
+    assert first_trigger_evidence(asked)["transcript"] == "is that you"
 
 
 def test_audio_that_is_not_a_wav_is_refused_with_a_reason():

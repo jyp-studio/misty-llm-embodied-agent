@@ -97,7 +97,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     title="有人和 Misty 打招呼",
     subtitle="一句明確的問候，開啟完整 Episode。",
     availability=ScenarioAvailability.READY,
-    ticket="01",
+    ticket="02",
     limitation=(
         "使用 scripted model 與 simulated robot；沒有呼叫網路，也沒有連接 "
         "Misty II。"
@@ -116,7 +116,17 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         ),
     ),
     inputs=(
-        ScheduledInput(at_s=0.5, input=TimedText(text="Misty，你好！")),
+        ScheduledInput(
+            at_s=0.5,
+            input=TimedText(
+                text="Misty，你好！",
+                facts={
+                    "addressed_robot": True,
+                    "cue_kind": "explicit_request",
+                },
+                uncertainty=("說話者身分未經驗證",),
+            ),
+        ),
     ),
     decisions=(
         Decision(
@@ -124,8 +134,17 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             args={"text": "嗨！很高興見到你。"},
             tokens_in=20,
             tokens_out=8,
+            tool_call_id="call-greeting-speak",
+            note="回應對 Misty 的明確問候。",
         ),
-        Decision(tool="done", args={}, tokens_in=34, tokens_out=1),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=34,
+            tokens_out=1,
+            tool_call_id="call-greeting-done",
+            note="問候已完成，結束這次互動。",
+        ),
     ),
 )
 

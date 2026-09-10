@@ -3,9 +3,10 @@
 ``SocialAgentRuntime`` is the product's highest public seam: an input source
 is watched for an Interaction Cue, a selected cue opens the existing bounded
 Episode runner, and the result keeps both the Attention records and the typed
-Episode Journal.  Ticket 01 deliberately supports only timed text that is an
-Explicit Request.  Wake detection, visual classification, other cue kinds and
-cue queues belong to later vertical slices.
+Episode Journal. Ticket 02 adds typed Trigger Evidence, including an optional
+selected image, while cue selection still supports only Explicit Requests.
+Wake detection, visual classification, other cue kinds and cue queues belong
+to later vertical slices.
 
 The finite ``ScenarioInputAdapter`` is the no-hardware side of the InputSource
 boundary.  Waiting uses the injected clock, so an acceptance scenario can
@@ -15,11 +16,16 @@ exercise time without sleeping in real life.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional, Protocol, Sequence, Tuple, Union
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, Tuple, Union
 
+from misty_agent.agent.evidence import (
+    EvidenceKind,
+    SelectedImageEvidence,
+    TriggerEvidence,
+)
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
 
@@ -59,13 +65,6 @@ class CueKind(str, Enum):
     EXPLICIT_REQUEST = "explicit_request"
 
 
-class EvidenceKind(str, Enum):
-    """Modalities this slice can pass into existing Episode evidence."""
-
-    SPEECH = "speech"
-    VISUAL = "visual"
-
-
 @dataclass(frozen=True)
 class RuntimeInput:
     """One provider-independent arrival at the Attention Loop."""
@@ -89,6 +88,9 @@ class TimedText(RuntimeInput):
 
     text: str
     evidence_kind: EvidenceKind = EvidenceKind.SPEECH
+    facts: Mapping[str, Any] = field(default_factory=dict)
+    uncertainty: Tuple[str, ...] = ()
+    selected_image: Optional[SelectedImageEvidence] = None
 
 
 class ScenarioClock(Protocol):
@@ -114,8 +116,7 @@ class EpisodeSession(Protocol):
 
     def episode(
         self,
-        trigger: str,
-        heard: str,
+        evidence: TriggerEvidence,
         *,
         render: bool = False,
         journal_path: Optional[Path] = None,
@@ -232,6 +233,7 @@ class RuntimeEpisode:
     cue_id: str
     cue_kind: CueKind
     input: RuntimeInput
+    evidence: TriggerEvidence
     outcome: EpisodeOutcome
     journal: Journal
 
@@ -293,7 +295,7 @@ class SocialAgentRuntime:
                 phase = RuntimePhase.CUE_SELECTION
                 if not isinstance(item, TimedText):
                     raise TypeError(
-                        f"ticket 01 cannot select a cue from {type(item).__name__}"
+                        f"cannot select a cue from {type(item).__name__}"
                     )
 
                 cue_id = f"cue-{len(episodes) + 1}"
@@ -314,9 +316,16 @@ class SocialAgentRuntime:
                     if journal_path_for_episode is not None
                     else None
                 )
+                evidence = TriggerEvidence(
+                    source=item.evidence_kind,
+                    observed_at_s=self._elapsed(),
+                    facts=item.facts,
+                    transcript=item.text,
+                    uncertainty=item.uncertainty,
+                    selected_image=item.selected_image,
+                )
                 outcome, journal = self._session.episode(
-                    item.evidence_kind,
-                    item.text,
+                    evidence,
                     render=render,
                     journal_path=journal_path,
                 )
@@ -326,6 +335,7 @@ class SocialAgentRuntime:
                         cue_id=cue_id,
                         cue_kind=CueKind.EXPLICIT_REQUEST,
                         input=item,
+                        evidence=evidence,
                         outcome=outcome,
                         journal=journal,
                     )
@@ -421,6 +431,8 @@ __all__ = [
     "ScenarioClock",
     "ScenarioInputAdapter",
     "ScheduledInput",
+    "SelectedImageEvidence",
     "SocialAgentRuntime",
     "TimedText",
+    "TriggerEvidence",
 ]

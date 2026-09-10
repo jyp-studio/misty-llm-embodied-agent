@@ -2523,3 +2523,23 @@ Demo 從此遵守以下展示契約：
 
 因此 ticket 01 follow-up 只解鎖 greeting。每張後續 ticket 若有 Demo acceptance criterion，完成時
 同時交付人可讀的可觀察成果與同 seam 的 tests；不需要等所有 tickets 完成才看得到 UI 變化。
+
+### 16.51 Trigger Evidence 與 model protocol 是同一條可追溯鏈（ticket 02）
+
+Ticket 02 把 Episode 第一個 Turn 的鬆散 `{trigger, said}` 改成 typed Trigger Evidence。它攜帶
+來源、runtime-relative time、selected facts、transcript、不確定性與可選的 bounded selected
+image；這份 Evidence 在任何 Observation 之前交給 model，而 Tool 完成後取得的 cheap Snapshot
+仍只屬於 Observation。兩者不得互相冒充。
+
+Model Interface 使用 provider-neutral 的 native function-calling message shape。正式 OpenAI adapter
+保留 assistant Tool call identity，並以 matching `tool` role result 接回下一個 Turn；request 明確
+停用 parallel Tool calls。provider 若仍在同一 Turn 回傳多個 calls，該 Turn 明確失敗並讓 bounded
+Episode 以 error 結束，不能只取第一個。selected image 只由 adapter 在最後一層轉成 provider
+格式，runtime、ReAct 與 scripted scenario provider 都不需要知道 OpenAI。
+
+每個 Decision 可附帶最長 240 字的公開 Decision Note，說明下一個 Tool choice 的直接目的。Note
+是 typed Journal record 並可由 Storyboard／Demo 重播；它不是 private reasoning，不要求或保存
+chain-of-thought，也受 §4 的 control-parameter guard 約束。Demo 問候案例的輸入與 Decisions 仍是
+預先定義的 scripted fixture，但 Trigger Evidence、native context、Tool dispatch、Observation、
+Decision Note 與 Journal 都是按 Run 後由目前程式重新產生。圖片只作為明確 request 的 selected
+Evidence；autonomous visual cue classification 仍屬後續 tickets。

@@ -2549,3 +2549,23 @@ Review 也收緊了三個接縫：Cue 與 Trigger Evidence 共用 input 抵達�
 `Session.episode()` 與 `run_episode()` 只接受 typed Trigger Evidence，不再各自保留 trigger string
 compatibility branch；Decision Note 驗證失敗會記為 model-phase `ExecutionFailed`，並以
 `EpisodeFinished(outcome="error")` 封口，而不是讓例外逃到 Runtime 外層。
+
+### 16.52 Active Attention 採 Turn-boundary cooperative scheduler（ticket 03）
+
+Ticket 03 不在 Runtime 另開 background thread。`InputSource` 負責保存它已觀察到的 input；
+`SocialAgentRuntime` 在 idle 時做 blocking read，在 active Episode 每個 Tool 完成後的安全 Turn
+boundary 以 non-blocking `read_available()` 收走已抵達的 input。這讓 scenario 能保留真正的抵達
+timestamp，又不會在 physical Tool 中途任意搶走控制權。未來 live adapter 可以在自己的 driver
+邊界收資料，但同一時間仍只有一個 Episode 能呼叫 model 或產生 robot effects。
+
+Cue scheduler 的初始政策固定且可測：queue capacity 預設 3、freshness 預設 5 秒；個別 Evidence
+可以宣告更短期限。Explicit Request、Care Cue、Social Invitation 的 priority 分別是 3、2、1，
+同 priority 依抵達順序。相同 deduplication key 的同級或較低級新 Cue 被合併；較高級新 Cue 取代
+舊 Cue。queue 滿時只有較高 priority 能淘汰最新的最低 priority Cue，否則丟棄新 Cue。每次
+enqueue、dedupe、replacement、overflow／expiry／shutdown drop 與 dequeue 都留下 typed Runtime
+record；只有仍 fresh 的 Cue 能在前一 Episode 完成後開新 Episode。
+
+Demo 仍維持三張社交情境卡，且哭泣辨識與 A→B target handoff 仍鎖在 ticket 06／08。已解鎖的
+問候案例加入同一匿名人物在第一個 Episode 忙碌時出現的 scripted cues，直接以本次 Runtime
+records 顯示 active cue、queue 上限、priority、去重、升級、overflow、expiry 與 dequeue。這證明
+排程與單一所有權，不證明人物追蹤、真 LLM 自主決策或真機行為。

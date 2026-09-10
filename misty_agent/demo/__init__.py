@@ -65,12 +65,18 @@ from misty_agent.app import (
     look_at,
     simulated_session,
 )
+from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock
 from misty_agent.perception.asr import OpenAITranscriber, wav_to_pcm
 from misty_agent.runtime import (
     AttentionStarted,
     AttentionStopped,
     CueDetected,
+    CueDequeued,
+    CueDeduplicated,
+    CueDropped,
+    CueQueued,
+    CueReplaced,
     EvidenceKind,
     EpisodeCompleted,
     EpisodeOpened,
@@ -303,23 +309,19 @@ def _run_scenario(name: str) -> Reply:
         model=ScenarioModel(case.decisions),
         clock=clock,
     )
+    scenario_config = Settings(
+        cue_queue_capacity=3,
+        cue_freshness_s=5.0,
+    )
     result = SocialAgentRuntime(
         source=ScenarioInputAdapter(clock, case.inputs),
         session=session,
         clock=clock,
+        config=scenario_config,
     ).run()
-    if len(result.episodes) != len(case.actors):
-        return _json(
-            500,
-            {
-                "error": (
-                    f"scenario {name!r} expected {len(case.actors)} episodes "
-                    f"but produced {len(result.episodes)}"
-                )
-            },
-        )
     episodes = []
-    for actor, episode in zip(case.actors, result.episodes):
+    for index, episode in enumerate(result.episodes):
+        actor = case.actors[min(index, len(case.actors) - 1)]
         storyboard, board = _project_journal(episode.journal.records)
         episodes.append(
             {
@@ -336,7 +338,11 @@ def _run_scenario(name: str) -> Reply:
         200,
         {
             "scenario": _scenario_payload(case),
-            "execution": _scenario_execution(result, result.episodes[0]),
+            "execution": _scenario_execution(
+                result,
+                result.episodes[0],
+                queue_capacity=scenario_config.cue_queue_capacity,
+            ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
         },
@@ -344,7 +350,10 @@ def _run_scenario(name: str) -> Reply:
 
 
 def _scenario_execution(
-    result: RuntimeResult, episode: RuntimeEpisode
+    result: RuntimeResult,
+    episode: RuntimeEpisode,
+    *,
+    queue_capacity: int,
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview."""
     cue = next(
@@ -361,6 +370,14 @@ def _scenario_execution(
         for record in episode.journal.records
         if isinstance(record, DecisionNoted)
     }
+    queue_records = tuple(
+        record
+        for record in result.records
+        if isinstance(
+            record,
+            (CueQueued, CueDequeued, CueDeduplicated, CueReplaced, CueDropped),
+        )
+    )
     uncertainty = (
         "、".join(evidence.uncertainty)
         if evidence.uncertainty
@@ -446,8 +463,9 @@ def _scenario_execution(
             "model": "預設腳本模型",
             "robot": "模擬 Misty",
             "detail": (
-                "輸入與模型決策預先定義；Runtime、Tool 與 Journal 由目前程式"
-                "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
+                "輸入時間、Cue 類型與模型決策預先定義；Runtime、queue、Tool "
+                "與 Journal 由目前程式重新執行。這不是歷史紀錄、LLM 自主"
+                "決策、感知辨識或真機結果。"
             ),
         },
         "trigger_evidence": {
@@ -471,6 +489,15 @@ def _scenario_execution(
                 if notes
                 else "Tool choice 仍可驗證，但沒有公開目的說明。"
             ),
+        },
+        "attention": {
+            "active_cue": {
+                "cue_id": episode.cue_id,
+                "cue_kind": episode.cue_kind.value,
+                "priority": episode.cue_kind.priority,
+            },
+            "queue_capacity": queue_capacity,
+            "events": [_runtime_moment(record) for record in queue_records],
         },
     }
 
@@ -549,13 +576,13 @@ def _runtime_example() -> Reply:
     clock = FakeClock()
     session = simulated_session(
         None,
-        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
+        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions[:3]),
         clock=clock,
     )
     runtime = SocialAgentRuntime(
         source=ScenarioInputAdapter(
             clock,
-            EXPLICIT_TEXT_REQUEST.inputs,
+            EXPLICIT_TEXT_REQUEST.inputs[:1],
         ),
         session=session,
         clock=clock,
@@ -601,8 +628,37 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
         headline = "Attention Loop started"
         detail = "waiting for an Interaction Cue"
     elif isinstance(record, CueDetected):
-        headline = "Explicit Request detected"
+        headline = f"{record.cue_kind.value.replace('_', ' ')} detected"
         detail = f"{record.evidence_kind} evidence: {record.text or '(no words)'}"
+    elif isinstance(record, CueQueued):
+        headline = f"排入 {record.cue_id} · 優先級 {record.priority}"
+        detail = (
+            f"目前處理 {record.active_cue_id} · queue 中有 "
+            f"{record.queue_size} 個"
+        )
+    elif isinstance(record, CueDeduplicated):
+        headline = f"去重 {record.cue_id}"
+        detail = (
+            f"保留 {record.retained_cue_id} · key "
+            f"{record.deduplication_key}"
+        )
+    elif isinstance(record, CueReplaced):
+        headline = f"升級 {record.cue_id} → {record.replacement_cue_id}"
+        detail = f"優先級 {record.old_priority} → {record.new_priority}"
+    elif isinstance(record, CueDropped):
+        reason = {
+            "expired": "已過期",
+            "overflow": "queue 已滿",
+            "shutdown": "Runtime 關閉",
+        }[record.reason.value]
+        headline = f"丟棄 {record.cue_id} · {reason}"
+        detail = (
+            f"優先級 {record.priority} · queue 中剩 "
+            f"{record.queue_size} 個"
+        )
+    elif isinstance(record, CueDequeued):
+        headline = f"取出 {record.cue_id} · 優先級 {record.priority}"
+        detail = f"queue 中剩 {record.queue_size} 個"
     elif isinstance(record, EpisodeOpened):
         headline = "Episode opened"
         detail = f"selected {record.cue_id}"
@@ -616,8 +672,7 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
         headline = f"Attention Loop stopped: {record.ending.value}"
         detail = "finite scenario closed"
     return {
-        "t": record.t,
-        "type": record.type,
+        **asdict(record),
         "headline": headline,
         "detail": detail,
     }

@@ -32,6 +32,8 @@ def test_defaults_load():
     assert s.max_approach_steps == 8
     assert s.approach_reading_timeout_s == 2.0
     assert s.approach_timeout_s == 30.0
+    assert s.cue_queue_capacity == 3
+    assert s.cue_freshness_s == 5.0
 
 
 def test_settings_are_frozen():
@@ -89,6 +91,8 @@ def test_fold_size_cannot_exceed_window():
         ("max_actual_motion_multiplier", 0.0),
         ("focal_length", -1.0),
         ("sensor_transport_lag_s", -0.1),
+        ("cue_queue_capacity", 0),
+        ("cue_freshness_s", 0.0),
     ],
 )
 def test_out_of_range_values_are_rejected(field, value):

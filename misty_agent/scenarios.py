@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence, Tuple
 
+from misty_agent.agent.evidence import EvidenceKind
 from misty_agent.agent.react import Decision
-from misty_agent.runtime import ScheduledInput, TimedText
+from misty_agent.runtime import CueKind, ScheduledInput, TimedText
 
 
 @dataclass(frozen=True)
@@ -72,8 +73,8 @@ class AcceptanceScenario(ScenarioCard):
             raise ValueError("a runnable scenario must declare an input")
         if not self.decisions:
             raise ValueError("a runnable scenario must declare model decisions")
-        if len(self.actors) != len(self.inputs):
-            raise ValueError("each scenario input must name exactly one actor")
+        if not self.actors:
+            raise ValueError("a runnable scenario must name its expected episodes")
 
 
 class ScenarioModel:
@@ -95,24 +96,29 @@ class ScenarioModel:
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
     title="有人和 Misty 打招呼",
-    subtitle="一句明確的問候，開啟完整 Episode。",
+    subtitle="問候進行中仍接收新線索，依優先級安全排隊。",
     availability=ScenarioAvailability.READY,
-    ticket="02",
+    ticket="03",
     limitation=(
-        "使用 scripted model 與 simulated robot；沒有呼叫網路，也沒有連接 "
-        "Misty II。"
+        "輸入時間與 Cue 類型均為預先定義，只驗證 scheduler；另使用 "
+        "scripted model 與 simulated robot，沒有連接 Misty II。"
     ),
-    actors=("person",),
+    actors=("person", "person", "person", "person"),
     preview=(
         PresentationBeat(
             "input", "收到", "「Misty，你好！」", "語音被分類為明確互動請求。"
         ),
-        PresentationBeat("decision", "決定", "回應問候", "ReAct 選擇 speak Tool。"),
+        PresentationBeat(
+            "decision",
+            "決定",
+            "先找出說話方向，再回應",
+            "期間的新 cue 只排隊，不搶走 Misty。",
+        ),
         PresentationBeat(
             "effect",
             "模擬動作",
             "「嗨！很高興見到你。」",
-            "情境輸入播放完畢，Runtime 正常停止。",
+            "所有 fresh cue 依優先級處理，過期或超量 cue 有明確原因。",
         ),
     ),
     inputs=(
@@ -127,8 +133,87 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
                 uncertainty=("說話者身分未經驗證",),
             ),
         ),
+        ScheduledInput(
+            at_s=0.6,
+            input=TimedText(
+                text="揮手",
+                cue_kind=CueKind.SOCIAL_INVITATION,
+                evidence_kind=EvidenceKind.VISUAL,
+                deduplication_key="same-signal",
+                facts={"wave_observed": True},
+            ),
+        ),
+        ScheduledInput(
+            at_s=0.7,
+            input=TimedText(
+                text="再次揮手",
+                cue_kind=CueKind.SOCIAL_INVITATION,
+                evidence_kind=EvidenceKind.VISUAL,
+                deduplication_key="same-signal",
+                facts={"wave_observed": True},
+            ),
+        ),
+        ScheduledInput(
+            at_s=0.8,
+            input=TimedText(
+                text="Misty，我還有一個問題。",
+                cue_kind=CueKind.EXPLICIT_REQUEST,
+                deduplication_key="same-signal",
+                facts={"addressed_robot": True},
+            ),
+        ),
+        ScheduledInput(
+            at_s=0.9,
+            input=TimedText(
+                text="短暫揮手",
+                cue_kind=CueKind.SOCIAL_INVITATION,
+                evidence_kind=EvidenceKind.VISUAL,
+                deduplication_key="brief-wave",
+                facts={"wave_observed": True},
+            ),
+        ),
+        ScheduledInput(
+            at_s=1.0,
+            input=TimedText(
+                text="聲音突然變小",
+                cue_kind=CueKind.CARE_CUE,
+                evidence_kind=EvidenceKind.VISUAL,
+                deduplication_key="care-one",
+                facts={"voice_volume_changed": True},
+                uncertainty=("原因未知",),
+            ),
+        ),
+        ScheduledInput(
+            at_s=1.05,
+            input=TimedText(
+                text="低頭且沉默",
+                cue_kind=CueKind.CARE_CUE,
+                evidence_kind=EvidenceKind.VISUAL,
+                deduplication_key="care-two",
+                facts={"head_lowered": True},
+                uncertainty=("不代表特定情緒",),
+            ),
+        ),
+        ScheduledInput(
+            at_s=1.09,
+            input=TimedText(
+                text="已結束的短暫手勢",
+                cue_kind=CueKind.SOCIAL_INVITATION,
+                evidence_kind=EvidenceKind.VISUAL,
+                fresh_for_s=0.01,
+                facts={"gesture_ended": True},
+            ),
+        ),
     ),
     decisions=(
+        Decision(
+            tool="look_around",
+            args={},
+            tokens_in=18,
+            tokens_out=4,
+            tool_call_id="call-greeting-look",
+            note="先確認問候來自哪個方向。",
+        ),
         Decision(
             tool="speak",
             args={"text": "嗨！很高興見到你。"},
@@ -144,6 +229,38 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_out=1,
             tool_call_id="call-greeting-done",
             note="問候已完成，結束這次互動。",
+        ),
+        Decision(
+            tool="speak",
+            args={"text": "我在，請說。"},
+            tokens_in=18,
+            tokens_out=5,
+            tool_call_id="call-followup-speak",
+            note="先處理等待中的明確請求。",
+        ),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=24,
+            tokens_out=1,
+            tool_call_id="call-followup-done",
+            note="這個請求已回應。",
+        ),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=12,
+            tokens_out=1,
+            tool_call_id="call-care-one-done",
+            note="線索不明確，不主動打擾。",
+        ),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=12,
+            tokens_out=1,
+            tool_call_id="call-care-two-done",
+            note="保留不確定性並結束觀察。",
         ),
     ),
 )

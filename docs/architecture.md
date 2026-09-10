@@ -8,6 +8,7 @@ nor an acceptance test opens a ReAct Episode directly.
 ScenarioInputAdapter ─┐
                      ├─> SocialAgentRuntime / Attention Loop
 future live adapter ─┘          │ one selected cue at a time
+                                │ bounded priority queue while active
                                 v
                          Session.episode()
                                 │
@@ -26,15 +27,27 @@ SocialAgentRuntime ──> Attention/Cue records + Episode Journals
                                       Demo Storyboard replay
 ```
 
-`ScenarioInputAdapter` currently supports ordered `ScheduledInput` wrappers
-around text Explicit Requests with optional selected image evidence. Scheduling
-stays in that adapter; the
-`RuntimeInput` returned through `InputSource` carries no scenario-only clock
-field. The adapter advances an injected clock, so the whole path is
-deterministic and needs no network or hardware. `SocialAgentRuntime` consumes
-one input at a time, waits for the resulting bounded Episode to close, and
-only then reads another. Exhausting the finite source, runtime shutdown, the
-ReAct Turn cap, and dependency failure all produce bounded endings.
+`ScenarioInputAdapter` supports ordered `ScheduledInput` wrappers around all
+three Cue kinds. Scheduling stays in that adapter; the provider-independent
+input carries no scenario-only clock field. The adapter stamps an
+`InputArrival` when the input is observed and advances an injected clock, so
+the whole path is deterministic and needs no network or hardware.
+
+While an Episode owns model and robot effects, the Runtime drains already-due
+inputs only at safe Turn boundaries. It never starts a second Episode in
+parallel and does not create a background task. The queue defaults to three
+items and five seconds of freshness. Explicit Requests have priority 3, Care
+Cues 2, and Social Invitations 1; equal priority is FIFO. A deduplication key
+keeps the first equal-or-lower-priority Cue, while a higher-priority Cue with
+the same key replaces it. At capacity, a higher-priority arrival displaces the
+newest lowest-priority item; otherwise the arrival is dropped. Expired Cues
+never open Episodes. Every enqueue, dequeue, dedupe, replacement and drop is a
+typed runtime record.
+
+Exhausting the finite source, runtime shutdown, the ReAct Turn cap, and
+dependency failure all produce bounded endings. Shutdown asks the active
+Episode to stop, drops every queued Cue with a typed shutdown reason, and stops
+the input source without leaving a Runtime-owned thread.
 
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.
@@ -54,8 +67,8 @@ response containing more than one call. A short public Decision Note may be
 recorded in the Journal; it is not private model reasoning and cannot carry
 physical control parameters.
 
-This is ticket 02's vertical slice, not the completed social system. Wake-word
-detection, visual cue classification, cue queueing/handoff, Skills,
+This is ticket 03's vertical slice, not the completed social system. Wake-word
+detection, visual cue classification, person-aware handoff, Skills,
 target-aware movement, and the live input adapter
 remain future tickets in `.scratch/social-react-runtime/`.
 

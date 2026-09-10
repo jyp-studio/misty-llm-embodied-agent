@@ -16,6 +16,12 @@ One run from an external trigger until the agent is idle again, guaranteed to
 terminate in bounded time. Its internal phases are not part of the definition.
 _Avoid_: session, conversation, interaction, cycle
 
+**Attention Loop**:
+The continuous, low-cost watch for Interaction Cues while the agent is idle or
+an Episode is active. It may open an Episode while idle; while active it only
+manages queued Cues and never chooses the robot's response.
+_Avoid_: perception phase, outer ReAct loop, monitor loop
+
 **Turn**:
 One iteration of the ReAct loop — a single model decision and the tool call it
 produces. Bounded by `max_turns_per_episode`.

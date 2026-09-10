@@ -368,6 +368,23 @@ class Settings(BaseSettings):
             "does not fire an episode every frame."
         ),
     )
+    cue_queue_capacity: int = Field(
+        default=3,
+        gt=0,
+        description=(
+            "Maximum Interaction Cues retained while an Episode is active. "
+            "Higher-priority arrivals may displace lower-priority cues, but "
+            "the queue never grows beyond this bound."
+        ),
+    )
+    cue_freshness_s: float = Field(
+        default=5.0,
+        gt=0.0,
+        description=(
+            "Default time an Interaction Cue remains eligible to open an "
+            "Episode; an input may declare a shorter evidence-specific bound."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # ReAct loop

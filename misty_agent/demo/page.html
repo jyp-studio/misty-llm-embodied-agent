@@ -91,6 +91,14 @@
   .execution-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
   .execution-badges span { padding: 5px 9px; color: #424245; background: #f5f5f7; border-radius: 999px; font-size: 12px; font-weight: 600; }
   .decision-note { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e8e8ed; color: #6e6e73; font-size: 13px; }
+  .attention-state { margin-top: 16px; padding-top: 15px; border-top: 1px solid #e8e8ed; }
+  .attention-state[hidden] { display: none; }
+  .attention-state h4 { margin: 0; font-size: 16px; }
+  .attention-state > p { margin: 4px 0 11px; }
+  .cue-queue { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .cue-event { padding: 10px 12px; background: #f5f5f7; border-radius: 10px; }
+  .cue-event b { display: block; font-size: 13px; }
+  .cue-event span { color: #6e6e73; font-size: 12px; }
   .replay { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
   .replay button { padding: 9px 14px; color: #0066cc; background: #fff; border: 1px solid #b9b9bf; border-radius: 999px; cursor: pointer; }
   .replay button[disabled] { color: #86868b; background: #f5f5f7; cursor: not-allowed; }
@@ -124,6 +132,7 @@
     .flow { grid-template-columns: 1fr; }
     .flow article:not(:first-child) { border-top: 1px solid #e8e8ed; border-left: 0; }
     .live-form { grid-template-columns: 1fr; }
+    .cue-queue { grid-template-columns: 1fr; }
     .live-form input[type="file"] { max-width: none; }
   }
   @media (max-width: 520px) {
@@ -195,6 +204,11 @@
       <div class="execution-badges"><span id="modelBadge"></span><span id="robotBadge"></span></div>
       <p id="executionDetail"></p>
       <div class="decision-note"><b id="decisionHeadline"></b><br><span id="decisionDetail"></span></div>
+      <section class="attention-state" id="attentionState" hidden>
+        <h4>Attention Loop 與 Cue queue</h4>
+        <p id="activeCue"></p>
+        <div class="cue-queue" id="cueQueue"></div>
+      </section>
       <div class="replay"><button id="replayJournal" type="button" disabled>重播 Episode Journal</button><span id="replayCounter"></span></div>
       <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span></div>
     </div>
@@ -301,6 +315,8 @@ function resetReplay() {
   byId("replayJournal").disabled = true;
   byId("replayCounter").textContent = "";
   byId("replayStage").hidden = true;
+  byId("attentionState").hidden = true;
+  byId("cueQueue").innerHTML = "";
 }
 
 function replayJournal() {
@@ -356,6 +372,11 @@ async function runScenario() {
     byId("executionDetail").textContent = execution.provenance.detail;
     byId("decisionHeadline").textContent = execution.decision_explanation.headline;
     byId("decisionDetail").textContent = execution.decision_explanation.detail;
+    const attention = execution.attention;
+    byId("attentionState").hidden = false;
+    byId("activeCue").textContent = `目前處理：${attention.active_cue.cue_id} · 明確互動請求 · 優先級 ${attention.active_cue.priority}；queue 上限 ${attention.queue_capacity}`;
+    byId("cueQueue").innerHTML = execution.attention.events.map((event) => `
+      <article class="cue-event"><b>${escapeText(event.headline)}</b><span>${escapeText(event.detail)}</span></article>`).join("");
     byId("flow-label").textContent = "這次實際執行";
     renderFlow(execution.flow);
     const ending = execution.flow.at(-1);

@@ -49,7 +49,7 @@ import pathlib
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional, Tuple
+from typing import Any, Callable, Iterator, Optional, Tuple
 
 from misty_agent.agent.evidence import TriggerEvidence
 from misty_agent.agent.journal import (
@@ -282,6 +282,7 @@ class Session:
         *,
         render: bool = True,
         journal_path: Optional[pathlib.Path] = None,
+        at_turn_boundary: Optional[Callable[[], None]] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
         """Run one Episode from typed Trigger Evidence and return its result.
 
@@ -325,6 +326,7 @@ class Session:
                 stop=stop,
                 memory=self.memory,
                 instructions=self.instructions,
+                at_turn_boundary=at_turn_boundary,
             )
         finally:
             self._running = None

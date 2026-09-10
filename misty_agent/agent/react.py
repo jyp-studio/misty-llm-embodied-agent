@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.evidence import TriggerEvidence
 from misty_agent.agent.journal import (
@@ -135,6 +135,7 @@ def run_episode(
     stop: Stop = NEVER_STOPS,
     memory: Remembers = NO_MEMORY,
     instructions: str = PERSONA,
+    at_turn_boundary: Optional[Callable[[], None]] = None,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
 
@@ -142,6 +143,7 @@ def run_episode(
     latency this loop measures and the timestamps the Journal writes have to
     come from one clock or they describe two different runs.
     """
+    boundary = at_turn_boundary or (lambda: None)
     config = ctx.config
     clock = ctx.clock
     journal.record(EpisodeStarted, trigger=evidence.source.value)
@@ -233,6 +235,7 @@ def run_episode(
             spoken.append(dispatched.spoken)
 
         if dispatched.ends_episode:
+            boundary()
             outcome = "done"
             break
 
@@ -243,6 +246,7 @@ def run_episode(
             working_context.append(
                 _refused(dispatched, tool_call_id)
             )
+            boundary()
             continue
 
         try:
@@ -263,6 +267,7 @@ def run_episode(
             outcome = "error"
             break
         working_context.append(_observed(observation, tool_call_id))
+        boundary()
 
         # The stop may have arrived while the Tool was running. Python cannot
         # interrupt a call that has not returned, so the Tool finished and its

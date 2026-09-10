@@ -128,7 +128,7 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
     ]
     assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
-    assert listed[0]["ticket"] == "02"
+    assert listed[0]["ticket"] == "03"
     assert listed[1]["availability"] == "planned"
     assert listed[1]["ticket"] == "06"
     assert listed[2]["availability"] == "planned"
@@ -151,9 +151,52 @@ def test_the_greeting_card_runs_the_runtime_without_an_api_key(monkeypatch):
 
     assert payload["scenario"]["availability"] == "ready"
     assert payload["runtime"]["ending"] == "input_exhausted"
-    assert len(payload["episodes"]) == 1
-    assert payload["episodes"][0]["actor"] == "person"
-    assert payload["episodes"][0]["storyboard"]["outcome"] == "done"
+    assert len(payload["episodes"]) == 4
+    assert [episode["actor"] for episode in payload["episodes"]] == [
+        "person",
+        "person",
+        "person",
+        "person",
+    ]
+    assert all(
+        episode["storyboard"]["outcome"] == "done"
+        for episode in payload["episodes"]
+    )
+
+
+def test_the_current_run_explains_active_and_queued_cues_in_plain_language():
+    payload = run_scenario("greeting")
+
+    attention = payload["execution"]["attention"]
+    assert attention["active_cue"] == {
+        "cue_id": "cue-1",
+        "cue_kind": "explicit_request",
+        "priority": 3,
+    }
+    assert attention["queue_capacity"] == 3
+    assert [event["type"] for event in attention["events"]] == [
+        "cue_queued",
+        "cue_deduplicated",
+        "cue_replaced",
+        "cue_queued",
+        "cue_queued",
+        "cue_dropped",
+        "cue_queued",
+        "cue_dropped",
+        "cue_dequeued",
+        "cue_dequeued",
+        "cue_dequeued",
+    ]
+    assert {event.get("reason") for event in attention["events"]} >= {
+        "overflow",
+        "expired",
+        None,
+    }
+    page = answer("GET", "/").body.decode("utf-8")
+    assert 'id="attentionState"' in page
+    assert 'id="activeCue"' in page
+    assert 'id="cueQueue"' in page
+    assert "execution.attention.events" in page
 
 
 def test_the_greeting_result_says_what_the_current_run_actually_did():
@@ -166,8 +209,9 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "model": "預設腳本模型",
         "robot": "模擬 Misty",
         "detail": (
-            "輸入與模型決策預先定義；Runtime、Tool 與 Journal 由目前程式"
-            "重新執行。這不是歷史紀錄、LLM 自主決策或真機結果。"
+            "輸入時間、Cue 類型與模型決策預先定義；Runtime、queue、Tool "
+            "與 Journal 由目前程式重新執行。這不是歷史紀錄、LLM 自主"
+            "決策、感知辨識或真機結果。"
         ),
     }
     assert execution["trigger_evidence"] == {
@@ -199,6 +243,18 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
             "label": "系統判定",
             "headline": "明確互動請求",
             "detail": "Explicit Request",
+        },
+        {
+            "kind": "decision_note",
+            "label": "Decision Note",
+            "headline": "先確認問候來自哪個方向。",
+            "detail": "公開目的，不是私有推理。",
+        },
+        {
+            "kind": "tool_call",
+            "label": "Tool call",
+            "headline": "look_around",
+            "detail": "call-greeting-look",
         },
         {
             "kind": "decision_note",
@@ -240,10 +296,10 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
     assert execution["decision_explanation"] == {
         "available": True,
         "headline": "Decision Note 已由本次 Journal 記錄",
-        "detail": "回應對 Misty 的明確問候。",
+        "detail": "先確認問候來自哪個方向。",
     }
     moments = payload["episodes"][0]["storyboard"]["moments"]
-    assert [moment["kind"] for moment in moments].count("decision_noted") == 2
+    assert [moment["kind"] for moment in moments].count("decision_noted") == 3
     assert "data_base64" not in json.dumps(payload)
 
 

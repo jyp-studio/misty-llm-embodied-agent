@@ -3,10 +3,8 @@
 ``SocialAgentRuntime`` is the product's highest public seam: an input source
 is watched for an Interaction Cue, a selected cue opens the existing bounded
 Episode runner, and the result keeps both the Attention records and the typed
-Episode Journal. Ticket 02 adds typed Trigger Evidence, including an optional
-selected image, while cue selection still supports only Explicit Requests.
-Wake detection, visual classification, other cue kinds and cue queues belong
-to later vertical slices.
+Episode Journal. The bounded scheduler keeps observing at safe Turn boundaries
+while an Episode is active, without granting a second Episode robot ownership.
 
 The finite ``ScenarioInputAdapter`` is the no-hardware side of the InputSource
 boundary.  Waiting uses the injected clock, so an acceptance scenario can
@@ -30,6 +28,7 @@ from misty_agent.agent.evidence import (
 )
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
+from misty_agent.config import Settings, settings as default_settings
 
 _INPUT_STOP_POLL_S = 0.05
 
@@ -62,14 +61,40 @@ class RuntimePhase(str, Enum):
 
 
 class CueKind(str, Enum):
-    """Interaction Cue kinds implemented by this vertical slice."""
+    """Interaction Cue kinds ordered by how directly a person engaged."""
 
     EXPLICIT_REQUEST = "explicit_request"
+    CARE_CUE = "care_cue"
+    SOCIAL_INVITATION = "social_invitation"
+
+    @property
+    def priority(self) -> int:
+        return {
+            CueKind.EXPLICIT_REQUEST: 3,
+            CueKind.CARE_CUE: 2,
+            CueKind.SOCIAL_INVITATION: 1,
+        }[self]
+
+
+class CueDropReason(str, Enum):
+    """Why a detected Cue will never open an Episode."""
+
+    EXPIRED = "expired"
+    OVERFLOW = "overflow"
+    SHUTDOWN = "shutdown"
 
 
 @dataclass(frozen=True)
 class RuntimeInput:
     """One provider-independent arrival at the Attention Loop."""
+
+
+@dataclass(frozen=True)
+class InputArrival:
+    """One input stamped when its source observed it."""
+
+    observed_at: float
+    input: RuntimeInput
 
 
 @dataclass(frozen=True)
@@ -89,10 +114,24 @@ class TimedText(RuntimeInput):
     """A transcript plus the modality that supplied its Trigger Evidence."""
 
     text: str
+    cue_kind: CueKind = CueKind.EXPLICIT_REQUEST
     evidence_kind: EvidenceKind = EvidenceKind.SPEECH
     facts: Mapping[str, Any] = field(default_factory=dict)
     uncertainty: Tuple[str, ...] = ()
     selected_image: Optional[SelectedImageEvidence] = None
+    deduplication_key: Optional[str] = None
+    fresh_for_s: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cue_kind, CueKind):
+            raise TypeError("cue_kind must be a CueKind")
+        if self.deduplication_key is not None:
+            key = self.deduplication_key.strip()
+            if not key:
+                raise ValueError("deduplication_key cannot be blank")
+            object.__setattr__(self, "deduplication_key", key)
+        if self.fresh_for_s is not None and self.fresh_for_s <= 0:
+            raise ValueError("fresh_for_s must be greater than zero")
 
 
 class ScenarioClock(Protocol):
@@ -106,7 +145,11 @@ class InputSource(Protocol):
 
     def start(self) -> None: ...
 
-    def read(self) -> Optional[RuntimeInput]: ...
+    def read(self) -> Optional[InputArrival]: ...
+
+    def read_available(self) -> Tuple[InputArrival, ...]:
+        """Return arrivals already waiting, without blocking."""
+        ...
 
     def stop(self) -> None:
         """Stop the source and unblock a pending ``read``. Idempotent."""
@@ -122,6 +165,7 @@ class EpisodeSession(Protocol):
         *,
         render: bool = False,
         journal_path: Optional[Path] = None,
+        at_turn_boundary: Optional[Callable[[], None]] = None,
     ) -> Tuple[EpisodeOutcome, Journal]: ...
 
     def request_stop(self, source: str) -> bool: ...
@@ -148,7 +192,7 @@ class ScenarioInputAdapter:
             raise RuntimeError("this scenario input adapter has already started")
         self._started_at = self._clock.monotonic()
 
-    def read(self) -> Optional[RuntimeInput]:
+    def read(self) -> Optional[InputArrival]:
         if self._started_at is None or self._stopped.is_set():
             raise RuntimeError("scenario input is not running")
         if self._index >= len(self._inputs):
@@ -162,7 +206,23 @@ class ScenarioInputAdapter:
         if self._stopped.is_set():
             return None
         self._index += 1
-        return scheduled.input
+        return InputArrival(observed_at=due, input=scheduled.input)
+
+    def read_available(self) -> Tuple[InputArrival, ...]:
+        if self._started_at is None or self._stopped.is_set():
+            raise RuntimeError("scenario input is not running")
+        available = []
+        now = self._clock.monotonic()
+        while self._index < len(self._inputs):
+            scheduled = self._inputs[self._index]
+            due = self._started_at + scheduled.at_s
+            if due > now:
+                break
+            self._index += 1
+            available.append(
+                InputArrival(observed_at=due, input=scheduled.input)
+            )
+        return tuple(available)
 
     def stop(self) -> None:
         self._stopped.set()
@@ -187,7 +247,58 @@ class CueDetected(AttentionRecord):
     cue_kind: CueKind
     evidence_kind: EvidenceKind
     text: str
+    priority: int
     type: str = "cue_detected"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueQueued(AttentionRecord):
+    cue_id: str
+    active_cue_id: str
+    cue_kind: CueKind
+    priority: int
+    queue_size: int
+    type: str = "cue_queued"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueDequeued(AttentionRecord):
+    cue_id: str
+    cue_kind: CueKind
+    priority: int
+    queue_size: int
+    type: str = "cue_dequeued"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueDeduplicated(AttentionRecord):
+    cue_id: str
+    retained_cue_id: str
+    deduplication_key: str
+    priority: int
+    queue_size: int
+    type: str = "cue_deduplicated"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueReplaced(AttentionRecord):
+    cue_id: str
+    replacement_cue_id: str
+    deduplication_key: str
+    old_priority: int
+    new_priority: int
+    queue_size: int
+    type: str = "cue_replaced"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueDropped(AttentionRecord):
+    cue_id: str
+    cue_kind: CueKind
+    priority: int
+    reason: CueDropReason
+    queue_size: int
+    type: str = "cue_dropped"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -221,11 +332,27 @@ class RuntimeFailed(AttentionRecord):
 RuntimeRecord = Union[
     AttentionStarted,
     CueDetected,
+    CueQueued,
+    CueDequeued,
+    CueDeduplicated,
+    CueReplaced,
+    CueDropped,
     EpisodeOpened,
     EpisodeCompleted,
     RuntimeFailed,
     AttentionStopped,
 ]
+
+
+@dataclass(frozen=True)
+class _PendingCue:
+    cue_id: str
+    input: TimedText
+    observed_at_s: float
+    cue_kind: CueKind
+    priority: int
+    deduplication_key: Optional[str]
+    expires_at_s: float
 
 
 @dataclass(frozen=True)
@@ -258,10 +385,12 @@ class SocialAgentRuntime:
         source: InputSource,
         session: EpisodeSession,
         clock: ScenarioClock,
+        config: Settings = default_settings,
     ) -> None:
         self._source = source
         self._session = session
         self._clock = clock
+        self._config = config
         self._origin: Optional[float] = None
         self._stop_requested = threading.Event()
         self._source_stop_lock = threading.Lock()
@@ -285,33 +414,49 @@ class SocialAgentRuntime:
         self._origin = self._clock.monotonic()
         records: list[RuntimeRecord] = [AttentionStarted(t=0.0)]
         episodes: list[RuntimeEpisode] = []
+        pending: list[_PendingCue] = []
+        cue_count = 0
         ending = RuntimeEnding.INPUT_EXHAUSTED
         phase = RuntimePhase.INPUT_START
         try:
             self._source.start()
             while not self._stop_requested.is_set():
                 phase = RuntimePhase.INPUT
-                item = self._source.read()
-                if item is None or self._stop_requested.is_set():
-                    break
-                observed_at_s = self._elapsed()
-                phase = RuntimePhase.CUE_SELECTION
-                if not isinstance(item, TimedText):
-                    raise TypeError(
-                        f"cannot select a cue from {type(item).__name__}"
+                self._discard_expired(pending, records)
+                if pending:
+                    pending.sort(
+                        key=lambda item: (-item.priority, item.observed_at_s)
                     )
+                    cue = pending.pop(0)
+                    records.append(
+                        CueDequeued(
+                            t=self._elapsed(),
+                            cue_id=cue.cue_id,
+                            cue_kind=cue.cue_kind,
+                            priority=cue.priority,
+                            queue_size=len(pending),
+                        )
+                    )
+                else:
+                    arrival = self._source.read()
+                    if arrival is None or self._stop_requested.is_set():
+                        break
+                    cue_count += 1
+                    cue = self._cue(cue_count, arrival)
+                    records.append(self._detected(cue))
+                    if self._is_expired(cue):
+                        self._drop(
+                            cue,
+                            CueDropReason.EXPIRED,
+                            pending,
+                            records,
+                        )
+                        continue
 
-                cue_id = f"cue-{len(episodes) + 1}"
+                phase = RuntimePhase.CUE_SELECTION
                 records.append(
-                    CueDetected(
-                        t=observed_at_s,
-                        cue_id=cue_id,
-                        cue_kind=CueKind.EXPLICIT_REQUEST,
-                        evidence_kind=item.evidence_kind,
-                        text=item.text,
-                    )
+                    EpisodeOpened(t=self._elapsed(), cue_id=cue.cue_id)
                 )
-                records.append(EpisodeOpened(t=self._elapsed(), cue_id=cue_id))
                 phase = RuntimePhase.EPISODE
                 episode_number = len(episodes) + 1
                 journal_path = (
@@ -320,24 +465,50 @@ class SocialAgentRuntime:
                     else None
                 )
                 evidence = TriggerEvidence(
-                    source=item.evidence_kind,
-                    observed_at_s=observed_at_s,
-                    facts=item.facts,
-                    transcript=item.text,
-                    uncertainty=item.uncertainty,
-                    selected_image=item.selected_image,
+                    source=cue.input.evidence_kind,
+                    observed_at_s=cue.observed_at_s,
+                    facts=cue.input.facts,
+                    transcript=cue.input.text,
+                    uncertainty=cue.input.uncertainty,
+                    selected_image=cue.input.selected_image,
                 )
+                active_input_failure: Optional[Exception] = None
+
+                def collect_available() -> None:
+                    nonlocal active_input_failure, cue_count
+                    if (
+                        active_input_failure is not None
+                        or self._stop_requested.is_set()
+                    ):
+                        return
+                    try:
+                        waiting_inputs = self._source.read_available()
+                        for waiting in waiting_inputs:
+                            cue_count += 1
+                            queued = self._cue(cue_count, waiting)
+                            records.append(self._detected(queued))
+                            self._enqueue(
+                                queued,
+                                active_cue_id=cue.cue_id,
+                                pending=pending,
+                                records=records,
+                            )
+                    except Exception as error:
+                        active_input_failure = error
+                        self._session.request_stop("attention_input_failure")
+
                 outcome, journal = self._session.episode(
                     evidence,
                     render=render,
                     journal_path=journal_path,
+                    at_turn_boundary=collect_available,
                 )
                 episode_id = journal.records[0].episode_id
                 episodes.append(
                     RuntimeEpisode(
-                        cue_id=cue_id,
-                        cue_kind=CueKind.EXPLICIT_REQUEST,
-                        input=replace(item, selected_image=None),
+                        cue_id=cue.cue_id,
+                        cue_kind=cue.cue_kind,
+                        input=replace(cue.input, selected_image=None),
                         evidence=TriggerEvidenceSummary.from_evidence(evidence),
                         outcome=outcome,
                         journal=journal,
@@ -346,16 +517,30 @@ class SocialAgentRuntime:
                 records.append(
                     EpisodeCompleted(
                         t=self._elapsed(),
-                        cue_id=cue_id,
+                        cue_id=cue.cue_id,
                         episode_id=episode_id,
                         outcome=outcome.outcome,
                     )
                 )
+                if active_input_failure is not None:
+                    ending = RuntimeEnding.RUNTIME_ERROR
+                    records.append(
+                        RuntimeFailed(
+                            t=self._elapsed(),
+                            phase=RuntimePhase.INPUT,
+                            error_type=type(active_input_failure).__name__,
+                            message=str(active_input_failure),
+                        )
+                    )
+                    break
                 if outcome.outcome == "error":
                     ending = RuntimeEnding.EPISODE_ERROR
                     break
             if self._stop_requested.is_set():
                 ending = RuntimeEnding.SHUTDOWN
+                self._drop_all(
+                    pending, CueDropReason.SHUTDOWN, records
+                )
         except Exception as error:
             ending = RuntimeEnding.RUNTIME_ERROR
             records.append(
@@ -387,6 +572,156 @@ class SocialAgentRuntime:
             episodes=tuple(episodes),
         )
 
+    def _cue(self, number: int, arrival: InputArrival) -> _PendingCue:
+        item = arrival.input
+        if not isinstance(item, TimedText):
+            raise TypeError(
+                f"cannot select a cue from {type(item).__name__}"
+            )
+        assert self._origin is not None
+        return _PendingCue(
+            cue_id=f"cue-{number}",
+            input=item,
+            observed_at_s=round(arrival.observed_at - self._origin, 3),
+            cue_kind=item.cue_kind,
+            priority=item.cue_kind.priority,
+            deduplication_key=item.deduplication_key,
+            expires_at_s=round(
+                arrival.observed_at
+                - self._origin
+                + (
+                    item.fresh_for_s
+                    if item.fresh_for_s is not None
+                    else self._config.cue_freshness_s
+                ),
+                3,
+            ),
+        )
+
+    def _enqueue(
+        self,
+        cue: _PendingCue,
+        *,
+        active_cue_id: str,
+        pending: list[_PendingCue],
+        records: list[RuntimeRecord],
+    ) -> None:
+        if self._is_expired(cue):
+            self._drop(cue, CueDropReason.EXPIRED, pending, records)
+            return
+
+        duplicate_index = next(
+            (
+                index
+                for index, existing in enumerate(pending)
+                if cue.deduplication_key is not None
+                and existing.deduplication_key == cue.deduplication_key
+            ),
+            None,
+        )
+        if duplicate_index is not None:
+            existing = pending[duplicate_index]
+            if cue.priority <= existing.priority:
+                records.append(
+                    CueDeduplicated(
+                        t=self._elapsed(),
+                        cue_id=cue.cue_id,
+                        retained_cue_id=existing.cue_id,
+                        deduplication_key=cue.deduplication_key or "",
+                        priority=cue.priority,
+                        queue_size=len(pending),
+                    )
+                )
+                return
+            pending[duplicate_index] = cue
+            records.append(
+                CueReplaced(
+                    t=self._elapsed(),
+                    cue_id=existing.cue_id,
+                    replacement_cue_id=cue.cue_id,
+                    deduplication_key=cue.deduplication_key or "",
+                    old_priority=existing.priority,
+                    new_priority=cue.priority,
+                    queue_size=len(pending),
+                )
+            )
+            return
+
+        if len(pending) >= self._config.cue_queue_capacity:
+            victim = min(
+                pending,
+                key=lambda item: (item.priority, -item.observed_at_s),
+            )
+            if cue.priority <= victim.priority:
+                self._drop(cue, CueDropReason.OVERFLOW, pending, records)
+                return
+            pending.remove(victim)
+            self._drop(victim, CueDropReason.OVERFLOW, pending, records)
+
+        pending.append(cue)
+        records.append(
+            CueQueued(
+                t=self._elapsed(),
+                cue_id=cue.cue_id,
+                active_cue_id=active_cue_id,
+                cue_kind=cue.cue_kind,
+                priority=cue.priority,
+                queue_size=len(pending),
+            )
+        )
+
+    def _discard_expired(
+        self,
+        pending: list[_PendingCue],
+        records: list[RuntimeRecord],
+    ) -> None:
+        for cue in tuple(pending):
+            if self._is_expired(cue):
+                pending.remove(cue)
+                self._drop(cue, CueDropReason.EXPIRED, pending, records)
+
+    def _drop_all(
+        self,
+        pending: list[_PendingCue],
+        reason: CueDropReason,
+        records: list[RuntimeRecord],
+    ) -> None:
+        while pending:
+            cue = pending.pop(0)
+            self._drop(cue, reason, pending, records)
+
+    def _drop(
+        self,
+        cue: _PendingCue,
+        reason: CueDropReason,
+        pending: list[_PendingCue],
+        records: list[RuntimeRecord],
+    ) -> None:
+        records.append(
+            CueDropped(
+                t=self._elapsed(),
+                cue_id=cue.cue_id,
+                cue_kind=cue.cue_kind,
+                priority=cue.priority,
+                reason=reason,
+                queue_size=len(pending),
+            )
+        )
+
+    def _is_expired(self, cue: _PendingCue) -> bool:
+        return self._elapsed() >= cue.expires_at_s
+
+    @staticmethod
+    def _detected(cue: _PendingCue) -> CueDetected:
+        return CueDetected(
+            t=cue.observed_at_s,
+            cue_id=cue.cue_id,
+            cue_kind=cue.cue_kind,
+            evidence_kind=cue.input.evidence_kind,
+            text=cue.input.text,
+            priority=cue.priority,
+        )
+
     def stop(self) -> None:
         """Request bounded shutdown; an active Episode is asked to abort."""
         self._stop_requested.set()
@@ -416,13 +751,20 @@ __all__ = [
     "AttentionRecord",
     "AttentionStarted",
     "AttentionStopped",
+    "CueDequeued",
+    "CueDeduplicated",
+    "CueDropped",
+    "CueDropReason",
     "CueKind",
     "CueDetected",
+    "CueQueued",
+    "CueReplaced",
     "EvidenceKind",
     "MAX_SELECTED_IMAGE_BYTES",
     "EpisodeCompleted",
     "EpisodeOpened",
     "EpisodeSession",
+    "InputArrival",
     "InputSource",
     "RuntimeEpisode",
     "RuntimeEnding",

@@ -207,11 +207,10 @@ class ScenarioInputAdapter:
 
     def read(self) -> Optional[InputArrival]:
         self._require_running()
-        if self._index >= len(self._inputs):
+        next_due = self._next_due()
+        if next_due is None:
             return None
-        scheduled = self._inputs[self._index]
-        assert self._started_at is not None
-        due = self._started_at + scheduled.at_s
+        _, due = next_due
         wait_s = due - self._clock.monotonic()
         while wait_s > 0 and not self._stopped.is_set():
             self._clock.sleep(min(wait_s, _INPUT_STOP_POLL_S))
@@ -236,15 +235,22 @@ class ScenarioInputAdapter:
 
     def _take_due(self, now: float) -> Optional[InputArrival]:
         """Remove and describe the next input only when it is already due."""
-        if self._index >= len(self._inputs):
+        next_due = self._next_due()
+        if next_due is None:
             return None
-        assert self._started_at is not None
-        scheduled = self._inputs[self._index]
-        due = self._started_at + scheduled.at_s
+        scheduled, due = next_due
         if due > now:
             return None
         self._index += 1
         return InputArrival(age_s=now - due, input=scheduled.input)
+
+    def _next_due(self) -> Optional[Tuple[ScheduledInput, float]]:
+        """Peek at the next scheduled input and its absolute due time."""
+        if self._index >= len(self._inputs):
+            return None
+        assert self._started_at is not None
+        scheduled = self._inputs[self._index]
+        return scheduled, self._started_at + scheduled.at_s
 
     def stop(self) -> None:
         self._stopped.set()

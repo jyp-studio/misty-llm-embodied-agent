@@ -374,7 +374,10 @@ async function runScenario() {
     byId("decisionDetail").textContent = execution.decision_explanation.detail;
     const attention = execution.attention;
     byId("attentionState").hidden = false;
-    byId("activeCue").textContent = `目前處理：${attention.active_cue.cue_id} · 明確互動請求 · 優先級 ${attention.active_cue.priority}；queue 上限 ${attention.queue_capacity}`;
+    const cueHistory = attention.active_history.map((cue) => cue.cue_id).join(" → ");
+    byId("activeCue").textContent = attention.active_cue
+      ? `目前處理：${attention.active_cue.cue_id} · 優先級 ${attention.active_cue.priority}；queue 上限 ${attention.queue_capacity}`
+      : `執行已結束，目前沒有 active cue。執行歷程：${cueHistory}；queue 上限 ${attention.queue_capacity}`;
     byId("cueQueue").innerHTML = execution.attention.events.map((event) => `
       <article class="cue-event"><b>${escapeText(event.headline)}</b><span>${escapeText(event.detail)}</span></article>`).join("");
     byId("flow-label").textContent = "這次實際執行";

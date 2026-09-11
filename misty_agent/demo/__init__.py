@@ -491,11 +491,16 @@ def _scenario_execution(
             ),
         },
         "attention": {
-            "active_cue": {
-                "cue_id": episode.cue_id,
-                "cue_kind": episode.cue_kind.value,
-                "priority": episode.cue_kind.priority,
-            },
+            "active_cue": None,
+            "active_history": [
+                {
+                    "cue_id": run.cue_id,
+                    "cue_kind": run.cue_kind.value,
+                    "priority": run.cue_kind.priority,
+                    "outcome": run.outcome.outcome,
+                }
+                for run in result.episodes
+            ],
             "queue_capacity": queue_capacity,
             "events": [_runtime_moment(record) for record in queue_records],
         },
@@ -633,7 +638,7 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
     elif isinstance(record, CueQueued):
         headline = f"排入 {record.cue_id} · 優先級 {record.priority}"
         detail = (
-            f"目前處理 {record.active_cue_id} · queue 中有 "
+            f"當時正在處理 {record.active_cue_id} · queue 中有 "
             f"{record.queue_size} 個"
         )
     elif isinstance(record, CueDeduplicated):
@@ -650,6 +655,8 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
             "expired": "已過期",
             "overflow": "queue 已滿",
             "shutdown": "Runtime 關閉",
+            "runtime_failure": "Runtime 發生錯誤",
+            "episode_error": "Episode 發生錯誤",
         }[record.reason.value]
         headline = f"丟棄 {record.cue_id} · {reason}"
         detail = (

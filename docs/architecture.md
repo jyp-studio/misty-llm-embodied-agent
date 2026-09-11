@@ -29,9 +29,11 @@ SocialAgentRuntime ──> Attention/Cue records + Episode Journals
 
 `ScenarioInputAdapter` supports ordered `ScheduledInput` wrappers around all
 three Cue kinds. Scheduling stays in that adapter; the provider-independent
-input carries no scenario-only clock field. The adapter stamps an
-`InputArrival` when the input is observed and advances an injected clock, so
-the whole path is deterministic and needs no network or hardware.
+input carries no scenario-only clock field. An `InputArrival` reports how long
+the input was waiting when the Runtime received it, rather than exporting an
+absolute monotonic timestamp. Providers therefore do not need to share the
+Runtime's clock domain. The scenario adapter advances an injected clock, so the
+whole path is deterministic and needs no network or hardware.
 
 While an Episode owns model and robot effects, the Runtime drains already-due
 inputs only at safe Turn boundaries. It never starts a second Episode in
@@ -47,7 +49,8 @@ typed runtime record.
 Exhausting the finite source, runtime shutdown, the ReAct Turn cap, and
 dependency failure all produce bounded endings. Shutdown asks the active
 Episode to stop, drops every queued Cue with a typed shutdown reason, and stops
-the input source without leaving a Runtime-owned thread.
+the input source without leaving a Runtime-owned thread. Runtime and Episode
+failures also give every pending Cue a typed drop reason before stopping.
 
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.

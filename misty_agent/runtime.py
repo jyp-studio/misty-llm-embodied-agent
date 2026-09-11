@@ -13,6 +13,7 @@ exercise time without sleeping in real life.
 
 from __future__ import annotations
 
+import math
 import threading
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -82,6 +83,8 @@ class CueDropReason(str, Enum):
     EXPIRED = "expired"
     OVERFLOW = "overflow"
     SHUTDOWN = "shutdown"
+    RUNTIME_FAILURE = "runtime_failure"
+    EPISODE_ERROR = "episode_error"
 
 
 @dataclass(frozen=True)
@@ -91,10 +94,18 @@ class RuntimeInput:
 
 @dataclass(frozen=True)
 class InputArrival:
-    """One input stamped when its source observed it."""
+    """One input plus how long it waited before Runtime received it.
 
-    observed_at: float
+    An age is portable across input providers; an absolute monotonic timestamp
+    would silently require every provider to share Runtime's clock domain.
+    """
+
+    age_s: float
     input: RuntimeInput
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.age_s) or self.age_s < 0:
+            raise ValueError("input arrival age_s must be finite and non-negative")
 
 
 @dataclass(frozen=True)
@@ -105,8 +116,8 @@ class ScheduledInput:
     input: RuntimeInput
 
     def __post_init__(self) -> None:
-        if self.at_s < 0:
-            raise ValueError("a scenario input cannot happen before it starts")
+        if not math.isfinite(self.at_s) or self.at_s < 0:
+            raise ValueError("scenario at_s must be finite and non-negative")
 
 
 @dataclass(frozen=True)
@@ -130,8 +141,10 @@ class TimedText(RuntimeInput):
             if not key:
                 raise ValueError("deduplication_key cannot be blank")
             object.__setattr__(self, "deduplication_key", key)
-        if self.fresh_for_s is not None and self.fresh_for_s <= 0:
-            raise ValueError("fresh_for_s must be greater than zero")
+        if self.fresh_for_s is not None and (
+            not math.isfinite(self.fresh_for_s) or self.fresh_for_s <= 0
+        ):
+            raise ValueError("fresh_for_s must be finite and greater than zero")
 
 
 class ScenarioClock(Protocol):
@@ -193,11 +206,11 @@ class ScenarioInputAdapter:
         self._started_at = self._clock.monotonic()
 
     def read(self) -> Optional[InputArrival]:
-        if self._started_at is None or self._stopped.is_set():
-            raise RuntimeError("scenario input is not running")
+        self._require_running()
         if self._index >= len(self._inputs):
             return None
         scheduled = self._inputs[self._index]
+        assert self._started_at is not None
         due = self._started_at + scheduled.at_s
         wait_s = due - self._clock.monotonic()
         while wait_s > 0 and not self._stopped.is_set():
@@ -205,24 +218,33 @@ class ScenarioInputAdapter:
             wait_s = due - self._clock.monotonic()
         if self._stopped.is_set():
             return None
-        self._index += 1
-        return InputArrival(observed_at=due, input=scheduled.input)
+        arrival = self._take_due(self._clock.monotonic())
+        assert arrival is not None
+        return arrival
 
     def read_available(self) -> Tuple[InputArrival, ...]:
-        if self._started_at is None or self._stopped.is_set():
-            raise RuntimeError("scenario input is not running")
+        self._require_running()
         available = []
         now = self._clock.monotonic()
-        while self._index < len(self._inputs):
-            scheduled = self._inputs[self._index]
-            due = self._started_at + scheduled.at_s
-            if due > now:
-                break
-            self._index += 1
-            available.append(
-                InputArrival(observed_at=due, input=scheduled.input)
-            )
+        while (arrival := self._take_due(now)) is not None:
+            available.append(arrival)
         return tuple(available)
+
+    def _require_running(self) -> None:
+        if self._started_at is None or self._stopped.is_set():
+            raise RuntimeError("scenario input is not running")
+
+    def _take_due(self, now: float) -> Optional[InputArrival]:
+        """Remove and describe the next input only when it is already due."""
+        if self._index >= len(self._inputs):
+            return None
+        assert self._started_at is not None
+        scheduled = self._inputs[self._index]
+        due = self._started_at + scheduled.at_s
+        if due > now:
+            return None
+        self._index += 1
+        return InputArrival(age_s=now - due, input=scheduled.input)
 
     def stop(self) -> None:
         self._stopped.set()
@@ -353,6 +375,7 @@ class _PendingCue:
     priority: int
     deduplication_key: Optional[str]
     expires_at_s: float
+    arrival_sequence: int
 
 
 @dataclass(frozen=True)
@@ -425,7 +448,11 @@ class SocialAgentRuntime:
                 self._discard_expired(pending, records)
                 if pending:
                     pending.sort(
-                        key=lambda item: (-item.priority, item.observed_at_s)
+                        key=lambda item: (
+                            -item.priority,
+                            item.observed_at_s,
+                            item.arrival_sequence,
+                        )
                     )
                     cue = pending.pop(0)
                     records.append(
@@ -495,7 +522,14 @@ class SocialAgentRuntime:
                             )
                     except Exception as error:
                         active_input_failure = error
-                        self._session.request_stop("attention_input_failure")
+                        try:
+                            self._session.request_stop(
+                                "attention_input_failure"
+                            )
+                        except Exception:
+                            # The input failure remains the primary bounded
+                            # ending; stopping is best effort at this boundary.
+                            pass
 
                 outcome, journal = self._session.episode(
                     evidence,
@@ -524,6 +558,9 @@ class SocialAgentRuntime:
                 )
                 if active_input_failure is not None:
                     ending = RuntimeEnding.RUNTIME_ERROR
+                    self._drop_all(
+                        pending, CueDropReason.RUNTIME_FAILURE, records
+                    )
                     records.append(
                         RuntimeFailed(
                             t=self._elapsed(),
@@ -535,6 +572,9 @@ class SocialAgentRuntime:
                     break
                 if outcome.outcome == "error":
                     ending = RuntimeEnding.EPISODE_ERROR
+                    self._drop_all(
+                        pending, CueDropReason.EPISODE_ERROR, records
+                    )
                     break
             if self._stop_requested.is_set():
                 ending = RuntimeEnding.SHUTDOWN
@@ -543,6 +583,7 @@ class SocialAgentRuntime:
                 )
         except Exception as error:
             ending = RuntimeEnding.RUNTIME_ERROR
+            self._drop_all(pending, CueDropReason.RUNTIME_FAILURE, records)
             records.append(
                 RuntimeFailed(
                     t=self._elapsed(),
@@ -579,23 +620,25 @@ class SocialAgentRuntime:
                 f"cannot select a cue from {type(item).__name__}"
             )
         assert self._origin is not None
+        now_s = self._clock.monotonic() - self._origin
+        if arrival.age_s > now_s + 1e-9:
+            raise ValueError("input arrival age predates this Runtime")
+        observed_at_s = max(0.0, now_s - arrival.age_s)
+        fresh_for_s = min(
+            item.fresh_for_s
+            if item.fresh_for_s is not None
+            else self._config.cue_freshness_s,
+            self._config.cue_freshness_s,
+        )
         return _PendingCue(
             cue_id=f"cue-{number}",
             input=item,
-            observed_at_s=round(arrival.observed_at - self._origin, 3),
+            observed_at_s=round(observed_at_s, 3),
             cue_kind=item.cue_kind,
             priority=item.cue_kind.priority,
             deduplication_key=item.deduplication_key,
-            expires_at_s=round(
-                arrival.observed_at
-                - self._origin
-                + (
-                    item.fresh_for_s
-                    if item.fresh_for_s is not None
-                    else self._config.cue_freshness_s
-                ),
-                3,
-            ),
+            expires_at_s=round(observed_at_s + fresh_for_s, 3),
+            arrival_sequence=number,
         )
 
     def _enqueue(
@@ -606,6 +649,7 @@ class SocialAgentRuntime:
         pending: list[_PendingCue],
         records: list[RuntimeRecord],
     ) -> None:
+        self._discard_expired(pending, records)
         if self._is_expired(cue):
             self._drop(cue, CueDropReason.EXPIRED, pending, records)
             return
@@ -650,7 +694,11 @@ class SocialAgentRuntime:
         if len(pending) >= self._config.cue_queue_capacity:
             victim = min(
                 pending,
-                key=lambda item: (item.priority, -item.observed_at_s),
+                key=lambda item: (
+                    item.priority,
+                    -item.observed_at_s,
+                    -item.arrival_sequence,
+                ),
             )
             if cue.priority <= victim.priority:
                 self._drop(cue, CueDropReason.OVERFLOW, pending, records)

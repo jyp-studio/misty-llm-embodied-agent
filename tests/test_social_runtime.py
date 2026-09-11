@@ -277,8 +277,8 @@ def test_a_public_decision_note_is_recorded_without_private_reasoning():
     } for note in notes)
 
 
-def test_an_input_source_stamps_arrival_without_inventing_scenario_timing():
-    """Live providers stamp now; declarative schedules stay in the adapter."""
+def test_an_input_source_reports_age_without_sharing_the_runtime_clock():
+    """Live providers report age; declarative schedules stay in the adapter."""
 
     class ImmediateTextInput:
         def __init__(self) -> None:
@@ -291,7 +291,7 @@ def test_an_input_source_stamps_arrival_without_inventing_scenario_timing():
             if not self.remaining:
                 return None
             return InputArrival(
-                observed_at=clock.monotonic(), input=self.remaining.pop(0)
+                age_s=0.0, input=self.remaining.pop(0)
             )
 
         def read_available(self):
@@ -312,6 +312,23 @@ def test_an_input_source_stamps_arrival_without_inventing_scenario_timing():
     ).run()
 
     assert result.episodes[0].input == TimedText(text="Misty, hello")
+
+
+@pytest.mark.parametrize("age_s", [-0.1, float("inf"), float("nan")])
+def test_an_input_arrival_refuses_an_invalid_age(age_s):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        InputArrival(age_s=age_s, input=TimedText(text="hello"))
+
+
+def test_a_cue_freshness_override_must_be_finite():
+    with pytest.raises(ValueError, match="fresh_for_s"):
+        TimedText(text="hello", fresh_for_s=float("nan"))
+
+
+@pytest.mark.parametrize("at_s", [-0.1, float("inf"), float("nan")])
+def test_a_scenario_time_must_be_finite_and_non_negative(at_s):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        text_at(at_s, "hello")
 
 
 def test_the_demo_replays_a_text_case_that_crossed_the_runtime_seam():
@@ -885,6 +902,98 @@ def test_the_bounded_queue_deduplicates_replaces_overflows_and_expires():
     ) == 2
 
 
+def test_input_freshness_can_only_shorten_the_configured_upper_bound():
+    """A huge per-input value must not extend the Runtime's five-second cap."""
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(
+            (
+                Decision(
+                    tool="look_around", args={}, tokens_in=8, tokens_out=1
+                ),
+                Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+            )
+        ),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(0.0, "active"),
+                text_at(0.1, "old", fresh_for_s=999.0),
+            ],
+        ),
+        session=session,
+        clock=clock,
+        config=Settings(cue_freshness_s=0.2),
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1"]
+    assert any(
+        isinstance(record, CueDropped)
+        and record.cue_id == "cue-2"
+        and record.reason is CueDropReason.EXPIRED
+        for record in result.records
+    )
+
+
+def test_overflow_evicts_the_newest_low_priority_cue_when_times_tie():
+    """Arrival sequence, not a stable-min accident, decides a timestamp tie."""
+    clock = FakeClock()
+    decisions = (
+        Decision(tool="look_around", args={}, tokens_in=8, tokens_out=1),
+        Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+        Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+        Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+    )
+    session = simulated_session(
+        None, model=ScenarioModel(decisions), clock=clock
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(0.0, "active"),
+                text_at(
+                    0.1,
+                    "first wave",
+                    cue_kind=CueKind.SOCIAL_INVITATION,
+                    deduplication_key="first",
+                ),
+                text_at(
+                    0.1,
+                    "second wave",
+                    cue_kind=CueKind.SOCIAL_INVITATION,
+                    deduplication_key="second",
+                ),
+                text_at(
+                    0.1,
+                    "care",
+                    cue_kind=CueKind.CARE_CUE,
+                    deduplication_key="care",
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+        config=Settings(cue_queue_capacity=2),
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == [
+        "cue-1",
+        "cue-4",
+        "cue-2",
+    ]
+    assert any(
+        isinstance(record, CueDropped)
+        and record.cue_id == "cue-3"
+        and record.reason is CueDropReason.OVERFLOW
+        for record in result.records
+    )
+
+
 def test_a_queued_cue_that_expires_behind_higher_priority_work_is_not_opened():
     """The low-priority cue is fresh when queued but stale at handoff."""
     clock = FakeClock()
@@ -972,19 +1081,33 @@ def test_shutdown_discards_the_remaining_queue_without_starting_more_work():
 
 def test_active_attention_failure_closes_the_episode_and_runtime():
     class FailsAtBoundary(ScenarioInputAdapter):
+        calls = 0
+
         def read_available(self):
+            self.calls += 1
+            if self.calls == 1:
+                return super().read_available()
             raise RuntimeError("active attention failed")
 
     clock = FakeClock()
     session = simulated_session(
         None,
         model=ScenarioModel(
-            (Decision(tool="look_around", args={}, tokens_in=8, tokens_out=1),)
+            (
+                Decision(
+                    tool="look_around", args={}, tokens_in=8, tokens_out=1
+                ),
+                Decision(
+                    tool="look_around", args={}, tokens_in=8, tokens_out=1
+                ),
+            )
         ),
         clock=clock,
     )
     runtime = SocialAgentRuntime(
-        source=FailsAtBoundary(clock, [text_at(0.0, "active")]),
+        source=FailsAtBoundary(
+            clock, [text_at(0.0, "active"), text_at(0.1, "queued")]
+        ),
         session=session,
         clock=clock,
     )
@@ -995,11 +1118,44 @@ def test_active_attention_failure_closes_the_episode_and_runtime():
     assert runtime.state is RuntimeState.STOPPED
     assert len(result.episodes) == 1
     assert result.episodes[0].outcome.outcome == "aborted"
-    assert [record.type for record in result.records[-3:]] == [
+    assert [record.type for record in result.records[-4:]] == [
         "episode_completed",
+        "cue_dropped",
         "runtime_failed",
         "attention_stopped",
     ]
+    assert result.records[-3].reason is CueDropReason.RUNTIME_FAILURE
+
+
+def test_episode_error_gives_each_remaining_cue_a_typed_disposition():
+    class FailsAfterQueueing:
+        calls = 0
+
+        def decide(self, working_context, tools):
+            self.calls += 1
+            if self.calls == 1:
+                return Decision(
+                    tool="look_around", args={}, tokens_in=8, tokens_out=1
+                )
+            raise RuntimeError("model failed")
+
+    clock = FakeClock()
+    session = simulated_session(None, model=FailsAfterQueueing(), clock=clock)
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock, [text_at(0.0, "active"), text_at(0.1, "queued")]
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert result.ending is RuntimeEnding.EPISODE_ERROR
+    assert any(
+        isinstance(record, CueDropped)
+        and record.cue_id == "cue-2"
+        and record.reason is CueDropReason.EPISODE_ERROR
+        for record in result.records
+    )
 
 
 def test_a_multi_episode_run_asks_for_one_journal_path_per_episode(tmp_path):

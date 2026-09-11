@@ -168,11 +168,13 @@ def test_the_current_run_explains_active_and_queued_cues_in_plain_language():
     payload = run_scenario("greeting")
 
     attention = payload["execution"]["attention"]
-    assert attention["active_cue"] == {
-        "cue_id": "cue-1",
-        "cue_kind": "explicit_request",
-        "priority": 3,
-    }
+    assert attention["active_cue"] is None
+    assert [item["cue_id"] for item in attention["active_history"]] == [
+        "cue-1",
+        "cue-4",
+        "cue-6",
+        "cue-7",
+    ]
     assert attention["queue_capacity"] == 3
     assert [event["type"] for event in attention["events"]] == [
         "cue_queued",

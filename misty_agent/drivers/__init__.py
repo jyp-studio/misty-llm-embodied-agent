@@ -4,7 +4,7 @@ Four subsystems, four seams:
 
 ``robot_commands``  Misty's REST command surface (the official SDK, kept as-is).
 ``av_stream``       RTSP video in, timestamped frames out.
-``audio_stream``    RTSP audio in, transcribed utterances out.
+``audio_stream``    RTSP audio in, bounded VAD segments out.
 ``events``          Misty's ``/pubsub`` websocket, for sensor callbacks.
 
 Nothing above this package may reach past these interfaces. In particular no
@@ -16,7 +16,11 @@ None of it has ever run against a real Misty II. The contract tests in
 docs.mistyrobotics.com; they cannot prove the robot obeys.
 """
 
-from misty_agent.drivers.audio_stream import AudioStream, Utterance
+from misty_agent.drivers.audio_stream import (
+    AudioPipelineEnding,
+    AudioPipelineTerminal,
+    AudioStream,
+)
 from misty_agent.drivers.av_stream import (
     AvSession,
     CapturedFrame,
@@ -28,6 +32,8 @@ from misty_agent.drivers.events import EventStream, Subscription, event_conditio
 from misty_agent.drivers.robot_commands import RobotCommands
 
 __all__ = [
+    "AudioPipelineEnding",
+    "AudioPipelineTerminal",
     "AudioStream",
     "AvSession",
     "CapturedFrame",
@@ -36,7 +42,6 @@ __all__ = [
     "RobotCommands",
     "RtspVideoStream",
     "Subscription",
-    "Utterance",
     "VideoSource",
     "event_condition",
 ]

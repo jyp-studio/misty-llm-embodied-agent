@@ -7,7 +7,14 @@ nor an acceptance test opens a ReAct Episode directly.
 ```text
 ScenarioInputAdapter ─┐
                      ├─> SocialAgentRuntime / Attention Loop
-future live adapter ─┘          │ one selected cue at a time
+LiveInputAdapter ─────┘          │ one selected cue at a time
+  ▲                              │
+  │ typed input + audio records  │
+AudioStream (bounded queues)     │
+  │ VAD Segment                  │
+local Hey/Hi Misty detector      │
+  │ only after wake              │
+bounded capture → hosted ASR ────┘
                                 │ bounded priority queue while active
                                 v
                          Session.episode()
@@ -35,6 +42,16 @@ absolute monotonic timestamp. Providers therefore do not need to share the
 Runtime's clock domain. The scenario adapter advances an injected clock, so the
 whole path is deterministic and needs no network or hardware.
 
+`LiveInputAdapter` is the corresponding audio provider. `AudioStream` keeps
+decoded blocks and VAD segments in fixed-capacity, latest-preserving queues.
+PocketSphinx checks `Hey Misty` and `Hi Misty` locally; ambient segments that
+do not match produce an observable `no_match` and never reach hosted ASR. A
+match authorises one utterance, bounded by silence timeout and maximum
+duration. Wake, capture, ASR, backlog and audio-pipeline outcomes are typed
+Runtime records; only a non-empty transcript becomes Explicit Request Trigger
+Evidence. Hosted ASR retries are disabled so its configured timeout remains the
+upper bound for the one authorised attempt.
+
 While an Episode owns model and robot effects, the Runtime drains already-due
 inputs only at safe Turn boundaries. It never starts a second Episode in
 parallel and does not create a background task. The queue defaults to three
@@ -47,7 +64,8 @@ never open Episodes. Every enqueue, dequeue, dedupe, replacement and drop is a
 typed runtime record.
 
 Exhausting the finite source, runtime shutdown, the ReAct Turn cap, and
-dependency failure all produce bounded endings. Shutdown asks the active
+dependency failure all produce bounded endings. An abnormal audio terminal
+produces its typed source record and a `runtime_error` ending. Shutdown asks the active
 Episode to stop, drops every queued Cue with a typed shutdown reason, and stops
 the input source without leaving a Runtime-owned thread. Runtime and Episode
 failures also give every pending Cue a typed drop reason before stopping.
@@ -55,13 +73,13 @@ failures also give every pending Cue a typed drop reason before stopping.
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.
 
-The Demo's Run button is itself an Explicit Request. Its typed Trigger Evidence
-contains source, runtime-relative time, selected facts, uncertainty, transcript
-and an optional image that is strict base64 and capped at 8 MiB decoded. The
-first model Turn receives it before any Observation. A completed runtime result
-keeps only the selected image's media type, not its bytes. An uploaded image
-remains evidence for that deliberate request; it is not an autonomously
-classified visual cue.
+The Demo greeting card offers checked-in synthetic WAV fixtures. Each click
+reruns the local VAD and wake detector, then uses scripted ASR/model decisions
+and a simulated robot so it needs no API key or network. The page displays the
+wake, capture, ASR, Episode, Tool effect and ending derived from that run. Its
+typed Trigger Evidence contains source, runtime-relative time, wake facts,
+uncertainty and transcript before any Observation. The optional Live AI panel
+remains a separate hosted path.
 
 Each model Turn uses a provider-neutral representation of the native function-
 calling protocol. The OpenAI adapter preserves assistant Tool call identity,
@@ -70,12 +88,13 @@ response containing more than one call. A short public Decision Note may be
 recorded in the Journal; it is not private model reasoning and cannot carry
 physical control parameters.
 
-This is ticket 03's vertical slice, not the completed social system. Wake-word
-detection, visual cue classification, person-aware handoff, Skills,
-target-aware movement, and the live input adapter
+This is ticket 04's vertical slice, not the completed social system. Visual cue
+classification, person-aware handoff, Skills, and target-aware movement
 remain future tickets in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract
 tests; its hardware behaviour, latency, calibration, and reliability are
-unverified.
+unverified. The vendor AV composition now passes `AudioStream` through
+`LiveInputAdapter`, but no microphone audio has ever been received from Misty;
+the local wake threshold is supported only by the synthetic fixtures.

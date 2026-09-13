@@ -76,6 +76,7 @@ from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
+from misty_agent.audio_input import LiveInputAdapter
 from misty_agent.config import Settings, settings
 from misty_agent.drivers.audio_stream import AudioStream
 from misty_agent.drivers.av_stream import AvSession, RtspVideoStream
@@ -83,6 +84,7 @@ from misty_agent.drivers.events import EventStream, event_condition
 from misty_agent.drivers.robot_commands import RobotCommands
 from misty_agent.fakes import MovingWorld, RecordingCommands
 from misty_agent.perception.asr import OpenAITranscriber
+from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.perception.distance import NOBODY_THERE, DistancePipeline
 from misty_agent.runtime import (
     EvidenceKind,
@@ -175,6 +177,9 @@ class Session:
     #: `HEARS_NOTHING` rather than `None`: `speak` mutes unconditionally, and
     #: a session with no microphone is still a session.
     ears: Any = HEARS_NOTHING
+    #: Runtime input owned by the external wake/capture/ASR path. When set,
+    #: Episode snapshots must not race it for raw audio segments.
+    attention_source: Optional[Any] = None
     #: What the model is told it is, before anything else. A field rather
     #: than `run_episode`'s default, because every other seam that function
     #: takes — `model`, `memory`, `stop`, the `ToolContext` — is passed from
@@ -259,6 +264,8 @@ class Session:
         microphone reports no speech rather than reaching for a method that
         is not there.
         """
+        if self.attention_source is not None:
+            return None
         return self.ears if hasattr(self.ears, "read") else None
 
     def _perception(self):
@@ -513,17 +520,16 @@ def attached_to(
 ) -> Iterator[Session]:
     """The real drivers, wired to each other, for as long as the caller needs.
 
-    Five collaborators around one AV session: Misty publishes a single RTSP
-    stream and it carries both the picture and the sound, so a second
+    Drivers and the live input adapter share one AV session: Misty publishes a
+    single RTSP stream carrying picture and sound, so a second
     `AvSession` would reset the first one out from under it.
 
     ## Started in order, stopped in reverse — and that is load-bearing
 
-    `RtspVideoStream.stop()` closes the `AvSession`, which is the same session
-    `AudioStream` is reading. Stop the video first and the audio threads are
-    left reading a stream that has been shut. `started` is appended to as each
-    part comes up, so a failure half way through start-up stops exactly what
-    started, and nothing else.
+    `RtspVideoStream.stop()` closes the `AvSession` used by `AudioStream`.
+    Runtime owns `LiveInputAdapter`, which starts and stops audio before this
+    context stops video. `started` tracks the video-side parts so a failure
+    half way through setup stops exactly what started, and nothing else.
 
     ## The clock reaches as far as it can, and no further
 
@@ -546,7 +552,7 @@ def attached_to(
 
     ## Without a key there are no ears
 
-    `AudioStream` needs a `Transcriber`, and the hosted one needs a key. A
+    The live wake path eventually needs hosted ASR, and that adapter needs a key. A
     robot with no ears is still worth attaching to — its camera answers, and
     that alone tells you the connection works — so this takes `HEARS_NOTHING`
     rather than refusing.
@@ -558,15 +564,24 @@ def attached_to(
     video = RtspVideoStream(stream)
     readings = DistancePipeline(video)
     if transcriber is None:
-        ears, listening = HEARS_NOTHING, ()
+        ears, attention_source = HEARS_NOTHING, None
     else:
-        ears = AudioStream(stream, transcriber, monotonic=clock.monotonic)
-        listening = (ears,)
+        ears = AudioStream(stream, monotonic=clock.monotonic)
+        attention_source = LiveInputAdapter(
+            audio=ears,
+            wake_detector=PocketSphinxWakeDetector(
+                minimum_confidence=settings.wake_minimum_confidence
+            ),
+            transcriber=transcriber,
+            clock=clock,
+            config=settings,
+            sample_rate=settings.audio_sample_rate_hz,
+        )
     events = EventStream(ip)
 
     started: list = []
     try:
-        for part in (video, readings, *listening):
+        for part in (video, readings):
             part.start()
             started.append(part)
         # Built inside the `try`: its constructor subscribes the bumper, and
@@ -578,6 +593,7 @@ def attached_to(
             model=model,
             memory=Memory(),
             ears=ears,
+            attention_source=attention_source,
             events=events,
             config=settings,
             clock=clock,
@@ -725,8 +741,10 @@ def _one_runtime(
     # An Episode that hits its Turn cap or is aborted did what it was built to
     # do, and the one outcome that is a failure — `error` — is already
     # reported, in the Journal and on the terminal, by the thing that saw it.
-    result = SocialAgentRuntime(
-        source=ScenarioInputAdapter(
+    if session.attention_source is not None and not args.said:
+        runtime_source = session.attention_source
+    else:
+        runtime_source = ScenarioInputAdapter(
             session.clock,
             [
                 ScheduledInput(
@@ -737,7 +755,9 @@ def _one_runtime(
                     ),
                 )
             ],
-        ),
+        )
+    result = SocialAgentRuntime(
+        source=runtime_source,
         session=session,
         clock=session.clock,
     ).run(

@@ -20,6 +20,8 @@ from __future__ import annotations
 import io
 import logging
 import wave
+from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, Protocol, Tuple, runtime_checkable
 
 import numpy as np
@@ -27,6 +29,32 @@ import numpy as np
 from misty_agent.config import settings
 
 log = logging.getLogger(__name__)
+
+
+class TranscriptionEnding(str, Enum):
+    """The bounded ways a hosted transcription attempt can finish."""
+
+    TRANSCRIBED = "transcribed"
+    EMPTY = "empty"
+    TIMEOUT = "timeout"
+    ERROR = "error"
+
+
+@dataclass(frozen=True)
+class Transcription:
+    """Text plus an observable ending for one bounded ASR attempt."""
+
+    text: str
+    ending: TranscriptionEnding
+    error_type: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        text = self.text.strip()
+        object.__setattr__(self, "text", text)
+        if self.ending is TranscriptionEnding.TRANSCRIBED and not text:
+            raise ValueError("a transcribed ending requires non-empty text")
+        if self.ending is not TranscriptionEnding.TRANSCRIBED and text:
+            raise ValueError("a non-transcribed ending cannot carry text")
 
 
 @runtime_checkable
@@ -114,15 +142,37 @@ class OpenAITranscriber:
     ) -> None:
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=api_key)
+        # One configured timeout is one total provider attempt. The SDK's
+        # default retries would otherwise multiply that upper bound.
+        self._client = OpenAI(api_key=api_key, max_retries=0)
         self._model = model
         self._language = language
         self._ignored_phrases = tuple(p.lower() for p in ignored_phrases)
 
     def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str:
+        return self.transcribe_bounded(
+            pcm, sample_rate, timeout_s=None
+        ).text
+
+    def transcribe_bounded(
+        self,
+        pcm: np.ndarray,
+        sample_rate: int,
+        *,
+        timeout_s: Optional[float],
+    ) -> Transcription:
+        """Transcribe once, with a provider timeout and typed ending."""
         try:
             audio = pcm_to_wav(pcm, sample_rate)
-            response = self._client.audio.transcriptions.create(
+            client = (
+                self._client.with_options(
+                    timeout=timeout_s,
+                    max_retries=0,
+                )
+                if timeout_s is not None
+                else self._client
+            )
+            response = client.audio.transcriptions.create(
                 model=self._model,
                 file=("utterance.wav", audio, "audio/wav"),
                 language=self._language,
@@ -130,10 +180,34 @@ class OpenAITranscriber:
             text = (response.text or "").strip()
         except Exception as exc:
             log.warning("transcription failed: %s", exc)
-            return ""
+            ending = (
+                TranscriptionEnding.TIMEOUT
+                if _is_timeout(exc)
+                else TranscriptionEnding.ERROR
+            )
+            return Transcription(
+                text="", ending=ending, error_type=type(exc).__name__
+            )
 
         lowered = text.lower()
         if any(phrase in lowered for phrase in self._ignored_phrases):
             log.debug("dropping transcript matching an ignored phrase: %r", text)
-            return ""
-        return text
+            text = ""
+        return Transcription(
+            text=text,
+            ending=(
+                TranscriptionEnding.TRANSCRIBED
+                if text
+                else TranscriptionEnding.EMPTY
+            ),
+        )
+
+
+def _is_timeout(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        from openai import APITimeoutError
+    except ImportError:  # pragma: no cover - OpenAI is a core dependency
+        return False
+    return isinstance(exc, APITimeoutError)

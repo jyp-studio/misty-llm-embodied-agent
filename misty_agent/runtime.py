@@ -87,9 +87,47 @@ class CueDropReason(str, Enum):
     EPISODE_ERROR = "episode_error"
 
 
+class AudioAttentionStage(str, Enum):
+    """The local audio gate stage that produced an observable fact."""
+
+    WAKE = "wake"
+    CAPTURE = "capture"
+    ASR = "asr"
+    BACKLOG = "backlog"
+    SOURCE = "source"
+
+
+class AudioAttentionOutcome(str, Enum):
+    """A bounded disposition from the local wake/capture/ASR path."""
+
+    MATCHED = "matched"
+    NO_MATCH = "no_match"
+    REPEATED_WAKE = "repeated_wake"
+    CAPTURED = "captured"
+    EMPTY_UTTERANCE = "empty_utterance"
+    SILENCE_TIMEOUT = "silence_timeout"
+    MAX_DURATION = "max_duration"
+    TRANSCRIBED = "transcribed"
+    ASR_EMPTY = "asr_empty"
+    ASR_TIMEOUT = "asr_timeout"
+    ASR_ERROR = "asr_error"
+    BACKLOG_DROPPED = "backlog_dropped"
+    SOURCE_ENDED = "source_ended"
+    SOURCE_ERROR = "source_error"
+
+
 @dataclass(frozen=True)
 class RuntimeInput:
     """One provider-independent arrival at the Attention Loop."""
+
+
+@dataclass(frozen=True)
+class AudioAttentionNotice(RuntimeInput):
+    """A provider fact that does not itself qualify as an Interaction Cue."""
+
+    stage: AudioAttentionStage
+    outcome: AudioAttentionOutcome
+    facts: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -280,6 +318,14 @@ class CueDetected(AttentionRecord):
 
 
 @dataclass(frozen=True, kw_only=True)
+class AudioAttentionRecorded(AttentionRecord):
+    stage: AudioAttentionStage
+    outcome: AudioAttentionOutcome
+    facts: Mapping[str, Any]
+    type: str = "audio_attention"
+
+
+@dataclass(frozen=True, kw_only=True)
 class CueQueued(AttentionRecord):
     cue_id: str
     active_cue_id: str
@@ -359,6 +405,7 @@ class RuntimeFailed(AttentionRecord):
 
 RuntimeRecord = Union[
     AttentionStarted,
+    AudioAttentionRecorded,
     CueDetected,
     CueQueued,
     CueDequeued,
@@ -474,6 +521,8 @@ class SocialAgentRuntime:
                     arrival = self._source.read()
                     if arrival is None or self._stop_requested.is_set():
                         break
+                    if self._record_notice(arrival, records):
+                        continue
                     cue_count += 1
                     cue = self._cue(cue_count, arrival)
                     records.append(self._detected(cue))
@@ -517,6 +566,8 @@ class SocialAgentRuntime:
                     try:
                         waiting_inputs = self._source.read_available()
                         for waiting in waiting_inputs:
+                            if self._record_notice(waiting, records):
+                                continue
                             cue_count += 1
                             queued = self._cue(cue_count, waiting)
                             records.append(self._detected(queued))
@@ -646,6 +697,27 @@ class SocialAgentRuntime:
             expires_at_s=round(observed_at_s + fresh_for_s, 3),
             arrival_sequence=number,
         )
+
+    def _record_notice(
+        self,
+        arrival: InputArrival,
+        records: list[RuntimeRecord],
+    ) -> bool:
+        notice = arrival.input
+        if not isinstance(notice, AudioAttentionNotice):
+            return False
+        observed_at_s = self._elapsed() - arrival.age_s
+        if observed_at_s < -1e-9:
+            raise ValueError("input arrival age predates this Runtime")
+        records.append(
+            AudioAttentionRecorded(
+                t=round(max(0.0, observed_at_s), 3),
+                stage=notice.stage,
+                outcome=notice.outcome,
+                facts=notice.facts,
+            )
+        )
+        return True
 
     def _enqueue(
         self,
@@ -802,6 +874,10 @@ class SocialAgentRuntime:
 
 
 __all__ = [
+    "AudioAttentionNotice",
+    "AudioAttentionOutcome",
+    "AudioAttentionRecorded",
+    "AudioAttentionStage",
     "AttentionRecord",
     "AttentionStarted",
     "AttentionStopped",

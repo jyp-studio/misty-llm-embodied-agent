@@ -103,6 +103,26 @@ class Settings(BaseSettings):
             "is not clipped. Bounds what an idle robot buffers."
         ),
     )
+    max_utterance_s: float = Field(
+        default=8.0,
+        gt=0.0,
+        description=(
+            "Hard cap for one captured utterance, so continuous sound cannot "
+            "grow an audio buffer without bound."
+        ),
+    )
+    audio_block_queue_capacity: int = Field(
+        default=64,
+        gt=0,
+        description="Maximum decoded PCM blocks waiting for local VAD.",
+    )
+    audio_segment_queue_capacity: int = Field(
+        default=3,
+        gt=0,
+        description=(
+            "Maximum VAD-completed segments waiting for the Attention Loop."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Drivers — speech recognition
@@ -122,6 +142,21 @@ class Settings(BaseSettings):
             "for local Whisper hallucinating politeness over near-silence; it "
             "also deafens the robot to a real 'thanks', so it is worth "
             "re-measuring against the hosted model and emptying."
+        ),
+    )
+    asr_timeout_s: float = Field(
+        default=15.0,
+        gt=0.0,
+        description="Maximum hosted transcription round-trip for one utterance.",
+    )
+    wake_minimum_confidence: float = Field(
+        default=0.78,
+        gt=0.0,
+        le=1.0,
+        description=(
+            "Minimum local PocketSphinx grammar score for Hey/Hi Misty. "
+            "Verified only with synthetic fixtures; real-room calibration is "
+            "hardware-unverified."
         ),
     )
 

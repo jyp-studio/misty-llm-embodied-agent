@@ -29,6 +29,8 @@ import pytest
 
 from misty_agent.config import Settings
 from misty_agent.drivers.audio_stream import (
+    AudioPipelineEnding,
+    AudioStream,
     Segment,
     UtteranceDetector,
     is_silent,
@@ -45,7 +47,11 @@ from misty_agent.drivers.events import (
     unsubscribe_message,
 )
 from misty_agent.fakes import RecordingCommands
-from misty_agent.perception.asr import pcm_to_wav
+from misty_agent.perception.asr import (
+    OpenAITranscriber,
+    TranscriptionEnding,
+    pcm_to_wav,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +454,7 @@ def test_the_preroll_is_carried_into_the_utterance():
     assert segment is not None
     # 100 pre-roll + 400 speech + 100 trailing silence
     assert segment.pcm.size == 600
+    assert segment.started_at == 0.9
 
 
 def test_zero_preroll_retains_no_silence():
@@ -465,3 +472,184 @@ def test_the_detector_defaults_to_the_configured_values():
 
     assert detector._silence_threshold_db == settings.silence_threshold_db
     assert detector._min_utterance_s == settings.min_utterance_s
+
+
+def test_continuous_voice_is_closed_at_the_maximum_utterance_length():
+    detector = _detector(preroll_s=0.0, max_utterance_s=0.5)
+
+    assert detector.push(0.0, _loud(300)) is None
+    segment = detector.push(0.3, _loud(300))
+
+    assert segment is not None
+    assert segment.pcm.size == 500
+    assert segment.ended_at == 0.5
+    assert not detector.speaking
+
+
+def test_audio_backpressure_keeps_only_bounded_recent_work():
+    stream = AudioStream(
+        session=None,
+        sample_rate=SAMPLE_RATE,
+        block_queue_capacity=2,
+        segment_queue_capacity=2,
+    )
+    for number in range(5):
+        stream._offer_block(float(number), _loud(10))
+        stream._publish(
+            Segment(_loud(10), float(number), float(number) + 0.1)
+        )
+
+    first = stream.read_segment(timeout=0)
+    second = stream.read_segment(timeout=0)
+
+    assert (first.started_at, second.started_at) == (3.0, 4.0)
+    assert stream.read_segment(timeout=0) is None
+    assert stream.take_dropped() == 6
+    assert stream.take_dropped() == 0
+
+
+@pytest.mark.parametrize(
+    ("block_capacity", "segment_capacity"),
+    [(0, 1), (-1, 1), (1, 0), (1, -1)],
+)
+def test_audio_stream_refuses_a_capacity_that_would_be_unbounded(
+    block_capacity, segment_capacity
+):
+    with pytest.raises(ValueError, match="capacity"):
+        AudioStream(
+            session=None,
+            sample_rate=SAMPLE_RATE,
+            block_queue_capacity=block_capacity,
+            segment_queue_capacity=segment_capacity,
+        )
+
+
+def test_decoder_failure_becomes_a_typed_terminal_state():
+    stream = AudioStream(session=None, sample_rate=SAMPLE_RATE)
+
+    stream._decoder_finished(
+        AudioPipelineEnding.ERROR, error_type="ConnectionError"
+    )
+    stream._vad_done.set()
+
+    terminal = stream.take_terminal()
+    assert terminal is not None
+    assert terminal.ending is AudioPipelineEnding.ERROR
+    assert terminal.error_type == "ConnectionError"
+    assert stream.take_terminal() is None
+
+
+def test_decoder_eof_is_not_exhausted_until_the_vad_worker_finishes():
+    stream = AudioStream(session=None, sample_rate=SAMPLE_RATE)
+
+    stream._decoder_finished(AudioPipelineEnding.ENDED)
+
+    assert not stream.exhausted
+    stream._vad_done.set()
+    assert stream.exhausted
+
+
+def test_terminal_waits_until_the_last_vad_segment_is_drained():
+    stream = AudioStream(session=None, sample_rate=SAMPLE_RATE)
+    stream._publish(Segment(_loud(10), 0.0, 0.01))
+    stream._decoder_finished(
+        AudioPipelineEnding.ERROR, error_type="ConnectionError"
+    )
+    stream._vad_done.set()
+
+    assert stream.take_terminal() is None
+    assert stream.read_segment(timeout=0) is not None
+    terminal = stream.take_terminal()
+    assert terminal is not None
+    assert terminal.ending is AudioPipelineEnding.ERROR
+
+
+def test_pipeline_terminal_is_delivered_exactly_once():
+    stream = AudioStream(session=None, sample_rate=SAMPLE_RATE)
+    stream._decoder_finished(
+        AudioPipelineEnding.ERROR, error_type="ConnectionError"
+    )
+    stream._vad_done.set()
+
+    assert stream.take_terminal() is not None
+    stream._decoder_finished(AudioPipelineEnding.ENDED)
+    assert stream.take_terminal() is None
+
+
+def test_vad_failure_replaces_a_pending_normal_decoder_ending():
+    class ExplodingDetector:
+        speaking = False
+
+        def push(self, arrived_at, block):
+            raise ValueError("bad samples")
+
+        def timed_out(self, at):
+            return None
+
+    stream = AudioStream(
+        session=None,
+        detector=ExplodingDetector(),
+        sample_rate=SAMPLE_RATE,
+    )
+    stream._offer_block(0.0, _loud(10))
+    stream._decoder_finished(AudioPipelineEnding.ENDED)
+
+    stream._detect_loop()
+
+    assert stream._vad_done.is_set()
+    terminal = stream.take_terminal()
+    assert terminal is not None
+    assert terminal.ending is AudioPipelineEnding.ERROR
+    assert terminal.error_type == "ValueError"
+
+
+def test_decoder_eof_flushes_the_last_in_progress_utterance():
+    stream = AudioStream(
+        session=None,
+        detector=_detector(preroll_s=0.0),
+        monotonic=lambda: 1.0,
+        sample_rate=SAMPLE_RATE,
+    )
+    stream._offer_block(0.0, _loud(400))
+    stream._decoder_finished(AudioPipelineEnding.ENDED)
+
+    stream._detect_loop()
+
+    segment = stream.read_segment(timeout=0)
+    assert segment is not None
+    assert segment.pcm.size == 400
+    terminal = stream.take_terminal()
+    assert terminal is not None
+    assert terminal.ending is AudioPipelineEnding.ENDED
+
+
+class _TimeoutClient:
+    def __init__(self):
+        self.audio = self
+        self.transcriptions = self
+        self.timeout = None
+
+    def with_options(self, *, timeout, max_retries):
+        self.timeout = timeout
+        self.max_retries = max_retries
+        return self
+
+    def create(self, **kwargs):
+        raise TimeoutError("provider took too long")
+
+
+def test_hosted_asr_timeout_is_named_and_uses_the_configured_bound():
+    transcriber = OpenAITranscriber.__new__(OpenAITranscriber)
+    transcriber._client = _TimeoutClient()
+    transcriber._model = "scripted"
+    transcriber._language = "en"
+    transcriber._ignored_phrases = ()
+
+    result = transcriber.transcribe_bounded(
+        _loud(100), SAMPLE_RATE, timeout_s=1.25
+    )
+
+    assert transcriber._client.timeout == 1.25
+    assert transcriber._client.max_retries == 0
+    assert result.ending is TranscriptionEnding.TIMEOUT
+    assert result.error_type == "TimeoutError"

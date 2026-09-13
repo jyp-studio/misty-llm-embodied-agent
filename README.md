@@ -123,6 +123,7 @@ guidance.
 .
 ├── misty_agent/
 │   ├── runtime.py            # Highest seam: Attention, cues, Episodes, shutdown
+│   ├── audio_input.py        # Local wake gate, bounded capture, hosted-ASR decision
 │   ├── scenarios.py          # Acceptance Scenario source shared by Demo and tests
 │   ├── app.py                # Composition root and one-Episode runtime dependency
 │   ├── config.py             # Every tunable, with UNCALIBRATED ones marked as such
@@ -147,10 +148,9 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 ## Roadmap
 
-The first runtime slice intentionally does not claim the rest of the social
-system. Planned vertical slices add wake detection, visual cue classification,
-cue queues and handoff, Skills, ephemeral social state, target-aware movement,
-and a live input adapter. See
+The current runtime has bounded Cue scheduling and an external Hey/Hi Misty
+audio gate. Planned vertical slices add visual cue classification, person-aware
+handoff, Skills, ephemeral social state, and target-aware movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---
@@ -158,7 +158,8 @@ and a live input adapter. See
 ## Acknowledgements & license
 
 Misty II and its REST API are by Misty Robotics. Face perception uses
-MediaPipe; hosted speech/model adapters use OpenAI when explicitly configured.
+MediaPipe; local wake detection uses PocketSphinx; hosted speech/model adapters
+use OpenAI when explicitly configured.
 The original AutoMisty code-generation framework was removed at M1; the
 retained generated Misty SDK file is attributed in `NOTICE`.
 

@@ -101,6 +101,9 @@ def test_the_page_leads_with_three_readable_social_scenarios():
     assert "執行離線模擬" in page
     assert 'id="executionResult"' in page
     assert 'id="replayJournal"' in page
+    assert 'id="wakeFixture"' in page
+    assert 'id="audioBadge"' in page
+    assert "JSON.stringify(fixture ? { fixture } : {})" in page
     assert "storyboard.moments" in page
     assert "runSerial" in page
     assert "state.runSerial !== runId" in page
@@ -128,7 +131,13 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
     ]
     assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
-    assert listed[0]["ticket"] == "03"
+    assert listed[0]["ticket"] == "04"
+    assert [fixture["key"] for fixture in listed[0]["audio_fixtures"]] == [
+        "hey-normal",
+        "hi-slow",
+        "hey-fast",
+        "hey-pause",
+    ]
     assert listed[1]["availability"] == "planned"
     assert listed[1]["ticket"] == "06"
     assert listed[2]["availability"] == "planned"
@@ -139,6 +148,47 @@ def run_scenario(name: str) -> dict:
     reply = answer("POST", f"/scenarios/{name}/run")
     assert reply.status == 200, (name, reply.status, reply.body)
     return json.loads(reply.body)
+
+
+def test_the_selected_fixture_runs_local_wake_before_the_episode():
+    reply = answer(
+        "POST",
+        "/scenarios/greeting/run",
+        json.dumps({"fixture": "hi-slow"}).encode(),
+    )
+    assert reply.status == 200
+    payload = json.loads(reply.body)
+
+    audio = [
+        record
+        for record in payload["runtime"]["records"]
+        if record["type"] == "audio_attention"
+    ]
+    assert [(item["stage"], item["outcome"]) for item in audio] == [
+        ("wake", "matched"),
+        ("capture", "captured"),
+        ("asr", "transcribed"),
+    ]
+    assert audio[0]["facts"]["wake_phrase"] == "hi misty"
+    assert payload["execution"]["provenance"]["audio"] == (
+        "Hi Misty · 慢速"
+    )
+    assert [beat["kind"] for beat in payload["execution"]["flow"][:3]] == [
+        "wake",
+        "capture",
+        "asr",
+    ]
+
+
+def test_an_unknown_wake_fixture_is_refused_by_name():
+    reply = answer(
+        "POST",
+        "/scenarios/greeting/run",
+        json.dumps({"fixture": "not-there"}).encode(),
+    )
+
+    assert reply.status == 400
+    assert b"not-there" in reply.body
 
 
 def test_the_greeting_card_runs_the_runtime_without_an_api_key(monkeypatch):
@@ -211,90 +261,45 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "model": "預設腳本模型",
         "robot": "模擬 Misty",
         "detail": (
-            "輸入時間、Cue 類型與模型決策預先定義；Runtime、queue、Tool "
-            "與 Journal 由目前程式重新執行。這不是歷史紀錄、LLM 自主"
-            "決策、感知辨識或真機結果。"
+            "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
+            "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
+            "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
         ),
+        "audio": "Hey Misty · 一般語速",
     }
-    assert execution["trigger_evidence"] == {
-        "source": "speech",
-        "observed_at_s": 0.5,
-        "facts": {
-            "addressed_robot": True,
-            "cue_kind": "explicit_request",
-        },
-        "transcript": "Misty，你好！",
-        "uncertainty": ["說話者身分未經驗證"],
-        "selected_image": False,
-    }
-    assert execution["flow"] == [
-        {
-            "kind": "input",
-            "label": "人說",
-            "headline": "「Misty，你好！」",
-            "detail": "這段輸入由案例預先定義。",
-        },
-        {
-            "kind": "evidence",
-            "label": "Trigger Evidence",
-            "headline": "語音證據 · 0.5 秒",
-            "detail": "2 個可觀察 facts；不確定性：說話者身分未經驗證",
-        },
-        {
-            "kind": "cue",
-            "label": "系統判定",
-            "headline": "明確互動請求",
-            "detail": "Explicit Request",
-        },
-        {
-            "kind": "decision_note",
-            "label": "Decision Note",
-            "headline": "先確認問候來自哪個方向。",
-            "detail": "公開目的，不是私有推理。",
-        },
-        {
-            "kind": "tool_call",
-            "label": "Tool call",
-            "headline": "look_around",
-            "detail": "call-greeting-look",
-        },
-        {
-            "kind": "decision_note",
-            "label": "Decision Note",
-            "headline": "回應對 Misty 的明確問候。",
-            "detail": "公開目的，不是私有推理。",
-        },
-        {
-            "kind": "tool_call",
-            "label": "Tool call",
-            "headline": "speak",
-            "detail": "call-greeting-speak",
-        },
-        {
-            "kind": "observation",
-            "label": "Observation",
-            "headline": "「嗨！很高興見到你。」",
-            "detail": "模擬說話成功；Snapshot 已附回下一個 Turn。",
-        },
-        {
-            "kind": "decision_note",
-            "label": "Decision Note",
-            "headline": "問候已完成，結束這次互動。",
-            "detail": "公開目的，不是私有推理。",
-        },
-        {
-            "kind": "tool_call",
-            "label": "Tool call",
-            "headline": "done",
-            "detail": "call-greeting-done",
-        },
-        {
-            "kind": "ending",
-            "label": "結果",
-            "headline": "情境執行完成",
-            "detail": "有限情境已播放完畢，Runtime 正常停止。",
-        },
+    evidence = execution["trigger_evidence"]
+    assert evidence["source"] == "speech"
+    assert evidence["transcript"] == "Misty，你好！"
+    assert evidence["facts"]["wake_phrase"] == "hey misty"
+    assert evidence["facts"]["confidence"] >= 0.78
+    assert evidence["facts"]["detector"] == "pocketsphinx-local"
+    assert evidence["facts"]["capture"] == "captured"
+    assert evidence["uncertainty"] == [
+        "local wake detection is verified only on synthetic fixtures"
     ]
+    assert evidence["selected_image"] is False
+    assert [beat["kind"] for beat in execution["flow"]] == [
+        "wake",
+        "capture",
+        "asr",
+        "input",
+        "evidence",
+        "cue",
+        "decision_note",
+        "tool_call",
+        "decision_note",
+        "tool_call",
+        "observation",
+        "decision_note",
+        "tool_call",
+        "ending",
+    ]
+    assert execution["flow"][-1] == {
+        "kind": "ending",
+        "label": "結果",
+        "headline": "情境執行完成",
+        "detail": "有限情境已播放完畢，Runtime 正常停止。",
+    }
     assert execution["decision_explanation"] == {
         "available": True,
         "headline": "Decision Note 已由本次 Journal 記錄",

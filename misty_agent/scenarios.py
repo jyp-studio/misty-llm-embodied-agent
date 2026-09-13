@@ -48,6 +48,16 @@ class ScenarioCard:
 
 
 @dataclass(frozen=True)
+class AudioFixture:
+    """One checked-in synthetic recording offered by the Demo."""
+
+    key: str
+    label: str
+    asset: str
+    transcript: str
+
+
+@dataclass(frozen=True)
 class PlannedScenario(ScenarioCard):
     """A roadmap preview with deliberately no executable behavior."""
 
@@ -65,6 +75,7 @@ class AcceptanceScenario(ScenarioCard):
     actors: Tuple[str, ...]
     inputs: Tuple[ScheduledInput, ...]
     decisions: Tuple[Decision, ...]
+    audio_fixtures: Tuple[AudioFixture, ...] = ()
 
     def __post_init__(self) -> None:
         if self.availability is not ScenarioAvailability.READY:
@@ -96,29 +107,32 @@ class ScenarioModel:
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
     title="有人和 Misty 打招呼",
-    subtitle="問候進行中仍接收新線索，依優先級安全排隊。",
+    subtitle="選一段錄音，查看本機喚醒、語音擷取、ASR 與 Misty 回應。",
     availability=ScenarioAvailability.READY,
-    ticket="03",
+    ticket="04",
     limitation=(
-        "輸入時間與 Cue 類型均為預先定義，只驗證 scheduler；另使用 "
-        "scripted model 與 simulated robot，沒有連接 Misty II。"
+        "喚醒由目前程式在本機分析 synthetic WAV；ASR 與 model 使用腳本，"
+        "robot 為模擬。這不是實機或真實房間的辨識結果。"
     ),
     actors=("person", "person", "person", "person"),
     preview=(
         PresentationBeat(
-            "input", "收到", "「Misty，你好！」", "語音被分類為明確互動請求。"
+            "input",
+            "本機喚醒",
+            "辨識 Hey / Hi Misty",
+            "未喚醒的聲音不會送往 hosted ASR。",
         ),
         PresentationBeat(
             "decision",
-            "決定",
-            "先找出說話方向，再回應",
-            "期間的新 cue 只排隊，不搶走 Misty。",
+            "擷取與 ASR",
+            "只處理一段 bounded utterance",
+            "Demo 使用 scripted ASR，不呼叫網路。",
         ),
         PresentationBeat(
             "effect",
-            "模擬動作",
-            "「嗨！很高興見到你。」",
-            "所有 fresh cue 依優先級處理，過期或超量 cue 有明確原因。",
+            "Episode",
+            "Misty 做出模擬回應",
+            "Runtime、決策與 ending 都由這次執行產生。",
         ),
     ),
     inputs=(
@@ -263,6 +277,32 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             note="保留不確定性並結束觀察。",
         ),
     ),
+    audio_fixtures=(
+        AudioFixture(
+            key="hey-normal",
+            label="Hey Misty · 一般語速",
+            asset="hey_misty_normal.wav",
+            transcript="Misty，你好！",
+        ),
+        AudioFixture(
+            key="hi-slow",
+            label="Hi Misty · 慢速",
+            asset="hi_misty_slow.wav",
+            transcript="Misty，你好！",
+        ),
+        AudioFixture(
+            key="hey-fast",
+            label="Hey Misty · 快速",
+            asset="hey_misty_fast.wav",
+            transcript="Misty，你好！",
+        ),
+        AudioFixture(
+            key="hey-pause",
+            label="Hey … Misty · 含停頓",
+            asset="hey_misty_pause.wav",
+            transcript="Misty，你好！",
+        ),
+    ),
 )
 
 
@@ -329,6 +369,7 @@ DEMO_SCENARIOS = (EXPLICIT_TEXT_REQUEST, CRYING_CARE, SPEAKER_HANDOFF)
 
 __all__ = [
     "AcceptanceScenario",
+    "AudioFixture",
     "CRYING_CARE",
     "DEMO_SCENARIOS",
     "EXPLICIT_TEXT_REQUEST",

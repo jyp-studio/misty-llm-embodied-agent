@@ -50,23 +50,9 @@ class Ticking:
         self.now += seconds
 
 
-class Hears:
-    """A transcriber that always finds words, so a dropped utterance is the
-    only reason nothing comes out."""
-
-    def __init__(self, text="I said something") -> None:
-        self.calls = 0
-        self._text = text
-
-    def transcribe(self, pcm, sample_rate):
-        self.calls += 1
-        return self._text
-
-
-def a_stream(clock, transcriber=None):
+def a_stream(clock):
     return AudioStream(
         session=None,
-        transcriber=transcriber or Hears(),
         sample_rate=16000,
         monotonic=clock,
     )
@@ -101,29 +87,26 @@ def spoke(text, *, ears, config=None):
 
 def test_speech_heard_while_the_robot_is_talking_is_dropped():
     clock = Ticking()
-    transcriber = Hears()
-    stream = a_stream(clock, transcriber)
+    stream = a_stream(clock)
 
     stream.mute_for(2.0)
     clock.advance(1.0)
     stream._publish(a_segment(stream))
 
-    assert stream.read(timeout=0) is None
-    assert transcriber.calls == 0, "it was transcribed before being dropped"
+    assert stream.read_segment(timeout=0) is None
 
 
 def test_nothing_is_even_sent_to_the_transcriber_while_muted():
     """Dropping it afterwards would still pay for the round trip, on the
     thread that is supposed to be listening for the next thing said."""
     clock = Ticking()
-    transcriber = Hears()
-    stream = a_stream(clock, transcriber)
+    stream = a_stream(clock)
 
     stream.mute_for(5.0)
     for _ in range(3):
         stream._publish(a_segment(stream))
 
-    assert transcriber.calls == 0
+    assert stream.read_segment(timeout=0) is None
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +123,8 @@ def test_speech_heard_after_the_robot_stops_gets_through():
     clock.advance(2.01)
     stream._publish(a_segment(stream))
 
-    heard = stream.read(timeout=0)
+    heard = stream.read_segment(timeout=0)
     assert heard is not None
-    assert heard.text == "I said something"
 
 
 def test_the_window_closes_on_time_not_early_and_not_late():
@@ -166,7 +148,7 @@ def test_an_unmuted_stream_hears_everything():
 
     stream._publish(a_segment(stream))
 
-    assert stream.read(timeout=0) is not None
+    assert stream.read_segment(timeout=0) is not None
 
 
 # ---------------------------------------------------------------------------

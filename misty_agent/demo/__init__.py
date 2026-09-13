@@ -6,13 +6,12 @@ open a browser, hand each request to `answer`. The shell is not tested, on the
 same grounds `main()` is not: there is nothing in it to get wrong that a test
 could see without opening a port.
 
-## Zero new dependencies, and that is an argument rather than a preference
+## No web-framework dependency
 
-`http.server`, `webbrowser`, hand-written HTML. `requirements.txt` is a
-document with a case in it — every package that was removed has its reason
-written down — and gradio for one demo page would have pulled twenty-odd back
-in and weakened the case (`PLAN.md` §16.4). `tests/test_demo.py` reads this
-module's imports rather than trusting the intention.
+`http.server`, `webbrowser`, hand-written HTML. PocketSphinx belongs to the
+product's local wake path, not to page rendering; adding a web framework for
+one page would still widen the surface for no product capability
+(`PLAN.md` §16.4).
 
 ## The page replays a whole Journal; nothing streams
 
@@ -65,10 +64,18 @@ from misty_agent.app import (
     look_at,
     simulated_session,
 )
+from misty_agent.audio_input import LiveInputAdapter, WavAudioFixtureSource
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock
-from misty_agent.perception.asr import OpenAITranscriber, wav_to_pcm
+from misty_agent.perception.asr import (
+    OpenAITranscriber,
+    Transcription,
+    TranscriptionEnding,
+    wav_to_pcm,
+)
+from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.runtime import (
+    AudioAttentionRecorded,
     AttentionStarted,
     AttentionStopped,
     CueDetected,
@@ -112,6 +119,7 @@ ANY_FREE_PORT = 0
 _HERE = pathlib.Path(__file__).resolve().parent
 _PAGE = _HERE / "page.html"
 _GOLDENS = _HERE.parent.parent / "tests" / "goldens"
+_WAKE_FIXTURES = _HERE.parent.parent / "tests" / "fixtures" / "wake"
 
 #: What the four original goldens say about themselves. Spelled out rather
 #: than derived: the claim is historical, and there is nothing on disk that
@@ -241,7 +249,7 @@ def answer(
             return _run(body, audio=audio)
         scenario_name = _scenario_run_name(path)
         if scenario_name is not None:
-            return _run_scenario(scenario_name)
+            return _run_scenario(scenario_name, body)
         return _json(405, {"error": f"nothing accepts a POST at {path}"})
     if method != "GET":
         return _json(405, {"error": f"{method} is not something this serves"})
@@ -276,7 +284,7 @@ def _scenario_run_name(path: str) -> Optional[str]:
 
 def _scenario_payload(case: ScenarioCard) -> dict:
     """The stable, human-readable facts displayed on a scenario card."""
-    return {
+    payload = {
         "name": case.name,
         "title": case.title,
         "subtitle": case.subtitle,
@@ -285,9 +293,74 @@ def _scenario_payload(case: ScenarioCard) -> dict:
         "limitation": case.limitation,
         "preview": [asdict(beat) for beat in case.preview],
     }
+    if isinstance(case, AcceptanceScenario):
+        payload["audio_fixtures"] = [
+            {"key": item.key, "label": item.label}
+            for item in case.audio_fixtures
+        ]
+    return payload
 
 
-def _run_scenario(name: str) -> Reply:
+class _ScriptedFixtureTranscriber:
+    """Deterministic ASR; local wake detection still analyzes the WAV."""
+
+    def __init__(self, transcript: str) -> None:
+        self._transcript = transcript
+
+    def transcribe_bounded(self, pcm, sample_rate, *, timeout_s):
+        return Transcription(
+            text=self._transcript,
+            ending=TranscriptionEnding.TRANSCRIBED,
+        )
+
+
+class _ChainedScenarioInput:
+    """Expose sequential providers as one Runtime input lifecycle."""
+
+    def __init__(self, *sources) -> None:
+        self._sources = sources
+        self._index = 0
+
+    def start(self) -> None:
+        for source in self._sources:
+            source.start()
+
+    def read(self):
+        while self._index < len(self._sources):
+            value = self._sources[self._index].read()
+            if value is not None:
+                return value
+            self._index += 1
+        return None
+
+    def read_available(self):
+        available = []
+        while self._index < len(self._sources):
+            source = self._sources[self._index]
+            available.extend(source.read_available())
+            if available or not getattr(source, "exhausted", False):
+                break
+            self._index += 1
+        return tuple(available)
+
+    def stop(self) -> None:
+        for source in reversed(self._sources):
+            source.stop()
+
+
+def _scenario_request(body: bytes) -> Mapping[str, Any]:
+    if not body:
+        return {}
+    try:
+        asked = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("scenario request must be a JSON object")
+    if not isinstance(asked, dict):
+        raise ValueError("scenario request must be a JSON object")
+    return asked
+
+
+def _run_scenario(name: str, body: bytes = b"") -> Reply:
     """Run one named offline scenario through the real runtime seam."""
     case = next((item for item in DEMO_SCENARIOS if item.name == name), None)
     if case is None:
@@ -303,6 +376,11 @@ def _run_scenario(name: str) -> Reply:
             },
         )
 
+    try:
+        asked = _scenario_request(body)
+    except ValueError as why:
+        return _json(400, {"error": str(why)})
+
     clock = FakeClock()
     session = simulated_session(
         None,
@@ -313,8 +391,40 @@ def _run_scenario(name: str) -> Reply:
         cue_queue_capacity=3,
         cue_freshness_s=5.0,
     )
+    selected_fixture = None
+    if case.audio_fixtures:
+        requested = asked.get("fixture", case.audio_fixtures[0].key)
+        selected_fixture = next(
+            (item for item in case.audio_fixtures if item.key == requested),
+            None,
+        )
+        if selected_fixture is None:
+            return _json(
+                400,
+                {"error": f"there is no audio fixture called {requested!r}"},
+            )
+        live_audio = LiveInputAdapter(
+            audio=WavAudioFixtureSource(
+                _WAKE_FIXTURES / selected_fixture.asset,
+                clock=clock,
+            ),
+            wake_detector=PocketSphinxWakeDetector(
+                minimum_confidence=scenario_config.wake_minimum_confidence
+            ),
+            transcriber=_ScriptedFixtureTranscriber(
+                selected_fixture.transcript
+            ),
+            clock=clock,
+            config=scenario_config,
+        )
+        source = _ChainedScenarioInput(
+            live_audio,
+            ScenarioInputAdapter(clock, case.inputs[1:]),
+        )
+    else:
+        source = ScenarioInputAdapter(clock, case.inputs)
     result = SocialAgentRuntime(
-        source=ScenarioInputAdapter(clock, case.inputs),
+        source=source,
         session=session,
         clock=clock,
         config=scenario_config,
@@ -342,6 +452,9 @@ def _run_scenario(name: str) -> Reply:
                 result,
                 result.episodes[0],
                 queue_capacity=scenario_config.cue_queue_capacity,
+                audio_fixture=(
+                    selected_fixture.label if selected_fixture else None
+                ),
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
@@ -354,6 +467,7 @@ def _scenario_execution(
     episode: RuntimeEpisode,
     *,
     queue_capacity: int,
+    audio_fixture: Optional[str] = None,
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview."""
     cue = next(
@@ -383,7 +497,48 @@ def _scenario_execution(
         if evidence.uncertainty
         else "沒有額外不確定性註記"
     )
+    audio_records = tuple(
+        record
+        for record in result.records
+        if isinstance(record, AudioAttentionRecorded)
+    )
+    audio_labels = {
+        "wake": "本機喚醒辨識",
+        "capture": "喚醒後語音擷取",
+        "asr": "語音轉文字（腳本）",
+        "backlog": "音訊等待佇列",
+        "source": "音訊來源",
+    }
+    audio_headlines = {
+        "matched": "已辨識到喚醒詞",
+        "no_match": "沒有辨識到喚醒詞",
+        "repeated_wake": "收到重複喚醒詞",
+        "captured": "已擷取一段語音",
+        "empty_utterance": "喚醒後沒有語音",
+        "silence_timeout": "等待語音逾時",
+        "max_duration": "語音已達長度上限",
+        "transcribed": "已產生文字",
+        "asr_empty": "沒有可用文字",
+        "asr_timeout": "語音轉文字逾時",
+        "asr_error": "語音轉文字失敗",
+        "backlog_dropped": "部分音訊因佇列已滿而丟棄",
+        "source_ended": "音訊來源已結束",
+        "source_error": "音訊來源失敗",
+    }
     flow = [
+        PresentationBeat(
+            record.stage.value,
+            audio_labels[record.stage.value],
+            audio_headlines[record.outcome.value],
+            (
+                " · ".join(
+                    f"{key}: {value}" for key, value in record.facts.items()
+                )
+                or "此階段已留下 typed Runtime record。"
+            ),
+        )
+        for record in audio_records
+    ] + [
         PresentationBeat(
             "input", "人說", f"「{cue.text}」", "這段輸入由案例預先定義。"
         ),
@@ -463,10 +618,11 @@ def _scenario_execution(
             "model": "預設腳本模型",
             "robot": "模擬 Misty",
             "detail": (
-                "輸入時間、Cue 類型與模型決策預先定義；Runtime、queue、Tool "
-                "與 Journal 由目前程式重新執行。這不是歷史紀錄、LLM 自主"
-                "決策、感知辨識或真機結果。"
+                "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
+                "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
+                "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
             ),
+            "audio": audio_fixture,
         },
         "trigger_evidence": {
             "source": evidence.source.value,
@@ -632,6 +788,24 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
     if isinstance(record, AttentionStarted):
         headline = "Attention Loop started"
         detail = "waiting for an Interaction Cue"
+    elif isinstance(record, AudioAttentionRecorded):
+        names = {
+            "wake": "Wake phrase",
+            "capture": "Utterance capture",
+            "asr": "Speech recognition",
+            "backlog": "Audio backlog",
+            "source": "Audio source",
+        }
+        headline = (
+            f"{names[record.stage.value]}: "
+            f"{record.outcome.value.replace('_', ' ')}"
+        )
+        detail = (
+            " · ".join(
+                f"{key}: {value}" for key, value in record.facts.items()
+            )
+            or "typed local-audio outcome"
+        )
     elif isinstance(record, CueDetected):
         headline = f"{record.cue_kind.value.replace('_', ' ')} detected"
         detail = f"{record.evidence_kind} evidence: {record.text or '(no words)'}"

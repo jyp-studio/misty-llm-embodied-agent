@@ -11,8 +11,8 @@
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text",
       "Helvetica Neue", Arial, sans-serif;
   }
-  button, input { font: inherit; }
-  button:focus-visible, input:focus-visible, summary:focus-visible {
+  button, input, select { font: inherit; }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
     outline: 3px solid rgba(0,113,227,.28); outline-offset: 3px;
   }
   .topbar {
@@ -71,6 +71,10 @@
   .run-button[disabled] { color: #6e6e73; background: #e8e8ed; cursor: not-allowed; }
   .run-button[aria-busy="true"] { color: #fff; background: #0071e3; cursor: wait; opacity: .65; }
   .run-button svg { width: 17px; height: 17px; fill: currentColor; }
+  .fixture-control { display: grid; gap: 5px; min-width: 215px; }
+  .fixture-control[hidden] { display: none; }
+  .fixture-control label { color: #6e6e73; font-size: 12px; font-weight: 600; }
+  .fixture-control select { width: 100%; padding: 10px 34px 10px 12px; color: #1d1d1f; background: #fff; border: 1px solid #b9b9bf; border-radius: 10px; }
   .flow-label { display: block; margin-top: 26px; color: #6e6e73; font-size: 13px; font-weight: 600; letter-spacing: .06em; }
   .flow { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 28px; background: #fff; border-radius: 16px; }
   .flow article { display: flex; gap: 13px; min-height: 156px; padding: 22px; }
@@ -129,6 +133,7 @@
     .scenario-card { grid-template-columns: 210px 1fr; grid-template-rows: auto; padding-bottom: 0; }
     .card-copy { padding: 22px; }
     .result-header { align-items: stretch; flex-direction: column; }
+    .fixture-control { width: 100%; }
     .flow { grid-template-columns: 1fr; }
     .flow article:not(:first-child) { border-top: 1px solid #e8e8ed; border-left: 0; }
     .live-form { grid-template-columns: 1fr; }
@@ -195,13 +200,17 @@
 
   <section class="result" aria-labelledby="result-title">
     <div class="result-header">
-      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 01</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">目前的最小垂直路徑：從 Explicit Request 一路執行到模擬說話。</p></div>
+      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 04</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">選一段錄音，查看本機喚醒、語音擷取、ASR 與 Misty 回應。</p></div>
+      <div class="fixture-control" id="fixtureControl" hidden>
+        <label for="wakeFixture">選擇實際要分析的 WAV fixture</label>
+        <select id="wakeFixture"></select>
+      </div>
       <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
     </div>
     <div class="execution-result" id="executionResult" aria-live="polite" hidden>
       <span class="eyebrow">CURRENT RUN</span>
       <h3 id="executionHeadline"></h3>
-      <div class="execution-badges"><span id="modelBadge"></span><span id="robotBadge"></span></div>
+      <div class="execution-badges"><span id="audioBadge"></span><span id="modelBadge"></span><span id="robotBadge"></span></div>
       <p id="executionDetail"></p>
       <div class="decision-note"><b id="decisionHeadline"></b><br><span id="decisionDetail"></span></div>
       <section class="attention-state" id="attentionState" hidden>
@@ -280,6 +289,11 @@ function selectScenario(name) {
   resetReplay();
   byId("result-title").textContent = scenario.title;
   byId("scenario-summary").textContent = scenario.subtitle;
+  const fixtures = scenario.audio_fixtures || [];
+  byId("fixtureControl").hidden = fixtures.length === 0;
+  byId("wakeFixture").innerHTML = fixtures.map((fixture) =>
+    `<option value="${escapeText(fixture.key)}">${escapeText(fixture.label)}</option>`
+  ).join("");
   renderFlow(scenario.preview);
   const ready = scenario.availability === "ready";
   byId("result-mode").textContent = ready
@@ -360,13 +374,19 @@ async function runScenario() {
   byId("truth-title").textContent = "正在執行這次模擬";
   byId("truth-copy").textContent = "正在由目前程式產生 Runtime records 與 Episode Journal。";
   try {
-    const response = await fetch(`/scenarios/${encodeURIComponent(scenarioName)}/run`, { method: "POST" });
+    const fixture = scenario.audio_fixtures?.length ? byId("wakeFixture").value : null;
+    const response = await fetch(`/scenarios/${encodeURIComponent(scenarioName)}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fixture ? { fixture } : {}),
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "scenario failed");
     if (state.runSerial !== runId || state.selected !== scenarioName) return;
     const execution = payload.execution;
     byId("executionResult").hidden = false;
     byId("executionHeadline").textContent = execution.provenance.headline;
+    byId("audioBadge").textContent = `錄音：${execution.provenance.audio || "無"}`;
     byId("modelBadge").textContent = `模型：${execution.provenance.model}`;
     byId("robotBadge").textContent = `機器人：${execution.provenance.robot}`;
     byId("executionDetail").textContent = execution.provenance.detail;

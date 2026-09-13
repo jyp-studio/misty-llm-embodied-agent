@@ -35,6 +35,7 @@ import pytest
 from misty_agent.agent.react import Decision
 from misty_agent.app import main
 from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.runtime import InputArrival, TimedText
 
 from test_app import Says
 
@@ -129,6 +130,42 @@ class FakeTranscriber(Recorder):
         return ""
 
 
+class FakeWakeDetector(Recorder):
+    pass
+
+
+class FakeLiveInput(Recorder):
+    """Finite stand-in for the hardware-unverified wake adapter wiring."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.audio = kwargs["audio"]
+        self._read = False
+
+    def start(self):
+        super().start()
+        self.audio.start()
+
+    def read(self):
+        if self._read:
+            return None
+        self._read = True
+        return InputArrival(
+            age_s=0.0,
+            input=TimedText(
+                Heard.text,
+                facts={"wake_phrase": "hey misty"},
+            ),
+        )
+
+    def read_available(self):
+        return ()
+
+    def stop(self):
+        self.audio.stop()
+        super().stop()
+
+
 @pytest.fixture
 def built(monkeypatch):
     """Every real driver, replaced by a recorder, and the log they share."""
@@ -143,6 +180,8 @@ def built(monkeypatch):
         ("AudioStream", FakeEars),
         ("EventStream", FakeEvents),
         ("OpenAITranscriber", FakeTranscriber),
+        ("PocketSphinxWakeDetector", FakeWakeDetector),
+        ("LiveInputAdapter", FakeLiveInput),
     ]:
         def factory(*args, _double=double, _name=name, **kwargs):
             made[_name] = _double(*args, **kwargs)
@@ -169,6 +208,8 @@ def test_every_real_driver_is_built(built):
         "AudioStream",
         "EventStream",
         "OpenAITranscriber",
+        "PocketSphinxWakeDetector",
+        "LiveInputAdapter",
     }
 
 
@@ -276,7 +317,7 @@ def test_the_audio_stream_is_told_the_sessions_clock(built):
     assert built["AudioStream"].kwargs["monotonic"].__self__ is clock
 
 
-def test_what_the_microphone_hears_reaches_the_model(built):
+def test_what_the_wake_adapter_hears_reaches_the_model_as_trigger_evidence(built):
     """The first version of this asserted `is not HEARS_NOTHING`, which is
     true of every double in this file — it checked that a fake is a fake, and
     stayed green with `ears=` dropped from the `Session` entirely.
@@ -288,13 +329,13 @@ def test_what_the_microphone_hears_reaches_the_model(built):
 
     main(["--robot", "10.0.0.7"], model=model, clock=FakeClock())
 
-    heard = [
-        entry["content"]["snapshot"]["new_speech"]
-        for context in model.contexts
-        for entry in context
-        if entry.get("role") == "tool" and "snapshot" in entry.get("content", {})
-    ]
-    assert heard == [Heard.text]
+    evidence = next(
+        entry
+        for entry in model.contexts[0]
+        if entry.get("role") == "user"
+    )["content"][0]["text"]["trigger_evidence"]
+    assert evidence["transcript"] == Heard.text
+    assert evidence["facts"]["wake_phrase"] == "hey misty"
 
 
 # ---------------------------------------------------------------------------
@@ -340,15 +381,17 @@ def test_the_drivers_are_released_even_when_the_episode_raises(built, monkeypatc
     with pytest.raises(RuntimeError):
         main(["--robot", "10.0.0.7"], model=Says(), clock=FakeClock())
 
-    assert built["AudioStream"].stopped
+    assert not built["AudioStream"].started
+    assert not built["AudioStream"].stopped
     assert built["RtspVideoStream"].stopped
 
 
 def test_a_robot_with_no_key_gets_no_ears_and_attaches_anyway(built, monkeypatch, tmp_path, capsys):
     """`PLAN.md` §16.18 says so in prose and nothing was checking it.
 
-    `AudioStream` needs a `Transcriber` and the hosted one needs a key.
-    `HEARS_NOTHING` has `mute_for` and nothing else — no `start`, no `read` —
+    The live attention adapter needs a hosted Transcriber, so without a key no
+    AudioStream needs to be started. `HEARS_NOTHING` has `mute_for` and nothing
+    else — no `start`, no `read` —
     so a keyless run that tried to start it raises `AttributeError` on a
     machine nobody can test. Every other test in this file sets a key, which
     is why two mutations lived here: dropping the guard, and building the
@@ -365,6 +408,7 @@ def test_a_robot_with_no_key_gets_no_ears_and_attaches_anyway(built, monkeypatch
     assert code == 0
     assert "OpenAITranscriber" not in built
     assert "AudioStream" not in built
+    assert "LiveInputAdapter" not in built
     assert built["RtspVideoStream"].started
     assert "10.0.0.7: " in capsys.readouterr().out
 

@@ -13,6 +13,7 @@ pydantic-settings>=2.0
 mediapipe==0.10.21
 opencv-python>=4.9
 numpy
+pocketsphinx==5.1.1
 
 # Test
 pytest>=8.0

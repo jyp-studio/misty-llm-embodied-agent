@@ -2571,3 +2571,29 @@ Demo 仍維持三張社交情境卡，且哭泣辨識與 A→B target handoff �
 問候案例加入同一匿名人物在第一個 Episode 忙碌時出現的 scripted cues，直接以本次 Runtime
 records 顯示 active cue、queue 上限、priority、去重、升級、overflow、expiry 與 dequeue。這證明
 排程與單一所有權，不證明人物追蹤、真 LLM 自主決策或真機行為。
+
+### 16.53 Wake phrase 在外部 AV provider 內完成 gating（ticket 04）
+
+Ticket 04 採用 ADR 0004 的外部喚醒方案。`LiveInputAdapter` 在 `InputSource` 邊界內擁有本機 wake
+gate、單次 bounded capture 與 hosted-ASR 決策；`SocialAgentRuntime` 與 Episode 只看 typed input，
+不認得 PocketSphinx、PCM 或 provider timeout。正式組裝仍共用 Misty 的單一 AV session，但
+`AudioStream` 只產生 VAD `Segment`，不再在 producer thread 對每段 ambient speech 呼叫 hosted ASR。
+
+`Hey Misty` 與 `Hi Misty` 由 PocketSphinx 5.1.1 的本機 JSGF grammar 判定。這個選擇是可替換的
+`WakeDetector` seam，不是準確率聲明：threshold 只在 checked-in synthetic macOS voices、三種語速與
+一個 false-trigger control 上驗證；真實房間、真人、Misty 麥克風與 vendor AV 行為全部仍是
+hardware-unverified。Misty 內建 wake recognition／sound direction 不啟用，因為它們和持續 AV
+streaming 的資源互動無硬體可驗證。
+
+喚醒只授權一段 utterance。等待受 `silence_timeout_s` 限制，PCM 受 `max_utterance_s` 限制，decoded
+block 與 VAD segment queues 分別有固定 capacity；滿載時保留較新的工作並以 typed backlog record
+揭露丟失。重複 wake、無 request 的 silence ending、ASR empty／timeout／error，以及 decoder EOF／
+failure 也各自留下 typed Runtime outcome；audio failure 最後收斂成 `runtime_error`，不偽裝為正常的
+`input_exhausted`。Hosted ASR 關閉 provider retry，使設定的 timeout 成為單次
+授權 attempt 的總上限。只有成功且非空的 transcript 會連同 wake phrase、confidence、detector、
+capture ending 與 runtime-relative wake time 形成 Explicit Request Trigger Evidence，進入第一個 Turn。
+
+Demo greeting card 提供四個 synthetic WAV 選項。每次 Run 都真的重新執行本機 WAV decode、VAD、
+wake detection、Runtime、Tools 與 Journal；為保持 no-key/no-network acceptance，ASR transcript 與
+model Decisions 是明確標示的 scripted providers，robot effect 是 simulation。主流程直接顯示 wake、
+capture、ASR、Episode、Misty 回應與 ending；Ticket 03 的 queue evidence 仍由後續 scripted Cues 保留。

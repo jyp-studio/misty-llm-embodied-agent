@@ -34,6 +34,11 @@ def test_defaults_load():
     assert s.approach_timeout_s == 30.0
     assert s.cue_queue_capacity == 3
     assert s.cue_freshness_s == 5.0
+    assert s.max_utterance_s == 8.0
+    assert s.audio_block_queue_capacity == 64
+    assert s.audio_segment_queue_capacity == 3
+    assert s.asr_timeout_s == 15.0
+    assert s.wake_minimum_confidence == 0.78
 
 
 def test_settings_are_frozen():
@@ -93,6 +98,12 @@ def test_fold_size_cannot_exceed_window():
         ("sensor_transport_lag_s", -0.1),
         ("cue_queue_capacity", 0),
         ("cue_freshness_s", 0.0),
+        ("max_utterance_s", 0.0),
+        ("audio_block_queue_capacity", 0),
+        ("audio_segment_queue_capacity", 0),
+        ("asr_timeout_s", 0.0),
+        ("wake_minimum_confidence", 0.0),
+        ("wake_minimum_confidence", 1.01),
     ],
 )
 def test_out_of_range_values_are_rejected(field, value):

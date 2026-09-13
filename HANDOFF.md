@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-10 · branch `refactor/react-agent`
+Last updated: 2026-09-13 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01 and 02 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–04 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -33,8 +33,17 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
    private reasoning or chain-of-thought is requested or stored.
 10. Selected image evidence is strict base64, capped at 8 MiB decoded, and
     removed from completed runtime results; only its media type remains.
+11. Active Episodes drain Cues at Turn boundaries into a bounded priority,
+    freshness and deduplication queue; there is still only one Episode owner.
+12. `LiveInputAdapter` locally gates VAD segments on Hey/Hi Misty, captures one
+    bounded utterance, and invokes hosted ASR only after a wake match.
+13. Audio block/segment queues have fixed capacities; wake, capture, ASR,
+    backlog and audio-pipeline endings are typed Runtime records. Hosted ASR
+    retries are disabled so one configured timeout remains one total bound.
+14. The greeting Demo selects checked-in synthetic WAV fixtures and shows the
+    current wake → capture → ASR → Episode → simulated effect → ending path.
 
-Ticket 01's completed follow-up is `b749d6b`; ticket 02 is the current HEAD.
+Ticket 03 ends at `26d64a7`; ticket 04 is the current implementation.
 
 ## Verification
 
@@ -55,31 +64,32 @@ To inspect the no-key tracer bullet:
 .venv/bin/python -m misty_agent --demo
 ```
 
-Choose the greeting card and select `執行離線模擬`. The page is loopback-only;
-the run is deterministic and needs no API key. Its input and model decisions
-are predefined, while Runtime, Tool dispatch and Journal execute afresh.
+Choose the greeting card, select a Hey/Hi Misty WAV, and select
+`執行離線模擬`. The page is loopback-only and needs no API key. WAV decode,
+VAD, local wake detection, Runtime, Tool dispatch and Journal execute afresh;
+ASR transcript and model decisions are explicitly scripted.
 
 ## Evidence boundary
 
 There is no Misty II available to this project, and there never will be. The
-new path has run only with `ScenarioInputAdapter`, fake clocks, scripted model
-decisions, and simulated robot effects. Retained real-driver code has request
-contract tests only; physical behaviour, timing, calibration, and safety are
+wake path has run only with synthetic WAV files, fake clocks, scripted ASR and
+model decisions, and simulated robot effects. The vendor composition is wired
+to the same `LiveInputAdapter`, but it has never received Misty audio. Physical
+behaviour, timing, threshold calibration, and reliability are
 hardware-unverified.
 
-The current social runtime does not yet implement wake detection, visual cue
-classification, cue queues,
-identity-aware handoff, Skills, target-aware movement, or a live input adapter.
+The current social runtime does not yet implement visual cue classification,
+identity-aware handoff, Skills, or target-aware movement.
 The crying and A-to-B cards are roadmap previews only. They do not inject a
 Care Cue or person labels and cannot be run until their corresponding vertical
 tickets implement the capability.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/03-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/05-*.md`. Preserve the
 architecture rule that
-`Session.episode()` is an internal one-Episode dependency; new behaviour is
-accepted at `SocialAgentRuntime` through `ScenarioInputAdapter`.
+`Session.episode()` is an internal one-Episode dependency; providers enter at
+`SocialAgentRuntime` through the shared `InputSource` seam.
 
 ## Local-work warning
 

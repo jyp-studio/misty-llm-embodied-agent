@@ -52,6 +52,18 @@ Runtime records; only a non-empty transcript becomes Explicit Request Trigger
 Evidence. Hosted ASR retries are disabled so its configured timeout remains the
 upper bound for the one authorised attempt.
 
+`VisualInputAdapter` is the temporal visual provider. Local detections carry
+only normalized person bounds, camera-facing geometry, hand position and
+confidence into an anonymous, short-lived tracker. A Social Invitation needs
+sustained gaze plus hand motion with a direction change; an empty frame, a
+passerby, or a single still frame remains an observable negative gate result
+and never calls the model. The gate chooses no robot action. When it qualifies
+a cue, exactly one bounded JPEG crop enters Trigger Evidence and the completed
+Runtime result discards its bytes. MediaPipe extraction exists as a local,
+replaceable detector, but its real-camera accuracy, thresholds, associations,
+latency, and all Misty II behaviour are unverified; acceptance evidence uses
+synthetic temporal fixtures and a simulated robot.
+
 While an Episode owns model and robot effects, the Runtime drains already-due
 inputs only at safe Turn boundaries. It never starts a second Episode in
 parallel and does not create a background task. The queue defaults to three
@@ -73,13 +85,14 @@ failures also give every pending Cue a typed drop reason before stopping.
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.
 
-The Demo greeting card offers checked-in synthetic WAV fixtures. Each click
-reruns the local VAD and wake detector, then uses scripted ASR/model decisions
-and a simulated robot so it needs no API key or network. The page displays the
-wake, capture, ASR, Episode, Tool effect and ending derived from that run. Its
-typed Trigger Evidence contains source, runtime-relative time, wake facts,
-uncertainty and transcript before any Observation. The optional Live AI panel
-remains a separate hosted path.
+The Demo greeting card offers checked-in synthetic WAV fixtures and synthetic
+visual timelines. Each click reruns the selected local gate, then uses scripted
+ASR/detector signals/model decisions and a simulated robot so it needs no API
+key or network. The page displays the audio stages or per-frame visual gate
+facts, selected Evidence metadata, Episode, Tool effect and ending derived from
+that run. A negative visual timeline states that no Episode opened and the
+model was not called. Trigger Evidence reaches the model before any Observation.
+The optional Live AI panel remains a separate hosted path.
 
 Each model Turn uses a provider-neutral representation of the native function-
 calling protocol. The OpenAI adapter preserves assistant Tool call identity,
@@ -88,13 +101,14 @@ response containing more than one call. A short public Decision Note may be
 recorded in the Journal; it is not private model reasoning and cannot carry
 physical control parameters.
 
-This is ticket 04's vertical slice, not the completed social system. Visual cue
-classification, person-aware handoff, Skills, and target-aware movement
-remain future tickets in `.scratch/social-react-runtime/`.
+This is ticket 05's vertical slice, not the completed social system. Care Cue
+classification, person-aware handoff, Skills, and target-aware movement remain
+future tickets in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract
 tests; its hardware behaviour, latency, calibration, and reliability are
 unverified. The vendor AV composition now passes `AudioStream` through
 `LiveInputAdapter`, but no microphone audio has ever been received from Misty;
-the local wake threshold is supported only by the synthetic fixtures.
+the local wake threshold and visual gate policy are supported only by their
+synthetic fixtures.

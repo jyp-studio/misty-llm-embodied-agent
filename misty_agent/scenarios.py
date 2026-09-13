@@ -15,6 +15,7 @@ from typing import Any, Mapping, Sequence, Tuple
 from misty_agent.agent.evidence import EvidenceKind
 from misty_agent.agent.react import Decision
 from misty_agent.runtime import CueKind, ScheduledInput, TimedText
+from misty_agent.visual_fixtures import VISUAL_FIXTURES, VisualFixture
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,8 @@ class AcceptanceScenario(ScenarioCard):
     inputs: Tuple[ScheduledInput, ...]
     decisions: Tuple[Decision, ...]
     audio_fixtures: Tuple[AudioFixture, ...] = ()
+    visual_fixtures: Tuple[VisualFixture, ...] = ()
+    visual_decisions: Tuple[Decision, ...] = ()
 
     def __post_init__(self) -> None:
         if self.availability is not ScenarioAvailability.READY:
@@ -107,26 +110,26 @@ class ScenarioModel:
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
     title="有人和 Misty 打招呼",
-    subtitle="選一段錄音，查看本機喚醒、語音擷取、ASR 與 Misty 回應。",
+    subtitle="選擇錄音或視覺時間線，查看本機 gate 如何決定是否互動。",
     availability=ScenarioAvailability.READY,
-    ticket="04",
+    ticket="05",
     limitation=(
-        "喚醒由目前程式在本機分析 synthetic WAV；ASR 與 model 使用腳本，"
-        "robot 為模擬。這不是實機或真實房間的辨識結果。"
+        "錄音與視覺 gate 都由目前程式分析 synthetic fixtures；ASR 與 model "
+        "使用腳本，robot 為模擬。這不是實機或真實房間的辨識結果。"
     ),
     actors=("person", "person", "person", "person"),
     preview=(
         PresentationBeat(
             "input",
-            "本機喚醒",
-            "辨識 Hey / Hi Misty",
-            "未喚醒的聲音不會送往 hosted ASR。",
+            "選擇 fixture",
+            "喚醒錄音或視覺時間線",
+            "兩條路徑都先通過本機 gate。",
         ),
         PresentationBeat(
             "decision",
-            "擷取與 ASR",
-            "只處理一段 bounded utterance",
-            "Demo 使用 scripted ASR，不呼叫網路。",
+            "本機判斷",
+            "只保留 bounded Trigger Evidence",
+            "空房與路過者不會呼叫 model。",
         ),
         PresentationBeat(
             "effect",
@@ -303,6 +306,33 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             transcript="Misty，你好！",
         ),
     ),
+    visual_fixtures=VISUAL_FIXTURES,
+    visual_decisions=(
+        Decision(
+            tool="look_around",
+            args={},
+            tokens_in=18,
+            tokens_out=4,
+            tool_call_id="call-visual-look",
+            note="確認匿名互動邀請仍在畫面中，不靠近對方。",
+        ),
+        Decision(
+            tool="speak",
+            args={"text": "嗨，需要我嗎？"},
+            tokens_in=20,
+            tokens_out=8,
+            tool_call_id="call-visual-speak",
+            note="以簡短問句回應可能的互動邀請。",
+        ),
+        Decision(
+            tool="done",
+            args={},
+            tokens_in=34,
+            tokens_out=1,
+            tool_call_id="call-visual-done",
+            note="已做低風險回應，結束這次互動。",
+        ),
+    ),
 )
 
 
@@ -379,4 +409,5 @@ __all__ = [
     "ScenarioCard",
     "ScenarioAvailability",
     "ScenarioModel",
+    "VisualFixture",
 ]

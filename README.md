@@ -148,9 +148,10 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 ## Roadmap
 
-The current runtime has bounded Cue scheduling and an external Hey/Hi Misty
-audio gate. Planned vertical slices add visual cue classification, person-aware
-handoff, Skills, ephemeral social state, and target-aware movement. See
+The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
+gate, and a synthetic-fixture-verified visual Social Invitation gate. Planned
+vertical slices add Care Cue classification, person-aware handoff, Skills,
+ephemeral social state, and target-aware movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

@@ -200,9 +200,9 @@
 
   <section class="result" aria-labelledby="result-title">
     <div class="result-header">
-      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 04</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">選一段錄音，查看本機喚醒、語音擷取、ASR 與 Misty 回應。</p></div>
+      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 05</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">選擇錄音或視覺時間線，查看本機 gate 如何決定是否互動。</p></div>
       <div class="fixture-control" id="fixtureControl" hidden>
-        <label for="wakeFixture">選擇實際要分析的 WAV fixture</label>
+        <label for="wakeFixture">選擇這次要分析的錄音或視覺時間線</label>
         <select id="wakeFixture"></select>
       </div>
       <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
@@ -289,7 +289,7 @@ function selectScenario(name) {
   resetReplay();
   byId("result-title").textContent = scenario.title;
   byId("scenario-summary").textContent = scenario.subtitle;
-  const fixtures = scenario.audio_fixtures || [];
+  const fixtures = scenario.fixtures || [];
   byId("fixtureControl").hidden = fixtures.length === 0;
   byId("wakeFixture").innerHTML = fixtures.map((fixture) =>
     `<option value="${escapeText(fixture.key)}">${escapeText(fixture.label)}</option>`
@@ -374,7 +374,7 @@ async function runScenario() {
   byId("truth-title").textContent = "正在執行這次模擬";
   byId("truth-copy").textContent = "正在由目前程式產生 Runtime records 與 Episode Journal。";
   try {
-    const fixture = scenario.audio_fixtures?.length ? byId("wakeFixture").value : null;
+    const fixture = scenario.fixtures?.length ? byId("wakeFixture").value : null;
     const response = await fetch(`/scenarios/${encodeURIComponent(scenarioName)}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -386,7 +386,7 @@ async function runScenario() {
     const execution = payload.execution;
     byId("executionResult").hidden = false;
     byId("executionHeadline").textContent = execution.provenance.headline;
-    byId("audioBadge").textContent = `錄音：${execution.provenance.audio || "無"}`;
+    byId("audioBadge").textContent = `輸入：${execution.provenance.fixture}`;
     byId("modelBadge").textContent = `模型：${execution.provenance.model}`;
     byId("robotBadge").textContent = `機器人：${execution.provenance.robot}`;
     byId("executionDetail").textContent = execution.provenance.detail;
@@ -394,7 +394,7 @@ async function runScenario() {
     byId("decisionDetail").textContent = execution.decision_explanation.detail;
     const attention = execution.attention;
     byId("attentionState").hidden = false;
-    const cueHistory = attention.active_history.map((cue) => cue.cue_id).join(" → ");
+    const cueHistory = attention.active_history.map((cue) => cue.cue_id).join(" → ") || "沒有 Episode";
     byId("activeCue").textContent = attention.active_cue
       ? `目前處理：${attention.active_cue.cue_id} · 優先級 ${attention.active_cue.priority}；queue 上限 ${attention.queue_capacity}`
       : `執行已結束，目前沒有 active cue。執行歷程：${cueHistory}；queue 上限 ${attention.queue_capacity}`;
@@ -405,7 +405,7 @@ async function runScenario() {
     const ending = execution.flow.at(-1);
     byId("truth-title").textContent = ending.headline;
     byId("truth-copy").textContent = ending.detail;
-    state.replayMoments = payload.episodes[0].storyboard.moments;
+    state.replayMoments = payload.episodes[0]?.storyboard?.moments || [];
     byId("replayJournal").disabled = state.replayMoments.length === 0;
     byId("evidence").textContent = JSON.stringify({
       scenario: payload.scenario.name,

@@ -2597,3 +2597,24 @@ Demo greeting card 提供四個 synthetic WAV 選項。每次 Run 都真的重�
 wake detection、Runtime、Tools 與 Journal；為保持 no-key/no-network acceptance，ASR transcript 與
 model Decisions 是明確標示的 scripted providers，robot effect 是 simulation。主流程直接顯示 wake、
 capture、ASR、Episode、Misty 回應與 ending；Ticket 03 的 queue evidence 仍由後續 scripted Cues 保留。
+
+### 16.54 Social Invitation 由本機 temporal visual gate 篩選（ticket 05）
+
+Ticket 05 在共用 `InputSource` seam 加入 `VisualInputAdapter`。Provider 只把本機 detector 的人物框、
+是否面向相機、手部位置與 confidence 交給短期匿名 tracker；不保存身分、不推論情緒，也不把單張
+still image 稱為揮手。第一版 Social Invitation 必須在同一 anonymous track 上同時滿足持續注視、
+足夠的水平手部位移與方向變化。空房、沒有看向 Misty 的路過者和只有手部位移但注視中斷的情境
+只留下 typed visual-attention records，不開 Episode，也不呼叫 model。
+
+Visual gate 只判定「是否有足夠 evidence 值得詢問 model」，不指定回應 Tool。形成 cue 時只選目前
+frame 的一張 bounded JPEG crop 進入既有 multimodal Trigger Evidence；所有週期性 raw frames 都停在
+provider 內，完成後 Runtime result 仍只保留 MIME metadata。Model 可以選低風險 `speak`／
+`look_around` 或直接 `done`，這張票不加入 approach。
+
+Demo greeting card 延續原本三張橫向主卡，在卡內同時提供四段 synthetic WAV 與四組 synthetic
+visual timelines。每次 visual Run 都重新執行匿名 tracking、temporal gate、Runtime、model stub、
+Tools 與 Journal；frame signals 與 model Decisions 明確標示為 scripted。畫面直接列出每一 frame 的
+gate outcome/facts、selected Evidence metadata、Decision Note、模擬回應與 ending；negative fixture
+則清楚說明 gate 為何保持安靜以及 model 未被呼叫。MediaPipe detector 是本機可替換實作，但真實
+相機準確率、threshold calibration、人物關聯、延遲與 Misty II 全部仍是 unverified；本票只用
+synthetic temporal fixtures 驗證 orchestration，不構成硬實機證據。

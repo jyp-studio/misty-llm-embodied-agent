@@ -77,6 +77,16 @@ class CueKind(str, Enum):
         }[self]
 
 
+class AnonymousTrackReference(str):
+    """Opaque, run-local visual track name; never a person identity."""
+
+    def __new__(cls, value: str):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("anonymous track reference cannot be blank")
+        return super().__new__(cls, normalized)
+
+
 class CueDropReason(str, Enum):
     """Why a detected Cue will never open an Episode."""
 
@@ -116,6 +126,16 @@ class AudioAttentionOutcome(str, Enum):
     SOURCE_ERROR = "source_error"
 
 
+class VisualAttentionOutcome(str, Enum):
+    """What the local visual gate concluded from one track in one frame."""
+
+    EMPTY = "empty"
+    NOT_LOOKING = "not_looking"
+    TRACKING = "tracking"
+    WAVE_PROGRESS = "wave_progress"
+    QUALIFIED = "qualified"
+
+
 @dataclass(frozen=True)
 class RuntimeInput:
     """One provider-independent arrival at the Attention Loop."""
@@ -128,6 +148,26 @@ class AudioAttentionNotice(RuntimeInput):
     stage: AudioAttentionStage
     outcome: AudioAttentionOutcome
     facts: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class VisualAttentionNotice(RuntimeInput):
+    """One local frame/track fact that does not itself open an Episode."""
+
+    frame_index: int
+    outcome: VisualAttentionOutcome
+    track_reference: Optional[AnonymousTrackReference] = None
+    facts: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.frame_index < 0:
+            raise ValueError("visual frame index cannot be negative")
+        if self.track_reference is not None:
+            object.__setattr__(
+                self,
+                "track_reference",
+                AnonymousTrackReference(self.track_reference),
+            )
 
 
 @dataclass(frozen=True)
@@ -158,11 +198,10 @@ class ScheduledInput:
             raise ValueError("scenario at_s must be finite and non-negative")
 
 
-@dataclass(frozen=True)
-class TimedText(RuntimeInput):
-    """A transcript plus the modality that supplied its Trigger Evidence."""
+@dataclass(frozen=True, kw_only=True)
+class CueInput(RuntimeInput):
+    """Provider-neutral evidence that may open one Episode."""
 
-    text: str
     cue_kind: CueKind = CueKind.EXPLICIT_REQUEST
     evidence_kind: EvidenceKind = EvidenceKind.SPEECH
     facts: Mapping[str, Any] = field(default_factory=dict)
@@ -183,6 +222,68 @@ class TimedText(RuntimeInput):
             not math.isfinite(self.fresh_for_s) or self.fresh_for_s <= 0
         ):
             raise ValueError("fresh_for_s must be finite and greater than zero")
+
+    def describe(self) -> str:
+        """Short observable wording for Attention records and the Demo."""
+        raise NotImplementedError
+
+    def transcript_text(self) -> str:
+        """Spoken text, empty for a non-speech cue."""
+        return ""
+
+
+@dataclass(frozen=True)
+class TimedText(CueInput):
+    """A transcript plus the modality that supplied its Trigger Evidence."""
+
+    text: str
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        text = self.text.strip()
+        object.__setattr__(self, "text", text)
+
+    def describe(self) -> str:
+        return self.text
+
+    def transcript_text(self) -> str:
+        return self.text
+
+
+@dataclass(frozen=True, kw_only=True)
+class VisualCue(CueInput):
+    """A locally qualified visual invitation, with no invented speech."""
+
+    description: str
+    track_reference: AnonymousTrackReference
+    confidence: float
+    cue_kind: CueKind = CueKind.SOCIAL_INVITATION
+    evidence_kind: EvidenceKind = EvidenceKind.VISUAL
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        description = self.description.strip()
+        track_reference = AnonymousTrackReference(self.track_reference)
+        if not description:
+            raise ValueError("visual cue description cannot be blank")
+        if not track_reference:
+            raise ValueError("visual cue track reference cannot be blank")
+        if not math.isfinite(self.confidence) or not 0 <= self.confidence <= 1:
+            raise ValueError("visual cue confidence must be between zero and one")
+        object.__setattr__(self, "description", description)
+        object.__setattr__(self, "track_reference", track_reference)
+        object.__setattr__(
+            self,
+            "facts",
+            {
+                **self.facts,
+                "track_reference": track_reference,
+                "confidence": round(self.confidence, 3),
+            },
+        )
+
+    def describe(self) -> str:
+        return self.description
 
 
 class ScenarioClock(Protocol):
@@ -326,6 +427,15 @@ class AudioAttentionRecorded(AttentionRecord):
 
 
 @dataclass(frozen=True, kw_only=True)
+class VisualAttentionRecorded(AttentionRecord):
+    frame_index: int
+    outcome: VisualAttentionOutcome
+    track_reference: Optional[AnonymousTrackReference]
+    facts: Mapping[str, Any]
+    type: str = "visual_attention"
+
+
+@dataclass(frozen=True, kw_only=True)
 class CueQueued(AttentionRecord):
     cue_id: str
     active_cue_id: str
@@ -406,6 +516,7 @@ class RuntimeFailed(AttentionRecord):
 RuntimeRecord = Union[
     AttentionStarted,
     AudioAttentionRecorded,
+    VisualAttentionRecorded,
     CueDetected,
     CueQueued,
     CueDequeued,
@@ -422,7 +533,7 @@ RuntimeRecord = Union[
 @dataclass(frozen=True)
 class _PendingCue:
     cue_id: str
-    input: TimedText
+    input: CueInput
     observed_at_s: float
     cue_kind: CueKind
     priority: int
@@ -550,7 +661,7 @@ class SocialAgentRuntime:
                     source=cue.input.evidence_kind,
                     observed_at_s=cue.observed_at_s,
                     facts=cue.input.facts,
-                    transcript=cue.input.text,
+                    transcript=cue.input.transcript_text(),
                     uncertainty=cue.input.uncertainty,
                     selected_image=cue.input.selected_image,
                 )
@@ -672,7 +783,7 @@ class SocialAgentRuntime:
 
     def _cue(self, number: int, arrival: InputArrival) -> _PendingCue:
         item = arrival.input
-        if not isinstance(item, TimedText):
+        if not isinstance(item, CueInput):
             raise TypeError(
                 f"cannot select a cue from {type(item).__name__}"
             )
@@ -704,20 +815,39 @@ class SocialAgentRuntime:
         records: list[RuntimeRecord],
     ) -> bool:
         notice = arrival.input
-        if not isinstance(notice, AudioAttentionNotice):
+        if not isinstance(
+            notice, (AudioAttentionNotice, VisualAttentionNotice)
+        ):
             return False
-        observed_at_s = self._elapsed() - arrival.age_s
+        assert self._origin is not None
+        observed_at_s = (
+            self._clock.monotonic() - self._origin - arrival.age_s
+        )
         if observed_at_s < -1e-9:
             raise ValueError("input arrival age predates this Runtime")
-        records.append(
-            AudioAttentionRecorded(
-                t=round(max(0.0, observed_at_s), 3),
-                stage=notice.stage,
-                outcome=notice.outcome,
-                facts=notice.facts,
+        observed_at_s = round(max(0.0, observed_at_s), 3)
+        if isinstance(notice, AudioAttentionNotice):
+            records.append(
+                AudioAttentionRecorded(
+                    t=observed_at_s,
+                    stage=notice.stage,
+                    outcome=notice.outcome,
+                    facts=notice.facts,
+                )
             )
-        )
-        return True
+            return True
+        if isinstance(notice, VisualAttentionNotice):
+            records.append(
+                VisualAttentionRecorded(
+                    t=observed_at_s,
+                    frame_index=notice.frame_index,
+                    outcome=notice.outcome,
+                    track_reference=notice.track_reference,
+                    facts=notice.facts,
+                )
+            )
+            return True
+        raise AssertionError("all notice variants must be recorded")
 
     def _enqueue(
         self,
@@ -844,7 +974,7 @@ class SocialAgentRuntime:
             cue_id=cue.cue_id,
             cue_kind=cue.cue_kind,
             evidence_kind=cue.input.evidence_kind,
-            text=cue.input.text,
+            text=cue.input.describe(),
             priority=cue.priority,
         )
 
@@ -874,6 +1004,7 @@ class SocialAgentRuntime:
 
 
 __all__ = [
+    "AnonymousTrackReference",
     "AudioAttentionNotice",
     "AudioAttentionOutcome",
     "AudioAttentionRecorded",
@@ -886,6 +1017,7 @@ __all__ = [
     "CueDropped",
     "CueDropReason",
     "CueKind",
+    "CueInput",
     "CueDetected",
     "CueQueued",
     "CueReplaced",
@@ -910,6 +1042,10 @@ __all__ = [
     "SelectedImageEvidence",
     "SocialAgentRuntime",
     "TimedText",
+    "VisualCue",
+    "VisualAttentionNotice",
+    "VisualAttentionOutcome",
+    "VisualAttentionRecorded",
     "TriggerEvidence",
     "TriggerEvidenceSummary",
 ]

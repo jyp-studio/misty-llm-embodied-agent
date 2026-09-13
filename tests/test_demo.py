@@ -104,7 +104,7 @@ def test_the_page_leads_with_three_readable_social_scenarios():
     assert 'id="wakeFixture"' in page
     assert 'id="audioBadge"' in page
     assert "JSON.stringify(fixture ? { fixture } : {})" in page
-    assert "storyboard.moments" in page
+    assert "storyboard?.moments" in page
     assert "runSerial" in page
     assert "state.runSerial !== runId" in page
     assert 'id="runFacts"' not in page
@@ -131,13 +131,23 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
     ]
     assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
-    assert listed[0]["ticket"] == "04"
+    assert listed[0]["ticket"] == "05"
     assert [fixture["key"] for fixture in listed[0]["audio_fixtures"]] == [
         "hey-normal",
         "hi-slow",
         "hey-fast",
         "hey-pause",
     ]
+    assert [fixture["key"] for fixture in listed[0]["visual_fixtures"]] == [
+        "visual-empty-room",
+        "visual-passerby",
+        "visual-gaze-wave",
+        "visual-two-people",
+    ]
+    assert {fixture["input_kind"] for fixture in listed[0]["fixtures"]} == {
+        "audio",
+        "visual",
+    }
     assert listed[1]["availability"] == "planned"
     assert listed[1]["ticket"] == "06"
     assert listed[2]["availability"] == "planned"
@@ -189,6 +199,76 @@ def test_an_unknown_wake_fixture_is_refused_by_name():
 
     assert reply.status == 400
     assert b"not-there" in reply.body
+
+
+def test_the_visual_fixture_runs_the_temporal_gate_and_one_episode():
+    reply = answer(
+        "POST",
+        "/scenarios/greeting/run",
+        json.dumps({"fixture": "visual-gaze-wave"}).encode(),
+    )
+    assert reply.status == 200
+    payload = json.loads(reply.body)
+
+    assert len(payload["episodes"]) == 1
+    assert payload["episodes"][0]["cue_kind"] == "social_invitation"
+    execution = payload["execution"]
+    assert execution["provenance"]["input_kind"] == "visual"
+    assert execution["provenance"]["fixture"] == "持續看向 Misty 並揮手"
+    assert execution["trigger_evidence"]["transcript"] == ""
+    assert execution["trigger_evidence"]["selected_image"] is True
+    assert execution["selected_evidence"] == {
+        "count": 1,
+        "media_type": "image/jpeg",
+        "selected_frame_index": 3,
+    }
+    assert [item["outcome"] for item in execution["visual_timeline"]] == [
+        "tracking",
+        "wave_progress",
+        "wave_progress",
+        "qualified",
+    ]
+    speak = next(
+        beat for beat in execution["flow"] if beat["kind"] == "observation"
+    )
+    assert speak["headline"] == "「嗨，需要我嗎？」"
+    assert "data_base64" not in json.dumps(payload)
+    assert all(beat["kind"] != "approach" for beat in execution["flow"])
+
+
+@pytest.mark.parametrize(
+    ("fixture", "outcomes"),
+    [
+        ("visual-empty-room", ["empty", "empty", "empty"]),
+        ("visual-passerby", ["not_looking"] * 3),
+    ],
+)
+def test_a_visual_negative_fixture_explains_why_no_episode_opened(
+    fixture, outcomes
+):
+    reply = answer(
+        "POST",
+        "/scenarios/greeting/run",
+        json.dumps({"fixture": fixture}).encode(),
+    )
+    assert reply.status == 200
+    payload = json.loads(reply.body)
+
+    assert payload["episodes"] == []
+    assert payload["runtime"]["ending"] == "input_exhausted"
+    assert [
+        item["outcome"] for item in payload["execution"]["visual_timeline"]
+    ] == outcomes
+    assert payload["execution"]["trigger_evidence"] is None
+    assert payload["execution"]["provenance"]["model"] == "未呼叫"
+    assert payload["execution"]["decision_explanation"] == {
+        "available": False,
+        "headline": "本機 gate 沒有開啟互動",
+        "detail": "沒有足夠的持續注視加揮手證據，因此 model 沒有被呼叫。",
+    }
+    assert payload["execution"]["flow"][-1]["headline"] == (
+        "保持安靜，沒有開啟 Episode"
+    )
 
 
 def test_the_greeting_card_runs_the_runtime_without_an_api_key(monkeypatch):
@@ -266,6 +346,8 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
             "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
         ),
         "audio": "Hey Misty · 一般語速",
+        "fixture": "Hey Misty · 一般語速",
+        "input_kind": "audio",
     }
     evidence = execution["trigger_evidence"]
     assert evidence["source"] == "speech"

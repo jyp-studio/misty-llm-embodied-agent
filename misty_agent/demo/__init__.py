@@ -97,6 +97,7 @@ from misty_agent.runtime import (
     SelectedImageEvidence,
     SocialAgentRuntime,
     TimedText,
+    VisualAttentionRecorded,
 )
 from misty_agent.scenarios import (
     DEMO_SCENARIOS,
@@ -105,6 +106,10 @@ from misty_agent.scenarios import (
     PresentationBeat,
     ScenarioCard,
     ScenarioModel,
+)
+from misty_agent.visual_input import (
+    VisualFixtureSource,
+    VisualInputAdapter,
 )
 
 #: The only address this binds. A demo that listened on every interface would
@@ -294,10 +299,17 @@ def _scenario_payload(case: ScenarioCard) -> dict:
         "preview": [asdict(beat) for beat in case.preview],
     }
     if isinstance(case, AcceptanceScenario):
-        payload["audio_fixtures"] = [
-            {"key": item.key, "label": item.label}
+        audio_fixtures = [
+            {"key": item.key, "label": item.label, "input_kind": "audio"}
             for item in case.audio_fixtures
         ]
+        visual_fixtures = [
+            {"key": item.key, "label": item.label, "input_kind": "visual"}
+            for item in case.visual_fixtures
+        ]
+        payload["audio_fixtures"] = audio_fixtures
+        payload["visual_fixtures"] = visual_fixtures
+        payload["fixtures"] = audio_fixtures + visual_fixtures
     return payload
 
 
@@ -382,37 +394,39 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
         return _json(400, {"error": str(why)})
 
     clock = FakeClock()
-    session = simulated_session(
-        None,
-        model=ScenarioModel(case.decisions),
-        clock=clock,
-    )
     scenario_config = Settings(
         cue_queue_capacity=3,
         cue_freshness_s=5.0,
     )
-    selected_fixture = None
-    if case.audio_fixtures:
-        requested = asked.get("fixture", case.audio_fixtures[0].key)
-        selected_fixture = next(
+    selected_audio = None
+    selected_visual = None
+    all_fixtures = (*case.audio_fixtures, *case.visual_fixtures)
+    if all_fixtures:
+        requested = asked.get("fixture", all_fixtures[0].key)
+        selected_audio = next(
             (item for item in case.audio_fixtures if item.key == requested),
             None,
         )
-        if selected_fixture is None:
+        selected_visual = next(
+            (item for item in case.visual_fixtures if item.key == requested),
+            None,
+        )
+        if selected_audio is None and selected_visual is None:
             return _json(
                 400,
-                {"error": f"there is no audio fixture called {requested!r}"},
+                {"error": f"there is no scenario fixture called {requested!r}"},
             )
+    if selected_audio is not None:
         live_audio = LiveInputAdapter(
             audio=WavAudioFixtureSource(
-                _WAKE_FIXTURES / selected_fixture.asset,
+                _WAKE_FIXTURES / selected_audio.asset,
                 clock=clock,
             ),
             wake_detector=PocketSphinxWakeDetector(
                 minimum_confidence=scenario_config.wake_minimum_confidence
             ),
             transcriber=_ScriptedFixtureTranscriber(
-                selected_fixture.transcript
+                selected_audio.transcript
             ),
             clock=clock,
             config=scenario_config,
@@ -421,14 +435,32 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             live_audio,
             ScenarioInputAdapter(clock, case.inputs[1:]),
         )
+    elif selected_visual is not None:
+        source = VisualInputAdapter(
+            frames=VisualFixtureSource(clock, selected_visual.frames),
+            clock=clock,
+        )
     else:
         source = ScenarioInputAdapter(clock, case.inputs)
+    decisions = (
+        case.visual_decisions
+        if selected_visual is not None
+        else case.decisions
+    )
+    session = simulated_session(
+        None,
+        model=ScenarioModel(decisions),
+        clock=clock,
+    )
     result = SocialAgentRuntime(
         source=source,
         session=session,
         clock=clock,
         config=scenario_config,
     ).run()
+    selected_fixture = selected_audio or selected_visual
+    if selected_fixture is None:
+        raise RuntimeError("an acceptance scenario has no fixture")
     episodes = []
     for index, episode in enumerate(result.episodes):
         actor = case.actors[min(index, len(case.actors) - 1)]
@@ -450,11 +482,10 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             "scenario": _scenario_payload(case),
             "execution": _scenario_execution(
                 result,
-                result.episodes[0],
+                result.episodes[0] if result.episodes else None,
                 queue_capacity=scenario_config.cue_queue_capacity,
-                audio_fixture=(
-                    selected_fixture.label if selected_fixture else None
-                ),
+                fixture_label=selected_fixture.label,
+                input_kind=("audio" if selected_audio else "visual"),
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
@@ -464,24 +495,31 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
 
 def _scenario_execution(
     result: RuntimeResult,
-    episode: RuntimeEpisode,
+    episode: Optional[RuntimeEpisode],
     *,
     queue_capacity: int,
-    audio_fixture: Optional[str] = None,
+    fixture_label: str,
+    input_kind: str,
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview."""
     cue = next(
-        record for record in result.records if isinstance(record, CueDetected)
+        (
+            record
+            for record in result.records
+            if isinstance(record, CueDetected)
+        ),
+        None,
     )
-    evidence = episode.evidence
+    evidence = episode.evidence if episode is not None else None
+    journal_records = episode.journal.records if episode is not None else ()
     observations = {
         record.turn: record
-        for record in episode.journal.records
+        for record in journal_records
         if isinstance(record, Observation)
     }
     notes = {
         record.turn: record
-        for record in episode.journal.records
+        for record in journal_records
         if isinstance(record, DecisionNoted)
     }
     queue_records = tuple(
@@ -494,13 +532,18 @@ def _scenario_execution(
     )
     uncertainty = (
         "、".join(evidence.uncertainty)
-        if evidence.uncertainty
+        if evidence is not None and evidence.uncertainty
         else "沒有額外不確定性註記"
     )
     audio_records = tuple(
         record
         for record in result.records
         if isinstance(record, AudioAttentionRecorded)
+    )
+    visual_records = tuple(
+        record
+        for record in result.records
+        if isinstance(record, VisualAttentionRecorded)
     )
     audio_labels = {
         "wake": "本機喚醒辨識",
@@ -538,22 +581,66 @@ def _scenario_execution(
             ),
         )
         for record in audio_records
-    ] + [
-        PresentationBeat(
-            "input", "人說", f"「{cue.text}」", "這段輸入由案例預先定義。"
-        ),
-        PresentationBeat(
-            "evidence",
-            "Trigger Evidence",
-            f"{'語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
-            f"{evidence.observed_at_s:g} 秒",
-            f"{len(evidence.facts)} 個可觀察 facts；不確定性：{uncertainty}",
-        ),
-        PresentationBeat(
-            "cue", "系統判定", "明確互動請求", "Explicit Request"
-        ),
     ]
-    for record in episode.journal.records:
+    visual_headlines = {
+        "empty": "畫面中沒有偵測到人",
+        "not_looking": "人物沒有看向 Misty",
+        "tracking": "開始累積注視時間",
+        "wave_progress": "觀察到手部來回位移",
+        "qualified": "持續注視加揮手已達 gate",
+    }
+    flow.extend(
+        PresentationBeat(
+            "visual_gate",
+            f"Frame {record.frame_index + 1} · {record.track_reference or '畫面'}",
+            visual_headlines[record.outcome.value],
+            (
+                " · ".join(
+                    f"{key}: {value}" for key, value in record.facts.items()
+                )
+                or "本機 temporal gate 已留下 typed Runtime record。"
+            ),
+        )
+        for record in visual_records
+    )
+    if cue is not None and evidence is not None:
+        if input_kind == "audio":
+            flow.append(
+                PresentationBeat(
+                    "input",
+                    "人說",
+                    f"「{cue.text}」",
+                    "這段輸入由案例預先定義。",
+                )
+            )
+        flow.extend(
+            (
+                PresentationBeat(
+                    "evidence",
+                    "Trigger Evidence",
+                    f"{'語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
+                    f"{evidence.observed_at_s:g} 秒",
+                    f"{len(evidence.facts)} 個可觀察 facts"
+                    + (
+                        "；選取 1 張 bounded JPEG crop"
+                        if evidence.selected_image_media_type is not None
+                        else ""
+                    )
+                    + f"；不確定性：{uncertainty}",
+                ),
+                PresentationBeat(
+                    "cue",
+                    "系統判定",
+                    (
+                        "明確互動請求"
+                        if input_kind == "audio"
+                        else "Social Invitation"
+                    ),
+                    cue.cue_kind.value,
+                ),
+            )
+        )
+    for record in journal_records:
         if not isinstance(record, ToolCalled):
             continue
         noted = notes.get(record.turn)
@@ -592,21 +679,36 @@ def _scenario_execution(
                     ),
                 )
             )
-    completed = (
-        result.ending is RuntimeEnding.INPUT_EXHAUSTED
+    completed = bool(
+        episode is not None
+        and result.ending is RuntimeEnding.INPUT_EXHAUSTED
         and episode.outcome.outcome == "done"
     )
+    quiet = episode is None and result.ending is RuntimeEnding.INPUT_EXHAUSTED
     flow.append(
         PresentationBeat(
             "ending",
             "結果",
-            "情境執行完成" if completed else "情境未正常完成",
+            (
+                "情境執行完成"
+                if completed
+                else (
+                    "保持安靜，沒有開啟 Episode"
+                    if quiet
+                    else "情境未正常完成"
+                )
+            ),
             (
                 "有限情境已播放完畢，Runtime 正常停止。"
                 if completed
                 else (
-                    f"Episode: {episode.outcome.outcome}; "
-                    f"Runtime: {result.ending.value}"
+                    "視覺時間線已播放完畢，但沒有足夠證據觸發 model 或動作。"
+                    if quiet
+                    else (
+                        f"Episode: "
+                        f"{episode.outcome.outcome if episode else 'none'}; "
+                        f"Runtime: {result.ending.value}"
+                    )
                 )
             ),
         )
@@ -615,35 +717,90 @@ def _scenario_execution(
         "provenance": {
             "kind": "scripted_current_run",
             "headline": "這是剛剛執行的模擬結果",
-            "model": "預設腳本模型",
+            "model": (
+                "未呼叫"
+                if episode is None
+                else "預設腳本模型"
+            ),
             "robot": "模擬 Misty",
             "detail": (
-                "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
-                "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
-                "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
+                (
+                    "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
+                    "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
+                    "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
+                )
+                if input_kind == "audio"
+                else (
+                    "選定的 synthetic frame timeline 由目前程式重新執行本機"
+                    "匿名追蹤與 temporal visual gate；detector signals 為預先"
+                    "定義，robot 為模擬。"
+                    + (
+                        "沒有形成 cue，因此 model 沒有被呼叫。"
+                        if episode is None
+                        else "model 決策為預先定義。"
+                    )
+                    + "未使用真實相機或 Misty II。"
+                )
             ),
-            "audio": audio_fixture,
+            "audio": fixture_label if input_kind == "audio" else None,
+            "fixture": fixture_label,
+            "input_kind": input_kind,
         },
-        "trigger_evidence": {
-            "source": evidence.source.value,
-            "observed_at_s": evidence.observed_at_s,
-            "facts": dict(evidence.facts),
-            "transcript": evidence.transcript,
-            "uncertainty": list(evidence.uncertainty),
-            "selected_image": evidence.selected_image_media_type is not None,
-        },
+        "trigger_evidence": (
+            {
+                "source": evidence.source.value,
+                "observed_at_s": evidence.observed_at_s,
+                "facts": dict(evidence.facts),
+                "transcript": evidence.transcript,
+                "uncertainty": list(evidence.uncertainty),
+                "selected_image": (
+                    evidence.selected_image_media_type is not None
+                ),
+            }
+            if evidence is not None
+            else None
+        ),
+        "selected_evidence": (
+            {
+                "count": 1,
+                "media_type": evidence.selected_image_media_type,
+                "selected_frame_index": evidence.facts.get(
+                    "selected_frame_index"
+                ),
+            }
+            if evidence is not None
+            and evidence.selected_image_media_type is not None
+            else None
+        ),
+        "visual_timeline": [
+            {
+                "frame_index": record.frame_index,
+                "outcome": record.outcome.value,
+                "track_reference": record.track_reference,
+                "facts": dict(record.facts),
+            }
+            for record in visual_records
+        ],
         "flow": [asdict(beat) for beat in flow],
         "decision_explanation": {
             "available": bool(notes),
             "headline": (
                 "Decision Note 已由本次 Journal 記錄"
                 if notes
-                else "本次 model 未提供 Decision Note"
+                else (
+                    "本機 gate 沒有開啟互動"
+                    if episode is None and input_kind == "visual"
+                    else "本次 model 未提供 Decision Note"
+                )
             ),
             "detail": (
                 next(iter(notes.values())).note
                 if notes
-                else "Tool choice 仍可驗證，但沒有公開目的說明。"
+                else (
+                    "沒有足夠的持續注視加揮手證據，因此 model 沒有被呼叫。"
+                    if episode is None and input_kind == "visual"
+                    else "Tool choice 仍可驗證，但沒有公開目的說明。"
+                )
             ),
         },
         "attention": {
@@ -805,6 +962,17 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
                 f"{key}: {value}" for key, value in record.facts.items()
             )
             or "typed local-audio outcome"
+        )
+    elif isinstance(record, VisualAttentionRecorded):
+        headline = (
+            f"Frame {record.frame_index + 1}: "
+            f"{record.outcome.value.replace('_', ' ')}"
+        )
+        detail = (
+            " · ".join(
+                f"{key}: {value}" for key, value in record.facts.items()
+            )
+            or "typed local-visual outcome"
         )
     elif isinstance(record, CueDetected):
         headline = f"{record.cue_kind.value.replace('_', ' ')} detected"

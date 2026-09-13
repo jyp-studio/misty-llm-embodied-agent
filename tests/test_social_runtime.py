@@ -43,6 +43,7 @@ from misty_agent.runtime import (
     SelectedImageEvidence,
     SocialAgentRuntime,
     TimedText,
+    VisualCue,
 )
 from misty_agent.scenarios import EXPLICIT_TEXT_REQUEST, ScenarioModel
 
@@ -164,6 +165,51 @@ def test_trigger_evidence_reaches_the_first_turn_before_any_observation():
         result.episodes[0].evidence.selected_image_media_type == "image/png"
     )
     assert "c2VsZWN0ZWQtaW1hZ2U=" not in repr(result)
+
+
+def test_a_visual_cue_reaches_the_first_turn_without_inventing_a_transcript():
+    class CapturesFirstTurn(ScenarioModel):
+        def __init__(self):
+            super().__init__(
+                (Decision(tool="done", args={}, tokens_in=1, tokens_out=1),)
+            )
+            self.contexts = []
+
+        def decide(self, working_context, tools):
+            self.contexts.append(tuple(working_context))
+            return super().decide(working_context, tools)
+
+    clock = FakeClock()
+    model = CapturesFirstTurn()
+    cue = VisualCue(
+        description="anonymous person looked toward Misty and waved",
+        track_reference="anon-1",
+        confidence=0.91,
+        facts={"looking": True, "wave_observed": True},
+        selected_image=SelectedImageEvidence(
+            media_type="image/jpeg",
+            data_base64="c2VsZWN0ZWQ=",
+        ),
+    )
+
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock, [ScheduledInput(at_s=0.5, input=cue)]
+        ),
+        session=simulated_session(None, model=model, clock=clock),
+        clock=clock,
+    ).run()
+
+    evidence = result.episodes[0].evidence
+    assert evidence.source is EvidenceKind.VISUAL
+    assert evidence.transcript == ""
+    assert evidence.facts["track_reference"] == "anon-1"
+    content = next(
+        entry["content"]
+        for entry in model.contexts[0]
+        if entry["role"] == "user"
+    )
+    assert [part["type"] for part in content] == ["text", "image"]
 
 
 def test_selected_image_evidence_owns_its_encoding_and_size_boundaries():

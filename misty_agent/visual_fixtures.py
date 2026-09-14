@@ -15,6 +15,7 @@ from misty_agent.visual_input import (
     BoundingBox,
     LocalVisualDetection,
     NormalizedPoint,
+    ObservablePersonGeometry,
     ScheduledVisualFrame,
 )
 
@@ -38,6 +39,7 @@ def _detection(
     looking: bool,
     hand_x: Optional[float] = None,
     confidence: float = 0.92,
+    geometry: ObservablePersonGeometry = ObservablePersonGeometry(),
 ) -> LocalVisualDetection:
     return LocalVisualDetection(
         bounds=BoundingBox(x=x, y=0.2, width=0.2, height=0.4),
@@ -48,6 +50,7 @@ def _detection(
             if hand_x is not None
             else None
         ),
+        geometry=geometry,
     )
 
 
@@ -123,6 +126,47 @@ VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
 )
 
 
+CARE_VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
+    VisualFixture(
+        "care-sustained-signals",
+        "持續縮眼、張口與低頭（不代表情緒診斷）",
+        tuple(
+            _frame(
+                at_s,
+                _detection(
+                    x=0.28,
+                    looking=False,
+                    geometry=ObservablePersonGeometry(
+                        eyes_narrowed=True,
+                        mouth_open=True,
+                        head_lowered=True,
+                    ),
+                ),
+            )
+            for at_s in (0.0, 0.2, 0.4)
+        ),
+    ),
+    VisualFixture(
+        "care-expression-words-conflict",
+        "嘴角抬高但本人明確說「我其實很難過」",
+        tuple(
+            _frame(
+                at_s,
+                _detection(
+                    x=0.28,
+                    looking=True,
+                    geometry=ObservablePersonGeometry(
+                        head_lowered=True,
+                        mouth_corners_raised=True,
+                    ),
+                ),
+            )
+            for at_s in (0.0, 0.2, 0.4)
+        ),
+    ),
+)
+
+
 def visual_fixture(key: str) -> VisualFixture:
     """Return one named fixture without duplicating its temporal facts."""
     found = next((item for item in VISUAL_FIXTURES if item.key == key), None)
@@ -131,4 +175,19 @@ def visual_fixture(key: str) -> VisualFixture:
     return found
 
 
-__all__ = ["VISUAL_FIXTURES", "VisualFixture", "visual_fixture"]
+def care_visual_fixture(key: str) -> VisualFixture:
+    found = next(
+        (item for item in CARE_VISUAL_FIXTURES if item.key == key), None
+    )
+    if found is None:
+        raise KeyError(key)
+    return found
+
+
+__all__ = [
+    "CARE_VISUAL_FIXTURES",
+    "VISUAL_FIXTURES",
+    "VisualFixture",
+    "care_visual_fixture",
+    "visual_fixture",
+]

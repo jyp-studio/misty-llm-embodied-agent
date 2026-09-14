@@ -84,6 +84,7 @@ from misty_agent.drivers.events import EventStream, event_condition
 from misty_agent.drivers.robot_commands import RobotCommands
 from misty_agent.fakes import MovingWorld, RecordingCommands
 from misty_agent.perception.asr import OpenAITranscriber
+from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
 from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.perception.distance import NOBODY_THERE, DistancePipeline
 from misty_agent.runtime import (
@@ -177,6 +178,7 @@ class Session:
     #: `HEARS_NOTHING` rather than `None`: `speak` mutes unconditionally, and
     #: a session with no microphone is still a session.
     ears: Any = HEARS_NOTHING
+    active_perception: Any = NO_ACTIVE_PERCEPTION
     #: Runtime input owned by the external wake/capture/ASR path. When set,
     #: Episode snapshots must not race it for raw audio segments.
     attention_source: Optional[Any] = None
@@ -315,6 +317,9 @@ class Session:
             episode_id=episode_id, clock=self.clock, subscribers=subscribers
         )
         stop = EmergencyStop(journal, self.robot)
+        episode_perception = self.active_perception.for_track(
+            evidence.facts.get("track_reference")
+        )
         self._running = stop
         try:
             outcome = run_episode(
@@ -327,6 +332,7 @@ class Session:
                     config=self.config,
                     clock=self.clock,
                     ears=self.ears,
+                    active_perception=episode_perception,
                 ),
                 journal=journal,
                 perception=self._perception(),
@@ -467,7 +473,9 @@ def room_for(seen: Optional[Any], clock: Any) -> Tuple[Any, Any]:
 
 
 def simulated_session(
-    seen: Optional[Any], *, model: Any, clock: Any
+    seen: Optional[Any], *, model: Any, clock: Any,
+    ears: Any = HEARS_NOTHING,
+    active_perception: Any = NO_ACTIVE_PERCEPTION,
 ) -> Session:
     """One Session against a simulated robot, with the person where
     perception put them. Shared by the command and the demo page, so both
@@ -478,6 +486,8 @@ def simulated_session(
         readings=readings,
         model=model,
         memory=Memory(),
+        ears=ears,
+        active_perception=active_perception,
         config=settings,
         clock=clock,
     )

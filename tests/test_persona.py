@@ -125,6 +125,12 @@ def test_the_persona_warns_that_the_transcript_is_noisy():
     assert "do not take an odd word literally" in FLAT
 
 
+def test_care_guidance_keeps_visual_geometry_uncertain_and_respects_words():
+    assert "not an emotion diagnosis" in FLAT
+    assert "respect what they said" in FLAT
+    assert "not permission to approach" in FLAT
+
+
 # ---------------------------------------------------------------------------
 # The four things ReAct needs
 # ---------------------------------------------------------------------------

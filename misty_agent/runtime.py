@@ -134,6 +134,8 @@ class VisualAttentionOutcome(str, Enum):
     TRACKING = "tracking"
     WAVE_PROGRESS = "wave_progress"
     QUALIFIED = "qualified"
+    CARE_PROGRESS = "care_progress"
+    CARE_QUALIFIED = "care_qualified"
 
 
 @dataclass(frozen=True)

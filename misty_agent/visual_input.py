@@ -21,8 +21,15 @@ from typing import Deque, Optional, Protocol, Sequence, Tuple
 import numpy as np
 
 from misty_agent.agent.evidence import SelectedImageEvidence
+from misty_agent.perception.active import (
+    ActivePerceptionCost,
+    ActivePerceptionEnding,
+    ActivePerceptionKind,
+    ActivePerceptionResult,
+)
 from misty_agent.runtime import (
     AnonymousTrackReference,
+    CueKind,
     InputArrival,
     VisualAttentionNotice,
     VisualAttentionOutcome,
@@ -77,6 +84,42 @@ class BoundingBox:
 
 
 @dataclass(frozen=True)
+class ObservablePersonGeometry:
+    """Observable boolean geometry, with no inferred emotion label."""
+
+    eyes_narrowed: bool = False
+    mouth_open: bool = False
+    head_lowered: bool = False
+    mouth_corners_raised: bool = False
+
+    @property
+    def signal_count(self) -> int:
+        return sum(self.as_facts().values())
+
+    def as_facts(self) -> dict[str, bool]:
+        return {
+            "eyes_narrowed": self.eyes_narrowed,
+            "mouth_open": self.mouth_open,
+            "head_lowered": self.head_lowered,
+            "mouth_corners_raised": self.mouth_corners_raised,
+        }
+
+    def describe(self) -> str:
+        labels = {
+            "eyes_narrowed": "narrowed eyes",
+            "mouth_open": "an open mouth",
+            "head_lowered": "a lowered head",
+            "mouth_corners_raised": "raised mouth corners",
+        }
+        return ", ".join(
+            label for name, label in labels.items() if self.as_facts()[name]
+        )
+
+
+NO_OBSERVABLE_GEOMETRY = ObservablePersonGeometry()
+
+
+@dataclass(frozen=True)
 class LocalVisualDetection:
     """Observable, local-only signals for one anonymous person in one frame."""
 
@@ -84,6 +127,7 @@ class LocalVisualDetection:
     confidence: float
     looking: bool
     hand_center: Optional[NormalizedPoint] = None
+    geometry: ObservablePersonGeometry = NO_OBSERVABLE_GEOMETRY
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.confidence) or not 0 <= self.confidence <= 1:
@@ -92,6 +136,15 @@ class LocalVisualDetection:
             self.hand_center, NormalizedPoint
         ):
             raise TypeError("hand center must be a NormalizedPoint")
+        if not isinstance(self.geometry, ObservablePersonGeometry):
+            raise TypeError("visual geometry must be ObservablePersonGeometry")
+
+
+@dataclass(frozen=True)
+class _MeshSignal:
+    center: NormalizedPoint
+    looking: bool
+    geometry: ObservablePersonGeometry
 
 
 @dataclass(frozen=True)
@@ -154,6 +207,8 @@ class VisualGatePolicy:
     max_tracks: int = 4
     evidence_max_side_px: int = 320
     cue_freshness_s: float = 2.0
+    minimum_care_s: float = 0.4
+    minimum_care_frames: int = 3
 
     def __post_init__(self) -> None:
         if not 0 <= self.minimum_confidence <= 1:
@@ -172,6 +227,8 @@ class VisualGatePolicy:
             raise ValueError("visual capacities must be positive")
         if self.cue_freshness_s <= 0:
             raise ValueError("visual cue freshness must be positive")
+        if self.minimum_care_s <= 0 or self.minimum_care_frames < 2:
+            raise ValueError("visual care evidence must be temporal")
 
 
 @dataclass
@@ -187,6 +244,12 @@ class _Track:
         default_factory=lambda: deque(maxlen=8)
     )
     invitation_emitted: bool = False
+    care_started_at: Optional[float] = None
+    care_frames: int = 0
+    care_confidence_sum: float = 0.0
+    care_emitted: bool = False
+    latest_detection: Optional[LocalVisualDetection] = None
+    latest_frame_index: int = -1
 
 
 @dataclass(frozen=True)
@@ -202,6 +265,8 @@ class LocalVisualGate:
         self._policy = policy
         self._tracks: list[_Track] = []
         self._next_track = 1
+        self._latest_frame_index: Optional[int] = None
+        self._latest_person_count = 0
 
     def observe(
         self,
@@ -222,6 +287,8 @@ class LocalVisualGate:
             for track in self._tracks
             if observed_at - track.last_seen_at <= self._policy.track_ttl_s
         ]
+        self._latest_frame_index = frame_index
+        self._latest_person_count = len(detections)
         if not detections:
             return (
                 (
@@ -241,6 +308,21 @@ class LocalVisualGate:
             track.center = detection.bounds.center
             track.last_seen_at = observed_at
             track.observed_frames += 1
+            track.latest_detection = detection
+            track.latest_frame_index = frame_index
+            care_signals = detection.geometry.signal_count
+            if care_signals >= 2:
+                if track.care_started_at is None:
+                    track.care_started_at = observed_at
+                    track.care_frames = 0
+                    track.care_confidence_sum = 0.0
+                track.care_frames += 1
+                track.care_confidence_sum += detection.confidence
+            else:
+                track.care_started_at = None
+                track.care_frames = 0
+                track.care_confidence_sum = 0.0
+
             if not detection.looking:
                 track.gaze_started_at = None
                 track.gaze_frames = 0
@@ -266,6 +348,11 @@ class LocalVisualGate:
                     )
                 outcome = self._progress(track, detection)
 
+            if self._care_qualified(track):
+                outcome = VisualAttentionOutcome.CARE_QUALIFIED
+            elif care_signals >= 2:
+                outcome = VisualAttentionOutcome.CARE_PROGRESS
+
             facts = self._facts(track, detection, len(detections))
             notices.append(
                 VisualAttentionNotice(
@@ -275,20 +362,41 @@ class LocalVisualGate:
                     facts=facts,
                 )
             )
-            if (
-                outcome is VisualAttentionOutcome.QUALIFIED
-                and selected_cue is None
-            ):
-                track.invitation_emitted = True
+            if outcome in (
+                VisualAttentionOutcome.QUALIFIED,
+                VisualAttentionOutcome.CARE_QUALIFIED,
+            ) and selected_cue is None:
+                care = outcome is VisualAttentionOutcome.CARE_QUALIFIED
+                if care:
+                    track.care_emitted = True
+                else:
+                    track.invitation_emitted = True
                 selected_cue = VisualCue(
                     description=(
-                        "anonymous person sustained gaze toward Misty and waved"
+                        "anonymous person sustained observable "
+                        + detection.geometry.describe()
+                        if care
+                        else "anonymous person sustained gaze toward Misty and waved"
                     ),
                     track_reference=track.reference,
                     confidence=round(
-                        track.gaze_confidence_sum / track.gaze_frames, 3
+                        (
+                            track.care_confidence_sum / track.care_frames
+                            if care
+                            else track.gaze_confidence_sum / track.gaze_frames
+                        ),
+                        3,
                     ),
-                    facts={
+                    facts=(
+                        {
+                            **detection.geometry.as_facts(),
+                            "signal_duration_s": facts["care_duration_s"],
+                            "observed_frames": track.care_frames,
+                            "selected_frame_index": frame_index,
+                            "person_count": len(detections),
+                        }
+                        if care
+                        else {
                         "looking": True,
                         "wave_observed": True,
                         "gaze_duration_s": facts["gaze_duration_s"],
@@ -297,10 +405,16 @@ class LocalVisualGate:
                         "observed_frames": track.observed_frames,
                         "selected_frame_index": frame_index,
                         "person_count": len(detections),
-                    },
+                        }
+                    ),
                     uncertainty=(
-                        "local visual gate is verified only with synthetic "
-                        "temporal fixtures",
+                        (
+                            "observable facial geometry does not establish "
+                            "an emotion or a wish for help"
+                            if care
+                            else "local visual gate is verified only with "
+                            "synthetic temporal fixtures"
+                        ),
                         "anonymous tracking is not person identification",
                     ),
                     selected_image=_selected_crop(
@@ -308,10 +422,108 @@ class LocalVisualGate:
                         detection,
                         max_side_px=self._policy.evidence_max_side_px,
                     ),
-                    deduplication_key=f"visual:{track.reference}:invitation",
+                    deduplication_key=(
+                        f"visual:{track.reference}:care"
+                        if care
+                        else f"visual:{track.reference}:invitation"
+                    ),
+                    cue_kind=(
+                        CueKind.CARE_CUE if care else CueKind.SOCIAL_INVITATION
+                    ),
                     fresh_for_s=self._policy.cue_freshness_s,
                 )
         return tuple(notices), selected_cue
+
+    def for_track(self, track_reference: object) -> "_TrackPerception":
+        """Bind active perception to one Episode's Trigger Evidence track."""
+        reference = (
+            AnonymousTrackReference(track_reference)
+            if isinstance(track_reference, str)
+            else None
+        )
+        return _TrackPerception(self, reference)
+
+    def _observe_track(
+        self,
+        *,
+        reference: Optional[AnonymousTrackReference],
+        now_s: float,
+        kind: ActivePerceptionKind,
+        cost: ActivePerceptionCost,
+    ) -> ActivePerceptionResult:
+        """Build one current observation from state this gate owns."""
+        track = next(
+            (item for item in self._tracks if item.reference == reference),
+            None,
+        )
+        detection = track.latest_detection if track is not None else None
+        age_s = 0.0 if track is None else now_s - track.last_seen_at
+        if age_s < -1e-9:
+            raise ValueError("active visual observation cannot be in the future")
+        if (
+            detection is None
+            or track is None
+            or track.latest_frame_index != self._latest_frame_index
+        ):
+            return ActivePerceptionResult(
+                kind=kind,
+                cost=cost,
+                ending=ActivePerceptionEnding.UNAVAILABLE,
+                age_s=max(0.0, age_s),
+                fresh_for_s=self._policy.cue_freshness_s,
+                uncertainty=(
+                    "the Episode's anonymous visual track is not in the latest frame",
+                ),
+            )
+
+        common = {
+            "looking": detection.looking,
+            **detection.geometry.as_facts(),
+        }
+        if kind is ActivePerceptionKind.TARGET_OBSERVATION:
+            facts = {
+                "track_reference": str(track.reference),
+                "visible": True,
+                "confidence": round(detection.confidence, 3),
+                **common,
+            }
+            uncertainty = (
+                "local geometry is not an emotion diagnosis",
+                "anonymous tracking is not person identification",
+            )
+        else:
+            facts = {
+                "target_track_reference": str(track.reference),
+                "target_visible": True,
+                "person_count": self._latest_person_count,
+                "selected_frame_index": track.latest_frame_index,
+                **common,
+            }
+            uncertainty = (
+                "scene inspection is bounded to the latest selected frame",
+                "visible geometry cannot establish a person's feelings",
+            )
+        return ActivePerceptionResult(
+            kind=kind,
+            cost=cost,
+            ending=ActivePerceptionEnding.OBSERVED,
+            age_s=max(0.0, age_s),
+            fresh_for_s=self._policy.cue_freshness_s,
+            facts=facts,
+            uncertainty=uncertainty,
+        )
+
+    def _care_qualified(self, track: _Track) -> bool:
+        if track.care_started_at is None or track.care_frames == 0:
+            return False
+        return (
+            not track.care_emitted
+            and track.care_frames >= self._policy.minimum_care_frames
+            and track.last_seen_at - track.care_started_at
+            >= self._policy.minimum_care_s
+            and track.care_confidence_sum / track.care_frames
+            >= self._policy.minimum_confidence
+        )
 
     def _assign(
         self,
@@ -392,7 +604,57 @@ class LocalVisualGate:
             "gaze_duration_s": round(gaze_duration, 3),
             "wave_span": round(_span(hand_x), 3),
             "direction_changes": _direction_changes(hand_x),
+            **detection.geometry.as_facts(),
+            "care_duration_s": round(
+                0.0
+                if track.care_started_at is None
+                else track.last_seen_at - track.care_started_at,
+                3,
+            ),
         }
+
+
+class _TrackPerception:
+    """Active-perception view fixed to one Episode's anonymous track."""
+
+    def __init__(
+        self,
+        gate: LocalVisualGate,
+        reference: Optional[AnonymousTrackReference],
+    ) -> None:
+        self._gate = gate
+        self._reference = reference
+
+    def for_track(self, track_reference: object) -> "_TrackPerception":
+        return self._gate.for_track(track_reference)
+
+    def observe_target(self, *, now_s: float) -> ActivePerceptionResult:
+        return self._observe(
+            now_s=now_s,
+            kind=ActivePerceptionKind.TARGET_OBSERVATION,
+            cost=ActivePerceptionCost.CHEAP,
+        )
+
+    def inspect_scene(self, *, now_s: float) -> ActivePerceptionResult:
+        return self._observe(
+            now_s=now_s,
+            kind=ActivePerceptionKind.SCENE_INSPECTION,
+            cost=ActivePerceptionCost.EXPENSIVE,
+        )
+
+    def _observe(
+        self,
+        *,
+        now_s: float,
+        kind: ActivePerceptionKind,
+        cost: ActivePerceptionCost,
+    ) -> ActivePerceptionResult:
+        return self._gate._observe_track(
+            reference=self._reference,
+            now_s=now_s,
+            kind=kind,
+            cost=cost,
+        )
 
 
 class VisualInputAdapter:
@@ -594,7 +856,7 @@ class MediaPipeVisualDetector:
             face_index: mesh_signals[mesh_index]
             for face_index, mesh_index in _nearest_pairs(
                 centers,
-                tuple(item[0] for item in mesh_signals),
+                tuple(item.center for item in mesh_signals),
                 maximum_distance=0.5,
             )
         }
@@ -613,8 +875,13 @@ class MediaPipeVisualDetector:
                 LocalVisualDetection(
                     bounds=bounds,
                     confidence=confidence,
-                    looking=(mesh[1] if mesh is not None else False),
+                    looking=(mesh.looking if mesh is not None else False),
                     hand_center=hands_by_face.get(face_index),
+                    geometry=(
+                        mesh.geometry
+                        if mesh is not None
+                        else NO_OBSERVABLE_GEOMETRY
+                    ),
                 )
             )
         return tuple(detections)
@@ -631,7 +898,7 @@ class MediaPipeVisualDetector:
         self.close()
 
 
-def _mesh_signal(mesh) -> Tuple[NormalizedPoint, bool]:
+def _mesh_signal(mesh) -> _MeshSignal:
     landmarks = mesh.landmark
     left = landmarks[234]
     right = landmarks[454]
@@ -642,9 +909,32 @@ def _mesh_signal(mesh) -> Tuple[NormalizedPoint, bool]:
         (left.y + right.y) / 2,
     )
     if face_width == 0:
-        return center, False
+        return _MeshSignal(center, False, NO_OBSERVABLE_GEOMETRY)
     offset_ratio = abs(nose.x - center.x) / face_width
-    return center, offset_ratio < 0.25
+    left_eye_open = abs(landmarks[159].y - landmarks[145].y) / face_width
+    right_eye_open = abs(landmarks[386].y - landmarks[374].y) / face_width
+    mouth_open_ratio = abs(landmarks[13].y - landmarks[14].y) / face_width
+    eyes_y = (
+        landmarks[33].y + landmarks[263].y
+    ) / 2
+    nose_below_eyes = (nose.y - eyes_y) / face_width
+    corners_y = (landmarks[61].y + landmarks[291].y) / 2
+    mouth_center_y = (landmarks[13].y + landmarks[14].y) / 2
+    # Geometry thresholds are deliberately local and conservative. They are
+    # supported only by synthetic detector-boundary fixtures, not calibrated
+    # emotion labels or claims about a real camera.
+    return _MeshSignal(
+        center=center,
+        looking=offset_ratio < 0.25,
+        geometry=ObservablePersonGeometry(
+            eyes_narrowed=(left_eye_open + right_eye_open) / 2 < 0.035,
+            mouth_open=mouth_open_ratio > 0.04,
+            head_lowered=nose_below_eyes > 0.42,
+            mouth_corners_raised=(
+                (mouth_center_y - corners_y) / face_width > 0.015
+            ),
+        ),
+    )
 
 
 def _clamped_box(x: float, y: float, width: float, height: float) -> BoundingBox:
@@ -746,6 +1036,7 @@ __all__ = [
     "LocalVisualGate",
     "MediaPipeVisualDetector",
     "NormalizedPoint",
+    "ObservablePersonGeometry",
     "ScheduledVisualFrame",
     "VisualFixtureSource",
     "VisualFrameArrival",

@@ -15,7 +15,11 @@ from typing import Any, Mapping, Sequence, Tuple
 from misty_agent.agent.evidence import EvidenceKind
 from misty_agent.agent.react import Decision
 from misty_agent.runtime import CueKind, ScheduledInput, TimedText
-from misty_agent.visual_fixtures import VISUAL_FIXTURES, VisualFixture
+from misty_agent.visual_fixtures import (
+    CARE_VISUAL_FIXTURES,
+    VISUAL_FIXTURES,
+    VisualFixture,
+)
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,19 @@ class AudioFixture:
 
 
 @dataclass(frozen=True)
+class VisualScenarioScript:
+    """Model/Snapshot collaborators for one shared visual fixture."""
+
+    fixture_key: str
+    decisions: Tuple[Decision, ...]
+    heard_after_first_tool: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.fixture_key or not self.decisions:
+            raise ValueError("a visual scenario script needs a fixture and decisions")
+
+
+@dataclass(frozen=True)
 class PlannedScenario(ScenarioCard):
     """A roadmap preview with deliberately no executable behavior."""
 
@@ -79,16 +96,38 @@ class AcceptanceScenario(ScenarioCard):
     audio_fixtures: Tuple[AudioFixture, ...] = ()
     visual_fixtures: Tuple[VisualFixture, ...] = ()
     visual_decisions: Tuple[Decision, ...] = ()
+    visual_scripts: Tuple[VisualScenarioScript, ...] = ()
 
     def __post_init__(self) -> None:
         if self.availability is not ScenarioAvailability.READY:
             raise ValueError("an acceptance scenario must be ready to run")
-        if not self.inputs:
+        if not self.inputs and not self.visual_fixtures:
             raise ValueError("a runnable scenario must declare an input")
-        if not self.decisions:
+        if not self.decisions and not self.visual_scripts:
             raise ValueError("a runnable scenario must declare model decisions")
         if not self.actors:
             raise ValueError("a runnable scenario must name its expected episodes")
+        fixture_keys = {fixture.key for fixture in self.visual_fixtures}
+        script_keys = [script.fixture_key for script in self.visual_scripts]
+        if len(script_keys) != len(set(script_keys)):
+            raise ValueError("a visual fixture can have only one scenario script")
+        if not set(script_keys) <= fixture_keys:
+            raise ValueError("every visual script must name a scenario fixture")
+
+    def visual_script_for(self, fixture_key: str) -> VisualScenarioScript:
+        found = next(
+            (
+                script
+                for script in self.visual_scripts
+                if script.fixture_key == fixture_key
+            ),
+            None,
+        )
+        if found is not None:
+            return found
+        if self.visual_decisions:
+            return VisualScenarioScript(fixture_key, self.visual_decisions)
+        raise KeyError(fixture_key)
 
 
 class ScenarioModel:
@@ -336,27 +375,95 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
 )
 
 
-CRYING_CARE = PlannedScenario(
+CRYING_CARE = AcceptanceScenario(
     name="crying-care",
     title="有人在 Misty 面前哭泣",
-    subtitle="未來將觀察線索並自主決定是否詢問。",
-    availability=ScenarioAvailability.PLANNED,
+    subtitle="比較重新觀察、場景檢查與尊重本人說法的決策。",
+    availability=ScenarioAvailability.READY,
     ticket="06",
     limitation=(
-        "Ticket 06 尚未實作：目前沒有哭泣辨識、Care Cue 分類或自主回應。"
+        "只以 synthetic detector signals 驗證 temporal Care Cue；模型決策、"
+        "後續聽到的話與 robot 都是腳本／模擬，未使用真實相機或 Misty II。"
     ),
     preview=(
         PresentationBeat(
-            "input", "預計收到", "可觀察的哭泣跡象", "保留不確定性，不診斷情緒。"
+            "input", "選擇 fixture", "持續可觀察的臉部／姿勢線索", "保留不確定性，不診斷情緒。"
         ),
         PresentationBeat(
-            "decision", "預計決定", "由 LLM 選擇是否介入", "不固定映射成安慰台詞。"
+            "decision", "腳本模型決定", "選擇重新觀察、詢問或結束", "不由 gate 固定映射回應。"
         ),
         PresentationBeat(
             "effect",
-            "預計動作",
+            "模擬動作",
             "詢問、觀察或保持距離",
-            "實際可接受結果將由 ticket 06 定義。",
+            "Journal 會顯示實際 Tool、Observation 與 ending。",
+        ),
+    ),
+    actors=("person",),
+    inputs=(),
+    decisions=(),
+    visual_fixtures=CARE_VISUAL_FIXTURES,
+    visual_scripts=(
+        VisualScenarioScript(
+            "care-sustained-signals",
+            (
+                Decision(
+                    tool="observe_target",
+                    args={},
+                    tokens_in=20,
+                    tokens_out=4,
+                    tool_call_id="call-care-observe",
+                    note="先重新觀察可見線索，不把它當成情緒診斷。",
+                ),
+                Decision(
+                    tool="speak",
+                    args={"text": "嗨，你希望我留在這裡嗎？"},
+                    tokens_in=28,
+                    tokens_out=8,
+                    tool_call_id="call-care-ask",
+                    note="以可拒絕的問題詢問，不靠近對方。",
+                ),
+                Decision(
+                    tool="done",
+                    args={},
+                    tokens_in=32,
+                    tokens_out=1,
+                    tool_call_id="call-care-done",
+                    note="已低風險詢問，保持距離並結束。",
+                ),
+            ),
+        ),
+        VisualScenarioScript(
+            "care-expression-words-conflict",
+            (
+                Decision(
+                    tool="inspect_scene",
+                    args={},
+                    tokens_in=22,
+                    tokens_out=4,
+                    tool_call_id="call-conflict-inspect",
+                    note="先檢查場景；抬高的嘴角本身不能證明感受。",
+                ),
+                Decision(
+                    tool="speak",
+                    args={
+                        "text": "謝謝你告訴我你很難過。表情線索可能不準；你希望我陪著嗎？"
+                    },
+                    tokens_in=34,
+                    tokens_out=15,
+                    tool_call_id="call-conflict-ask",
+                    note="尊重本人明確說出的感受，並澄清是否需要陪伴。",
+                ),
+                Decision(
+                    tool="done",
+                    args={},
+                    tokens_in=38,
+                    tokens_out=1,
+                    tool_call_id="call-conflict-done",
+                    note="已詢問且未強迫靠近，結束。",
+                ),
+            ),
+            heard_after_first_tool=("我其實很難過",),
         ),
     ),
 )
@@ -410,4 +517,5 @@ __all__ = [
     "ScenarioAvailability",
     "ScenarioModel",
     "VisualFixture",
+    "VisualScenarioScript",
 ]

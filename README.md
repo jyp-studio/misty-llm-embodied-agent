@@ -24,10 +24,13 @@ calibration, latency, and safety remain hardware-unverified.
   base64, capped at 8 MiB decoded, and removed from completed runtime results.
 - Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
   Episode cap all close with observable bounded endings.
-- The local Demo leads with three social-robot stories. The ticket 02 greeting
-  is runnable through the current runtime and Journal seam; crying and A-to-B
-  handoff remain visibly locked previews for tickets 06 and 08 rather than
-  scripted stand-ins for capabilities that do not exist yet.
+- The local Demo leads with three social-robot stories. Greeting and care are
+  runnable through the current runtime and Journal seam; A-to-B handoff
+  remains a visibly locked ticket 08 preview rather than a scripted stand-in.
+- A temporal local visual gate can form an uncertain Care Cue from sustained
+  observable eye, mouth and head geometry. The model may choose cheap target
+  observation, expensive scene inspection, a question, or no intervention;
+  the gate never diagnoses emotion or fixes the response sequence.
 - Cross-Episode personal memory is not a current product capability. Social
   state is ephemeral unless a future consent-based policy explicitly changes it.
 
@@ -36,9 +39,10 @@ The concise source of truth is [docs/architecture.md](docs/architecture.md).
 
 ```mermaid
 flowchart LR
-    INPUT["ScenarioInputAdapter"] --> RUNTIME["SocialAgentRuntime<br>Attention Loop"]
-    RUNTIME -->|"one Explicit Request"| EPISODE["bounded ReAct Episode"]
+    INPUT["Scenario / audio / visual InputSource"] --> RUNTIME["SocialAgentRuntime<br>Attention Loop"]
+    RUNTIME -->|"one selected Interaction Cue"| EPISODE["bounded ReAct Episode"]
     EPISODE --> TOOLS["Tool registry + control layer"]
+    TOOLS --> PERCEPTION["target observation / scene inspection"]
     TOOLS --> SIM["simulated Misty"]
     EPISODE --> JOURNAL["typed Episode Journal"]
     RUNTIME --> TRACE["Attention / Cue records"]
@@ -56,7 +60,7 @@ built-in runtime scenario.
 .venv/bin/python -m misty_agent --demo
 ```
 
-The browser page is loopback-only. Choose the greeting card and select
+The browser page is loopback-only. Choose the greeting or care card and select
 **執行離線模擬**; it needs no API key and shows the input, cue, actual Tool
 choices, Trigger Evidence, Decision Notes, matching Observations and simulated
 speech produced by that run. Its input and model choices are predefined, which
@@ -149,8 +153,8 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 ## Roadmap
 
 The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
-gate, and a synthetic-fixture-verified visual Social Invitation gate. Planned
-vertical slices add Care Cue classification, person-aware handoff, Skills,
+gate, plus synthetic-fixture-verified Social Invitation and uncertain Care Cue
+visual gates. Planned vertical slices add person-aware handoff, Skills,
 ephemeral social state, and target-aware movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 

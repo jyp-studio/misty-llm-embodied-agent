@@ -73,6 +73,7 @@ from misty_agent.perception.asr import (
     TranscriptionEnding,
     wav_to_pcm,
 )
+from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
 from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.runtime import (
     AudioAttentionRecorded,
@@ -108,6 +109,7 @@ from misty_agent.scenarios import (
     ScenarioModel,
 )
 from misty_agent.visual_input import (
+    LocalVisualGate,
     VisualFixtureSource,
     VisualInputAdapter,
 )
@@ -326,6 +328,26 @@ class _ScriptedFixtureTranscriber:
         )
 
 
+@dataclass
+class _ScenarioEars:
+    """Finite speech made available to a scenario's cheap Snapshots."""
+
+    utterances: list[str]
+
+    def mute_for(self, seconds: float) -> None:
+        return None
+
+    def read(self, timeout: float):
+        if not self.utterances:
+            return None
+        return _ScenarioUtterance(self.utterances.pop(0))
+
+
+@dataclass(frozen=True)
+class _ScenarioUtterance:
+    text: str
+
+
 class _ChainedScenarioInput:
     """Expose sequential providers as one Runtime input lifecycle."""
 
@@ -400,6 +422,8 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
     )
     selected_audio = None
     selected_visual = None
+    visual_script = None
+    active_perception = None
     all_fixtures = (*case.audio_fixtures, *case.visual_fixtures)
     if all_fixtures:
         requested = asked.get("fixture", all_fixtures[0].key)
@@ -436,21 +460,30 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             ScenarioInputAdapter(clock, case.inputs[1:]),
         )
     elif selected_visual is not None:
+        visual_script = case.visual_script_for(selected_visual.key)
+        active_perception = LocalVisualGate()
         source = VisualInputAdapter(
             frames=VisualFixtureSource(clock, selected_visual.frames),
             clock=clock,
+            gate=active_perception,
         )
     else:
         source = ScenarioInputAdapter(clock, case.inputs)
-    decisions = (
-        case.visual_decisions
-        if selected_visual is not None
-        else case.decisions
-    )
+    decisions = visual_script.decisions if visual_script else case.decisions
     session = simulated_session(
         None,
         model=ScenarioModel(decisions),
         clock=clock,
+        ears=_ScenarioEars(
+            list(visual_script.heard_after_first_tool)
+            if visual_script
+            else []
+        ),
+        active_perception=(
+            active_perception
+            if active_perception is not None
+            else NO_ACTIVE_PERCEPTION
+        ),
     )
     result = SocialAgentRuntime(
         source=source,
@@ -588,6 +621,8 @@ def _scenario_execution(
         "tracking": "開始累積注視時間",
         "wave_progress": "觀察到手部來回位移",
         "qualified": "持續注視加揮手已達 gate",
+        "care_progress": "持續累積可觀察的臉部／姿勢線索",
+        "care_qualified": "可觀察線索已形成不確定 Care Cue",
     }
     flow.extend(
         PresentationBeat(
@@ -634,7 +669,11 @@ def _scenario_execution(
                     (
                         "明確互動請求"
                         if input_kind == "audio"
-                        else "Social Invitation"
+                        else (
+                            "Care Cue"
+                            if cue.cue_kind.value == "care_cue"
+                            else "Social Invitation"
+                        )
                     ),
                     cue.cue_kind.value,
                 ),
@@ -679,6 +718,23 @@ def _scenario_execution(
                     ),
                 )
             )
+        elif record.tool in {"observe_target", "inspect_scene"}:
+            observation = observations.get(record.turn)
+            if observation is not None:
+                flow.append(
+                    PresentationBeat(
+                        "observation",
+                        "Observation",
+                        (
+                            "便宜的目標觀察"
+                            if record.tool == "observe_target"
+                            else "較昂貴的場景檢查"
+                        ),
+                        f"{observation.result.get('ending')} · "
+                        f"fresh for {observation.result.get('fresh_for_s')} 秒 · "
+                        "保留不確定性",
+                    )
+                )
     completed = bool(
         episode is not None
         and result.ending is RuntimeEnding.INPUT_EXHAUSTED

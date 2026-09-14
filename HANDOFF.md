@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-13 · branch `refactor/react-agent`
+Last updated: 2026-09-14 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–05 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–06 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -17,10 +17,9 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 3. Existing Tool dispatch affects the simulated Misty and produces the typed
    Episode Journal.
 4. Runtime output carries both Attention/Cue records and Episode Journals.
-5. The Demo presents three horizontal social scenarios. Greeting is the only
-   runnable card; its human-readable result is derived from the current
-   runtime records and Journal. Crying and A-to-B are visibly locked previews
-   for tickets 06 and 08, with no executable scripted substitute.
+5. The Demo presents three horizontal social scenarios. Greeting and care are
+   runnable; their human-readable results derive from current runtime records
+   and Journals. A-to-B remains a visibly locked ticket 08 preview.
 6. Offline scenario execution is visually and mechanically separate from the
    optional Live AI panel, so the no-key path no longer looks blocked by a
    hosted-model requirement.
@@ -52,8 +51,17 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 17. The greeting Demo also selects four synthetic visual timelines and shows
    frame-by-frame gate facts, selected Evidence metadata, the scripted model
    decision, simulated response, or the reason no Episode opened.
+18. Sustained observable eye, mouth and head geometry on one anonymous track
+   can form an uncertain Care Cue. The gate emits no emotion diagnosis and
+   chooses no response Tool.
+19. `observe_target` and `inspect_scene` expose cheap and expensive typed
+   active-perception results with freshness and uncertainty; neither moves the
+   robot.
+20. The care Demo provides two synthetic timelines: sustained care-relevant
+   geometry and a visual/verbal conflict where explicit words take priority.
+   Both show Evidence, Decision Note, selected Tool, Observation and ending.
 
-Ticket 04 ends at `8af7ba6`; ticket 05 is the current implementation.
+Ticket 05 ends at `750aa93`; ticket 06 is the current implementation.
 
 ## Verification
 
@@ -74,7 +82,7 @@ To inspect the no-key tracer bullet:
 .venv/bin/python -m misty_agent --demo
 ```
 
-Choose the greeting card, select a Hey/Hi Misty WAV or a visual timeline, and
+Choose the greeting or care card, select a WAV or visual timeline, and
 select `執行離線模擬`. The page is loopback-only and needs no API key. The
 selected local gate, Runtime, Tool dispatch and Journal execute afresh; visual
 detector signals, ASR transcripts and model decisions are explicitly scripted.
@@ -91,15 +99,15 @@ against a real camera. The vendor audio composition is wired to the same
 timing, threshold calibration, association accuracy, and reliability are
 hardware-unverified.
 
-The current social runtime does not yet implement Care Cue classification,
-identity-aware handoff, Skills, or target-aware movement.
-The crying and A-to-B cards are roadmap previews only. They do not inject a
-Care Cue or person labels and cannot be run until their corresponding vertical
-tickets implement the capability.
+The current social runtime does not yet implement identity-aware handoff,
+Skills, or target-aware movement. The care path is supported only by synthetic
+temporal frames and scripted model decisions; it is not validated emotion
+recognition. The A-to-B card remains a roadmap preview and cannot run until
+its target/handoff vertical ticket implements that capability.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/06-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/07-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

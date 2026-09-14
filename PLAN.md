@@ -2618,3 +2618,28 @@ gate outcome/facts、selected Evidence metadata、Decision Note、模擬回應�
 則清楚說明 gate 為何保持安靜以及 model 未被呼叫。MediaPipe detector 是本機可替換實作，但真實
 相機準確率、threshold calibration、人物關聯、延遲與 Misty II 全部仍是 unverified；本票只用
 synthetic temporal fixtures 驗證 orchestration，不構成硬實機證據。
+
+### 16.55 Care Cue 保留不確定性，回應仍由 ReAct 決定（ticket 06）
+
+Ticket 06 延伸同一個 `VisualInputAdapter` 與 anonymous tracker，不建立第二條情緒辨識 pipeline。
+本機 detector 只輸出 normalized bounds、confidence，以及可觀察的縮眼、張口、低頭、嘴角抬高
+geometry。Care gate 必須在同一 track 上跨至少三個 frame、持續達時間與平均 confidence 門檻才形成
+Cue；Trigger Evidence 只描述這些 signal、持續時間與不確定性，不含 emotion classifier label、
+「正在哭」或心理診斷。單張 frame 與最後一張高 confidence 都不能補救不足的 temporal evidence。
+
+Gate 仍只回答「是否值得交給 model」，不把 Care Cue 映射成 approach、安慰台詞或固定 Tool sequence。
+同一份 Evidence 的 scripted acceptance 分別證明 model 可以直接 `done`、呼叫便宜的
+`observe_target`，或選擇較昂貴的 `inspect_scene`。兩個 active-perception Tool 都回傳 typed kind、
+cost、ending、age、freshness、structured facts 與 uncertainty；沒有可用 track 時回 typed
+`unavailable`，不擴張每個 Turn 都附帶的三欄 Snapshot，也沒有移動權限。
+Session 在 Episode 開始時依 Trigger Evidence 的 anonymous track 建立固定 perception view；後續
+Turn-boundary drain 形成的 queued cue 不得改寫它。目標不在最新 frame 時，以該 track 自己的
+last-seen time 回 unavailable/age，不得用別人的新 frame 把舊 detection 冒充成 fresh。
+
+Demo 將原本鎖住的 care 卡解鎖，卡內提供「持續可觀察 signal」及「表情 geometry／本人言語衝突」
+兩組 synthetic timelines。後者在第一個 perception Tool 後由 Snapshot 收到本人明確表示難過，
+scripted model 的下一個 Turn 尊重這句話並承認視覺線索可能不準。畫面由當次 Runtime records 與
+Journal 顯示 Evidence、Decision Note、感知／互動 Tool、Observation 和 ending；detector signals、
+model Decisions、後續 speech 與 robot effect 都明確是腳本／模擬。MediaPipe geometry extraction
+存在，但 threshold、真實哭泣辨識、真人／真相機準確率與所有 Misty II 行為都未驗證；這不是情緒
+辨識準確率聲明。

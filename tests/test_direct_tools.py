@@ -105,6 +105,8 @@ THE_SEVEN = [
     "look_around",
 ]
 
+PERCEPTION_TOOLS = ["observe_target", "inspect_scene"]
+
 
 # ---------------------------------------------------------------------------
 # All seven are there and the model can see them
@@ -132,6 +134,17 @@ def test_none_of_them_ends_the_episode(registry, name, ctx):
     tool = registry.get(name)
 
     assert not tool.ends_episode
+
+
+@pytest.mark.parametrize("name", PERCEPTION_TOOLS)
+def test_active_perception_tools_are_registered_and_never_end_the_episode(
+    registry, name
+):
+    tool = registry.get(name)
+
+    assert tool is not None
+    assert not tool.ends_episode
+    assert tool.schema()["function"]["parameters"]["properties"] == {}
 
 
 # ---------------------------------------------------------------------------

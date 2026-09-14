@@ -26,6 +26,7 @@ from misty_agent.visual_input import (
     LocalVisualDetection,
     MediaPipeVisualDetector,
     NormalizedPoint,
+    ObservablePersonGeometry,
     ScheduledVisualFrame,
     VisualFixtureSource,
     VisualInputAdapter,
@@ -51,6 +52,7 @@ def detection(
     looking: bool,
     hand_x: float | None = None,
     confidence: float = 0.92,
+    geometry: ObservablePersonGeometry = ObservablePersonGeometry(),
 ) -> LocalVisualDetection:
     return LocalVisualDetection(
         bounds=BoundingBox(x=x, y=0.2, width=0.2, height=0.4),
@@ -61,6 +63,7 @@ def detection(
             if hand_x is not None
             else None
         ),
+        geometry=geometry,
     )
 
 
@@ -242,6 +245,30 @@ def test_a_hand_motion_without_sustained_gaze_is_a_negative_control():
     assert model.contexts == []
 
 
+def test_care_geometry_does_not_hide_an_interruption_in_gaze():
+    frames = (
+        frame(0.0, detection(looking=True, hand_x=0.1)),
+        frame(0.2, detection(looking=True, hand_x=0.55)),
+        frame(
+            0.4,
+            detection(
+                looking=False,
+                geometry=ObservablePersonGeometry(
+                    eyes_narrowed=True,
+                    mouth_open=True,
+                ),
+            ),
+        ),
+        frame(0.6, detection(looking=True, hand_x=0.12)),
+        frame(0.8, detection(looking=True, hand_x=0.58)),
+    )
+
+    result, model = run_frames(frames, done())
+
+    assert result.episodes == ()
+    assert model.contexts == []
+
+
 def test_an_old_hand_motion_does_not_later_become_a_wave():
     frames = (
         frame(0.0, detection(looking=True, hand_x=0.1)),
@@ -333,3 +360,46 @@ def test_one_local_hand_signal_is_not_assigned_to_two_faces():
 
     assert detections[0].hand_center is None
     assert detections[1].hand_center == NormalizedPoint(0.2, 0.35)
+
+
+def test_mediapipe_boundary_exposes_geometry_not_an_emotion_label():
+    class Produces:
+        def __init__(self, **result):
+            self._result = SimpleNamespace(**result)
+
+        def process(self, image):
+            return self._result
+
+    points = [SimpleNamespace(x=0.3, y=0.5) for _ in range(468)]
+    points[234] = SimpleNamespace(x=0.2, y=0.5)
+    points[454] = SimpleNamespace(x=0.4, y=0.5)
+    points[1] = SimpleNamespace(x=0.3, y=0.5)
+    points[33] = SimpleNamespace(x=0.25, y=0.3)
+    points[263] = SimpleNamespace(x=0.35, y=0.3)
+    points[159] = SimpleNamespace(x=0.25, y=0.301)
+    points[145] = SimpleNamespace(x=0.25, y=0.299)
+    points[386] = SimpleNamespace(x=0.35, y=0.301)
+    points[374] = SimpleNamespace(x=0.35, y=0.299)
+    points[13] = SimpleNamespace(x=0.3, y=0.49)
+    points[14] = SimpleNamespace(x=0.3, y=0.51)
+    points[61] = SimpleNamespace(x=0.26, y=0.48)
+    points[291] = SimpleNamespace(x=0.34, y=0.48)
+    box = SimpleNamespace(xmin=0.2, ymin=0.2, width=0.2, height=0.4)
+    face = SimpleNamespace(
+        score=(0.9,),
+        location_data=SimpleNamespace(relative_bounding_box=box),
+    )
+    detector = MediaPipeVisualDetector.__new__(MediaPipeVisualDetector)
+    detector._face_detection = Produces(detections=(face,))
+    detector._face_mesh = Produces(
+        multi_face_landmarks=(SimpleNamespace(landmark=points),)
+    )
+    detector._hands = Produces(multi_hand_landmarks=())
+
+    observed = detector.detect(FRAME)[0]
+
+    assert observed.geometry.eyes_narrowed is True
+    assert observed.geometry.mouth_open is True
+    assert observed.geometry.head_lowered is True
+    assert observed.geometry.mouth_corners_raised is True
+    assert not hasattr(observed, "emotion")

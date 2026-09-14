@@ -148,8 +148,12 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "audio",
         "visual",
     }
-    assert listed[1]["availability"] == "planned"
+    assert listed[1]["availability"] == "ready"
     assert listed[1]["ticket"] == "06"
+    assert [fixture["key"] for fixture in listed[1]["visual_fixtures"]] == [
+        "care-sustained-signals",
+        "care-expression-words-conflict",
+    ]
     assert listed[2]["availability"] == "planned"
     assert listed[2]["ticket"] == "08"
 
@@ -411,9 +415,44 @@ def test_the_human_ending_is_derived_from_an_abnormal_current_run(monkeypatch):
     }
 
 
+def test_both_care_cases_run_and_show_evidence_choice_and_ending():
+    for fixture, expected_tool in (
+        ("care-sustained-signals", "observe_target"),
+        ("care-expression-words-conflict", "inspect_scene"),
+    ):
+        reply = answer(
+            "POST",
+            "/scenarios/crying-care/run",
+            json.dumps({"fixture": fixture}).encode(),
+        )
+        assert reply.status == 200
+        payload = json.loads(reply.body)
+
+        assert payload["scenario"]["availability"] == "ready"
+        assert payload["episodes"][0]["cue_kind"] == "care_cue"
+        flow = payload["execution"]["flow"]
+        assert any(beat["kind"] == "evidence" for beat in flow)
+        assert any(
+            beat["kind"] == "decision_note" for beat in flow
+        )
+        assert any(
+            beat["kind"] == "tool_call"
+            and beat["headline"] == expected_tool
+            for beat in flow
+        )
+        assert flow[-1]["kind"] == "ending"
+        assert flow[-1]["headline"] == "情境執行完成"
+        called = [
+            record["facts"]["tool"]
+            for record in payload["episodes"][0]["storyboard"]["moments"]
+            if record["kind"] == "tool_called"
+        ]
+        assert "approach" not in called
+
+
 @pytest.mark.parametrize(
     ("name", "ticket"),
-    [("crying-care", "06"), ("speaker-handoff", "08")],
+    [("speaker-handoff", "08")],
 )
 def test_a_planned_scenario_cannot_be_run_before_its_ticket(name, ticket):
     reply = answer("POST", f"/scenarios/{name}/run")

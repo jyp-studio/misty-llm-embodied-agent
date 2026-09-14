@@ -55,6 +55,7 @@ from misty_agent.agent.layering import (
     refuse_control_parameters,
 )
 from misty_agent.control.approach import approach as run_approach
+from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
 
 
 class Ears(Protocol):
@@ -86,8 +87,8 @@ HEARS_NOTHING = HearsNothing()
 class ToolContext:
     """What a Tool is given besides its own arguments.
 
-    Five fields, and each is one that a Tool named in `PLAN.md` §15.2 already
-    needs: seven of the nine drive the robot, `approach` also reads distances,
+    The fields are dependencies a registered Tool actually needs. Seven Tools
+    drive the robot, `approach` also reads distances,
     and M5's `approach(readings, robot, *, config, clock)` is the signature
     this has to be able to call. `speak` needs the config for its speech
     estimate and the ears to shut them before it talks (§15.29). Defining the calling convention is this ticket's job,
@@ -103,10 +104,11 @@ class ToolContext:
     readings: Any
     config: Any = None
     clock: Any = None
-    #: What must not hear the robot talk to itself. Eight of the nine Tools
+    #: What must not hear the robot talk to itself. Ten of the eleven Tools
     #: make no sound, and an Episode with no microphone is still an Episode —
     #: hence a null object rather than a `None` every caller has to test.
     ears: Ears = HEARS_NOTHING
+    active_perception: Any = NO_ACTIVE_PERCEPTION
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -176,7 +178,7 @@ class Dispatched:
     result: Optional[Mapping[str, Any]] = None
     reason: Optional[str] = None
     #: Drive commands this call issued, for `episode_finished.steps`. Zero for
-    #: every Tool that does not move the base, which is eight of the nine.
+    #: every Tool that does not move the base, which is ten of the eleven.
     steps: int = 0
     #: What the robot said aloud, if this call said anything. Memory's half of
     #: an Exchange (`CONTEXT.md`), and the validated text rather than the raw
@@ -631,9 +633,10 @@ def build_registry() -> ToolRegistry:
     `PLAN.md` §4: with AutoMisty gone, expressiveness is **composition**.
     There is no `wave` and no `dance` — a wave is `move_arms` twice, and a
     dance is the model putting arms, LED and sound together over several
-    Turns. That is why these seven look so small: they are the whole of what
-    the agent can express, and anything more elaborate is the model's to build
-    out of them.
+    Turns. The physical primitives are the whole of what the agent can
+    express, and anything more elaborate is the model's to build out of them.
+    Ticket 06's two read-only perception Tools widen what the model can
+    inspect, not what can move the robot.
 
     None of them takes a velocity or a duration. The driver's `move_head` and
     `move_arms` both accept one, and both are left unset here: how fast a
@@ -649,6 +652,30 @@ def build_registry() -> ToolRegistry:
     )
     def done(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         return {}
+
+    @registry.tool(
+        "observe_target",
+        "Cheaply refresh observable facts about the current anonymous target. "
+        "This does not infer an emotion.",
+    )
+    def observe_target(
+        args: NoArguments, ctx: ToolContext
+    ) -> Mapping[str, Any]:
+        return ctx.active_perception.observe_target(
+            now_s=ctx.clock.monotonic()
+        ).as_tool_result()
+
+    @registry.tool(
+        "inspect_scene",
+        "Request a more expensive bounded scene inspection when selected "
+        "target evidence is insufficient. This does not diagnose emotion.",
+    )
+    def inspect_scene(
+        args: NoArguments, ctx: ToolContext
+    ) -> Mapping[str, Any]:
+        return ctx.active_perception.inspect_scene(
+            now_s=ctx.clock.monotonic()
+        ).as_tool_result()
 
     @registry.tool("speak", "Say something out loud.", speaks="text")
     def speak(args: SpeakArgs, ctx: ToolContext) -> Mapping[str, Any]:

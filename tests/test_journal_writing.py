@@ -23,6 +23,7 @@ from misty_agent.agent.journal import (
     MAX_DECISION_NOTE_CHARS,
     TONES,
     DecisionNoted,
+    SkillsAvailable,
     Described,
     EpisodeFinished,
     EpisodeStarted,
@@ -755,6 +756,9 @@ SAMPLES = {
         t=0.0, episode_id="ep-1", trigger="speech",
         started_at_wall_clock="2026-09-06T10:00:00+08:00",
     ),
+    "skills_available": SkillsAvailable(
+        t=0.0, episode_id="ep-1", skills=[{"name": "support", "description": "Offer company"}],
+    ),
     "turn_started": TurnStarted(t=0.1, episode_id="ep-1", turn=3),
     "model_called": ModelCalled(
         t=0.2, episode_id="ep-1", turn=3,
@@ -845,6 +849,7 @@ def test_the_kinds_do_not_all_say_the_same_thing():
 #: Journals already work.
 LINES = {
     "episode_started": "episode began, woken by speech",
+    "skills_available": "  available Skills, support",
     "turn_started": "turn 3",
     "model_called": "  model replied in 1840ms, 812+11 tokens",
     "decision_noted": "  decision note, Acknowledge the greeting.",

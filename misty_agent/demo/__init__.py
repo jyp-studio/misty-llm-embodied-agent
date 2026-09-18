@@ -48,8 +48,10 @@ from typing import Any, Mapping, Optional, Tuple
 
 from misty_agent.agent.journal import (
     DecisionNoted,
+    SkillsAvailable,
     Observation,
     ToolCalled,
+    describe,
     from_jsonl,
     to_jsonl,
 )
@@ -101,6 +103,7 @@ from misty_agent.runtime import (
     VisualAttentionRecorded,
 )
 from misty_agent.scenarios import (
+    ScenarioSpeech,
     DEMO_SCENARIOS,
     EXPLICIT_TEXT_REQUEST,
     AcceptanceScenario,
@@ -311,7 +314,10 @@ def _scenario_payload(case: ScenarioCard) -> dict:
         ]
         payload["audio_fixtures"] = audio_fixtures
         payload["visual_fixtures"] = visual_fixtures
-        payload["fixtures"] = audio_fixtures + visual_fixtures
+        payload["fixtures"] = audio_fixtures + visual_fixtures + [
+            {"key": item.key, "label": item.label, "input_kind": "text"}
+            for item in case.text_scripts
+        ]
     return payload
 
 
@@ -422,9 +428,10 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
     )
     selected_audio = None
     selected_visual = None
+    selected_text = None
     visual_script = None
     active_perception = None
-    all_fixtures = (*case.audio_fixtures, *case.visual_fixtures)
+    all_fixtures = (*case.audio_fixtures, *case.visual_fixtures, *case.text_scripts)
     if all_fixtures:
         requested = asked.get("fixture", all_fixtures[0].key)
         selected_audio = next(
@@ -435,7 +442,8 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             (item for item in case.visual_fixtures if item.key == requested),
             None,
         )
-        if selected_audio is None and selected_visual is None:
+        selected_text = next((item for item in case.text_scripts if item.key == requested), None)
+        if selected_audio is None and selected_visual is None and selected_text is None:
             return _json(
                 400,
                 {"error": f"there is no scenario fixture called {requested!r}"},
@@ -467,14 +475,17 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             clock=clock,
             gate=active_perception,
         )
+    elif selected_text is not None:
+        source = ScenarioInputAdapter(clock, selected_text.inputs)
     else:
         source = ScenarioInputAdapter(clock, case.inputs)
-    decisions = visual_script.decisions if visual_script else case.decisions
+    script = selected_text or visual_script
+    decisions = script.decisions if script else case.decisions
     session = simulated_session(
         None,
         model=ScenarioModel(decisions),
         clock=clock,
-        ears=_ScenarioEars(
+        ears=ScenarioSpeech(clock, selected_text.speech) if selected_text else _ScenarioEars(
             list(visual_script.heard_after_first_tool)
             if visual_script
             else []
@@ -491,7 +502,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
         clock=clock,
         config=scenario_config,
     ).run()
-    selected_fixture = selected_audio or selected_visual
+    selected_fixture = selected_audio or selected_visual or selected_text
     if selected_fixture is None:
         raise RuntimeError("an acceptance scenario has no fixture")
     episodes = []
@@ -518,7 +529,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
                 result.episodes[0] if result.episodes else None,
                 queue_capacity=scenario_config.cue_queue_capacity,
                 fixture_label=selected_fixture.label,
-                input_kind=("audio" if selected_audio else "visual"),
+                input_kind=("audio" if selected_audio else "text" if selected_text else "visual"),
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
@@ -639,7 +650,7 @@ def _scenario_execution(
         for record in visual_records
     )
     if cue is not None and evidence is not None:
-        if input_kind == "audio":
+        if input_kind in {"audio", "text"}:
             flow.append(
                 PresentationBeat(
                     "input",
@@ -653,7 +664,7 @@ def _scenario_execution(
                 PresentationBeat(
                     "evidence",
                     "Trigger Evidence",
-                    f"{'語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
+                    f"{'文字腳本' if input_kind == 'text' else '語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
                     f"{evidence.observed_at_s:g} 秒",
                     f"{len(evidence.facts)} 個可觀察 facts"
                     + (
@@ -668,7 +679,7 @@ def _scenario_execution(
                     "系統判定",
                     (
                         "明確互動請求"
-                        if input_kind == "audio"
+                        if cue.cue_kind.value == "explicit_request"
                         else (
                             "Care Cue"
                             if cue.cue_kind.value == "care_cue"
@@ -680,6 +691,11 @@ def _scenario_execution(
             )
         )
     for record in journal_records:
+        if isinstance(record, SkillsAvailable):
+            flow.append(PresentationBeat(
+                "skills_available", "可用 Skills", "可選技能（尚未載入）",
+                " · ".join(f"{item['name']}：{item['description']}" for item in record.skills),
+            ))
         if not isinstance(record, ToolCalled):
             continue
         noted = notes.get(record.turn)
@@ -718,6 +734,22 @@ def _scenario_execution(
                     ),
                 )
             )
+        elif record.tool in {"activate_skill", "read_skill_resource", "listen"}:
+            observation = observations.get(record.turn)
+            if observation is not None:
+                returned = observation.result
+                if "refused" in returned:
+                    headline, detail = "請求被拒絕", returned["refused"]
+                elif record.tool == "activate_skill":
+                    headline, detail = returned["name"], "技能已載入；只引導本次 Episode 後續 Tools。"
+                elif record.tool == "read_skill_resource":
+                    headline, detail = returned["resource"], "已按需讀取；沒有執行 script。"
+                else:
+                    headline = returned.get("transcript") or "這次沒有收到新話語"
+                    detail = f"聆聽結果：{returned['ending']}；{returned['source']}，說話者未辨識。"
+                flow.append(PresentationBeat(
+                    returned.get("kind", "refused"), "本次 Tool 結果", headline, detail,
+                ))
         elif record.tool in {"observe_target", "inspect_scene"}:
             observation = observations.get(record.turn)
             if observation is not None:
@@ -735,6 +767,13 @@ def _scenario_execution(
                         "保留不確定性",
                     )
                 )
+        elif record.tool in {"move_head", "move_arms", "display_image", "change_led"}:
+            observation = observations.get(record.turn)
+            if observation is not None and observation.result.get("ok"):
+                flow.append(PresentationBeat(
+                    "simulated_effect", "模擬表達成功", describe(record).headline,
+                    "姿勢由本次成功的 Tool 結果更新；不是實機動作。",
+                ))
     completed = bool(
         episode is not None
         and result.ending is RuntimeEnding.INPUT_EXHAUSTED
@@ -786,6 +825,8 @@ def _scenario_execution(
                     "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
                 )
                 if input_kind == "audio"
+                else "文字與後續話語、model 決策為預先定義的腳本；Skill 載入、listen、Runtime、Tools 與 Journal 都在這次重新執行。Robot 為模擬，未呼叫真實 model 或 Misty II。"
+                if input_kind == "text"
                 else (
                     "選定的 synthetic frame timeline 由目前程式重新執行本機"
                     "匿名追蹤與 temporal visual gate；detector signals 為預先"

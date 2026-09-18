@@ -149,7 +149,7 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "visual",
     }
     assert listed[1]["availability"] == "ready"
-    assert listed[1]["ticket"] == "06"
+    assert listed[1]["ticket"] == "07"
     assert [fixture["key"] for fixture in listed[1]["visual_fixtures"]] == [
         "care-sustained-signals",
         "care-expression-words-conflict",
@@ -371,6 +371,7 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "input",
         "evidence",
         "cue",
+        "skills_available",
         "decision_note",
         "tool_call",
         "decision_note",

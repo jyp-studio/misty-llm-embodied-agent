@@ -2,6 +2,8 @@
 openai>=1.30
 pydantic>=2.0
 pydantic-settings>=2.0
+# Safe parsing of Agent Skills YAML frontmatter; no scripts are executed.
+PyYAML>=6.0,<7
 # PINNED, and the ceiling is load-bearing — do not loosen it.
 # Face detection uses the legacy `mp.solutions.face_mesh` API, which upstream
 # REMOVED in 0.10.31 (and in 1.0.0). `mediapipe>=0.10` therefore resolves to a

@@ -167,7 +167,10 @@ def test_the_instructions_a_session_was_built_with_are_the_ones_it_sends():
     session.episode(speech("hello"), render=False)
 
     told = [e["content"] for e in model.contexts[0] if e["role"] == "system"]
-    assert told == ["You are a lamp."]
+    assert told[0] == "You are a lamp."
+    assert PERSONA not in told
+    assert len(told) == 2
+    assert told[1].startswith("Available Skills (name and description only):")
 
 
 def test_a_session_will_not_write_an_episode_into_an_existing_journal(tmp_path):

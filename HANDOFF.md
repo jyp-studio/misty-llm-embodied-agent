@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-14 · branch `refactor/react-agent`
+Last updated: 2026-09-15 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–06 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–07 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -61,7 +61,14 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
    geometry and a visual/verbal conflict where explicit words take priority.
    Both show Evidence, Decision Note, selected Tool, Observation and ending.
 
-Ticket 05 ends at `750aa93`; ticket 06 is the current implementation.
+21. Local Skills expose metadata first, then typed activation/reference reads.
+    Loaded guidance and permissions are scoped to one Episode, never scripts.
+22. The care card's calming-support variant runs speak/listen/head expression
+    with timed scripted speech and shows Skill state during Journal replay.
+23. Bounded listen has explicit silence/unavailable/error/aborted results;
+    live audio wiring shares the VAD owner and caps one ASR attempt.
+
+Ticket 06 ends at `36fbdc4`; ticket 07 is the current implementation.
 
 ## Verification
 
@@ -100,14 +107,14 @@ timing, threshold calibration, association accuracy, and reliability are
 hardware-unverified.
 
 The current social runtime does not yet implement identity-aware handoff,
-Skills, or target-aware movement. The care path is supported only by synthetic
+or target-aware movement. The care path is supported only by synthetic
 temporal frames and scripted model decisions; it is not validated emotion
 recognition. The A-to-B card remains a roadmap preview and cannot run until
 its target/handoff vertical ticket implements that capability.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/07-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/08-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

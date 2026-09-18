@@ -384,6 +384,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Audio
     # ------------------------------------------------------------------
+    listen_timeout_s: float = Field(
+        default=5.0, gt=0, le=30,
+        description="Bound for an explicit listen Tool, including any hosted transcription.",
+    )
     silence_timeout_s: float = Field(
         default=4.0, gt=0.0,
         description=(

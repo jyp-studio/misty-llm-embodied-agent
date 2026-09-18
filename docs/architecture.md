@@ -103,6 +103,33 @@ failures also give every pending Cue a typed drop reason before stopping.
 The Episode Turn cap defaults to 12. It is an initial design value, not a
 hardware measurement.
 
+`SkillCatalog` is separate from `ToolRegistry`. It validates local `SKILL.md`
+YAML metadata using a safe loader, advertises only names/descriptions, and
+loads instructions through typed `activate_skill`. `read_skill_resource`
+reads one reference or UTF-8 text asset only after activation in the current
+Episode. Files are bounded to 64 KiB; path escapes, symlinks, binary content,
+missing resources and scripts are refused. No code is executed, fetched from
+the network or given direct robot authority. A compliant new directory under
+`misty_agent/skills/` is discoverable without changing the core or registry.
+Invalid directories are omitted from discovery and explicitly refused if
+activation is attempted. Non-text assets are not supported in this version.
+
+Activation and resource contents return through matching native Tool results;
+the same bounded ReAct loop decides what to do next. Activation permissions
+and instructions live only in that Episode, including on error or abort.
+The Journal records discovery and actual activation results. Storyboard
+replay shows the active Skills at each Moment and clears them at the ending.
+
+`listen` is an explicit active-perception Tool, not an enlarged Snapshot. Its
+wait defaults to five seconds (`MISTY_LISTEN_TIMEOUT_S`, at most 30), with
+injected clock and stop checks. It reports heard/silence/unavailable/error/
+aborted, source, age, freshness and speaker uncertainty. The live audio
+provider owns the same VAD queue: an explicit listen authorises one bounded
+ASR attempt without another wake; a pending wake remains Attention's. The
+total listening budget also caps the ASR timeout. Decoded transcript queues
+report dequeue age, explicitly not an observed capture age. This wiring is
+tested with injected sources only, not a Misty microphone.
+
 The Demo greeting and care cards offer checked-in synthetic WAV fixtures and
 synthetic visual timelines. Each click reruns the selected local gate, then
 uses scripted ASR/detector signals/model decisions and a simulated robot, so it
@@ -123,8 +150,14 @@ response containing more than one call. A short public Decision Note may be
 recorded in the Journal; it is not private model reasoning and cannot carry
 physical control parameters.
 
-This is ticket 06's vertical slice, not the completed social system.
-Person-aware handoff, Skills, and target-aware movement remain future tickets
+The care card also offers `請協助我冷靜`: a timed text request, Skill activation,
+optional reference reading, speak/listen, gentle head expression and `done`.
+Its timed reply is consumed by `listen`, not inserted by the model script.
+The decisions and speech remain authored fixtures, not recorded LLM outputs.
+This verifies the current wiring, not autonomous model policy quality.
+
+This is ticket 07's vertical slice, not the completed social system.
+Person-aware handoff and target-aware movement remain future tickets
 in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on

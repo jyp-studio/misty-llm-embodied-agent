@@ -207,6 +207,14 @@ class ModelCalled(Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class SkillsAvailable(Record):
+    """Metadata actually offered at this Episode's discovery boundary."""
+
+    skills: list
+    type: str = "skills_available"
+
+
+@dataclass(frozen=True, kw_only=True)
 class DecisionNoted(Record):
     """A short public purpose for one Tool choice, never private reasoning."""
 
@@ -404,6 +412,7 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
         TurnStarted,
         ModelCalled,
         DecisionNoted,
+        SkillsAvailable,
         ToolCalled,
         ToolRejected,
         Observation,
@@ -748,6 +757,8 @@ def describe(record: Record) -> Described:
         )
     if isinstance(record, DecisionNoted):
         return Described("decision note", record.note)
+    if isinstance(record, SkillsAvailable):
+        return Described("available Skills", ", ".join(item["name"] for item in record.skills))
     if isinstance(record, ToolCalled):
         arguments = ", ".join(f"{k}={v!r}" for k, v in sorted(record.args.items()))
         return Described(f"{record.tool}({arguments})")

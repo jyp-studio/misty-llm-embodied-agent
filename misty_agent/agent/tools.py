@@ -56,6 +56,7 @@ from misty_agent.agent.layering import (
 )
 from misty_agent.control.approach import approach as run_approach
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
+from misty_agent.agent.skills import EpisodeSkills, SkillCatalog, SkillRejected
 
 
 class Ears(Protocol):
@@ -109,6 +110,9 @@ class ToolContext:
     #: hence a null object rather than a `None` every caller has to test.
     ears: Ears = HEARS_NOTHING
     active_perception: Any = NO_ACTIVE_PERCEPTION
+    skills: Optional[SkillCatalog] = None
+    skill_session: Optional[EpisodeSkills] = None
+    listener: Any = None
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -572,6 +576,14 @@ class PlayAudioArgs(BaseModel):
     )
 
 
+class ActivateSkillArgs(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class SkillResourceArgs(ActivateSkillArgs):
+    resource: str = Field(min_length=1, max_length=256)
+
+
 #: Characters that are a syllable rather than a letter, and that are written
 #: without spaces between words. Counting these as words is what made the
 #: estimate wrong for the language this robot is actually spoken to in.
@@ -644,6 +656,31 @@ def build_registry() -> ToolRegistry:
     Misty has a default.
     """
     registry = ToolRegistry()
+
+    @registry.tool("activate_skill", "Load a named Skill's guidance for this Episode only. No effects or scripts run.")
+    def activate_skill(args: ActivateSkillArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        if ctx.skill_session is None:
+            return {"refused": "No Skill Catalog is configured"}
+        try:
+            return ctx.skill_session.activate(args.name)
+        except SkillRejected as error:
+            return {"refused": str(error)}
+
+    @registry.tool("read_skill_resource", "Read one active Skill reference or text asset. Scripts cannot run.")
+    def read_skill_resource(args: SkillResourceArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        if ctx.skill_session is None:
+            return {"refused": "No Skill Catalog is configured"}
+        try:
+            return ctx.skill_session.read_resource(args.name, args.resource)
+        except SkillRejected as error:
+            return {"refused": str(error)}
+
+    @registry.tool("listen", "Wait briefly for the person's next utterance. Silence is not consent.")
+    def listen(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
+        if ctx.listener is None:
+            from misty_agent.perception.listening import ListeningEnding, ListeningResult
+            return ListeningResult(ListeningEnding.UNAVAILABLE).as_tool_result()
+        return ctx.listener.listen(timeout_s=ctx.config.listen_timeout_s).as_tool_result()
 
     @registry.tool(
         "done",

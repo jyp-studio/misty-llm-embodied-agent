@@ -166,6 +166,39 @@ class LiveInputAdapter:
         self._stopped.set()
         self._audio.stop()
 
+    def poll_utterance(self, *, timeout_s: float):
+        """A listen Tool authorises one ASR attempt, without another wake.
+
+        Called by the single Episode owner, never in parallel with Attention.
+        An already pending wake remains Attention's; listen cannot steal it.
+        """
+        from misty_agent.perception.listening import ListeningEnding, ListeningResult
+
+        self._require_running()
+        if self._pending_wake is not None:
+            return ListeningResult(ListeningEnding.UNAVAILABLE, source="pending_wake")
+        segment = self._audio.read_segment(timeout=0)
+        if segment is None:
+            self._collect_terminal()
+            self._raise_source_failure()
+            return None
+        age = max(0.0, self._clock.monotonic() - segment.ended_at)
+        if age > 5.0 or is_silent(segment.pcm, self._config.silence_threshold_db):
+            return None
+        max_samples = round(self._config.max_utterance_s * self._sample_rate)
+        attempt = self._transcriber.transcribe_bounded(
+            segment.pcm[:max_samples], self._sample_rate,
+            timeout_s=min(timeout_s, self._config.asr_timeout_s),
+        )
+        if attempt.ending is not TranscriptionEnding.TRANSCRIBED:
+            return ListeningResult(ListeningEnding.ERROR, source="hosted_asr")
+        if not attempt.text.strip():
+            return ListeningResult(ListeningEnding.SILENCE, source="hosted_asr")
+        return ListeningResult(
+            ListeningEnding.HEARD, attempt.text.strip()[:4000], source="hosted_asr",
+            age_s=max(0.0, self._clock.monotonic() - segment.ended_at),
+        )
+
     @property
     def exhausted(self) -> bool:
         """Whether a finite provider has no notices or cues left to emit."""

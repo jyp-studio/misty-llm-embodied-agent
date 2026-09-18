@@ -379,8 +379,9 @@ def test_the_journal_that_is_asked_for_is_the_one_that_happened(tmp_path):
 
     assert code == 0
     written = from_jsonl(kept.read_text())
-    assert [record.type for record in written][:2] == [
+    assert [record.type for record in written][:3] == [
         "episode_started",
+        "skills_available",
         "turn_started",
     ]
     assert written[-1].type == "episode_finished"
@@ -436,6 +437,7 @@ def test_an_interrupted_episode_still_leaves_what_it_got_through(tmp_path):
     during = from_jsonl(StopsDead.seen_mid_episode)
     assert [record.type for record in during] == [
         "episode_started",
+        "skills_available",
         "turn_started",
     ]
     assert from_jsonl(kept.read_text()) == during

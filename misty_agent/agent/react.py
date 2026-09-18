@@ -53,7 +53,8 @@ durable unit memory is made of, and this is deliberately not that.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.evidence import TriggerEvidence
@@ -66,6 +67,7 @@ from misty_agent.agent.journal import (
     ModelCalled,
     Observation,
     Snapshot,
+    SkillsAvailable,
     TurnStarted,
 )
 from misty_agent.agent.layering import mentions_control_parameter
@@ -159,10 +161,21 @@ def run_episode(
     # then never wired up.
     if instructions:
         working_context.append({"role": "system", "content": instructions})
+    phase = "tool"
     try:
+        if ctx.skills is not None:
+            ctx = replace(ctx, skill_session=ctx.skills.for_episode())
+            available = ctx.skills.available()
+            journal.record(SkillsAvailable, skills=available)
+            working_context.append({
+                "role": "system",
+                "content": "Available Skills (name and description only): "
+                + json.dumps(available, ensure_ascii=False),
+            })
+        phase = "memory"
         remembered = memory.as_prompt_block()
     except Exception as error:
-        _record_failure_and_halt(journal, ctx.robot, "memory", error)
+        _record_failure_and_halt(journal, ctx.robot, phase, error)
         journal.record(EpisodeFinished, outcome="error", turns=0, steps=0)
         return EpisodeOutcome(outcome="error", turns=0, steps=0)
     if remembered:

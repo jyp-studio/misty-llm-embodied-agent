@@ -24,6 +24,7 @@ import pytest
 
 from misty_agent.agent.journal import (
     DecisionNoted,
+    SkillsAvailable,
     ExecutionFailed,
     JOURNAL_SCHEMA,
     OUTCOMES,
@@ -64,6 +65,7 @@ def one_of_each():
             started_at_wall_clock="2026-08-24T11:00:00+08:00",
             schema=JOURNAL_SCHEMA,
         ),
+        SkillsAvailable(t=0.0, episode_id="ep-1", skills=[{"name": "support", "description": "Offer company"}]),
         TurnStarted(t=0.01, episode_id="ep-1", turn=1),
         ModelCalled(
             t=1.85,

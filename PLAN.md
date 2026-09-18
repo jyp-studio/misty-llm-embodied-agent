@@ -2643,3 +2643,29 @@ Journal 顯示 Evidence、Decision Note、感知／互動 Tool、Observation 和
 model Decisions、後續 speech 與 robot effect 都明確是腳本／模擬。MediaPipe geometry extraction
 存在，但 threshold、真實哭泣辨識、真人／真相機準確率與所有 Misty II 行為都未驗證；這不是情緒
 辨識準確率聲明。
+
+### 16.56 Skills 是按需讀取的指引，不是另一個執行器（ticket 07）
+
+`SkillCatalog` 與 `ToolRegistry` 分離。第一個 Turn 只收到有效 Skill 的 name/description；
+`activate_skill` 才讀完整指引，`read_skill_resource` 才讀 references 或 UTF-8 text assets。
+這兩個 capability 仍經單一 typed Tool schema/validation/dispatch，內容放在 matching Tool result
+供同一 Episode 後續 Turns 使用。每次 Episode 新建 activation permissions，所有結束方式都不保留
+它們；不把 Skill instructions 寫入跨 Episode memory。Journal 保留當次 discovery 與 Tool 結果，
+Storyboard 每個 Moment 顯示 active Skills，終止 Moment 清空。這是執行證據，不是下一場的 context。
+
+使用 PyYAML 的 SafeLoader 子類處理常見 frontmatter，拒絕重複 key、無效 name/description 與空內容。
+每份文字上限 64 KiB，拒絕 symlink、越界路徑、非文字資源與 scripts。第一版 assets 只支援 UTF-8
+文字，不執行任意程式、下載網路 Skill 或建立 nested agent。新增合規 Skill directory 不改 ReAct
+core 或 Tool Registry；invalid Skill 不進 discovery，嘗試 activation 時明確回傳 refusal。
+
+`listen` 補上原本沒有的 bounded active listening，預設等待五秒、上限三十秒，由 config 控制，
+不擴張 cheap Snapshot。模擬時消費真正按時間抵達的 scripted utterance；live provider 共用唯一 VAD
+queue，明確 listen 授權一次 ASR、不需要再 wake，且不搶既有 pending wake。聆聽回傳 typed ending、
+source、age/freshness 與不確定性；transcript queue 的 age 明列為 dequeue age 而非 capture age。
+等待會檢查 stop，hosted ASR timeout 不得超過剩餘聆聽預算。真機收音與 speaker attribution 未驗證。
+
+Demo 保留三張橫向卡，「關心」卡加入共用 `CALMING_SUPPORT` 的「請協助我冷靜」文字情境：
+activate → read reference → speak → listen → gentle head expression → speak → done。Run 當下真的
+執行 Skill 載入、Runtime、Tools 與 Journal；model Decisions、後續話語仍是預先編寫的 fixtures，
+不是過去真 model 的輸出，也不證明模型自主採用指引的品質。畫面與文件持續明示 scripted／simulation；
+未呼叫付費模型，沒有 Misty II，沒有任何實機成果。

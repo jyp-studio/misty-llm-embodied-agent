@@ -67,6 +67,18 @@ speech produced by that run. Its input and model choices are predefined, which
 the page labels directly. The separate **Live AI** panel
 needs `OPENAI_API_KEY` or `OAI_CONFIG_LIST.json` and may use a hosted model.
 
+In the care card, select **請協助我冷靜 · Skill、聆聽與表達** to inspect
+progressive Skill discovery → activation → reference reading → speak/listen
+→ head expression → completion. Replay displays the active Skill at each
+Moment and clears it when the Episode ends. This is a freshly executed
+**scripted acceptance run**, not a previously recorded model output.
+
+Add local Skills as `misty_agent/skills/<name>/SKILL.md` with YAML `name` and
+`description` frontmatter. Only metadata reaches the first Turn; instructions
+and references/text assets load on demand. Resources are UTF-8 text, capped
+at 64 KiB; scripts, symlinks and path escapes are refused. No Skill can execute
+code or bypass typed Tools. See [current architecture](docs/architecture.md).
+
 The command-line path also crosses `SocialAgentRuntime`:
 
 ```bash
@@ -154,7 +166,7 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
 gate, plus synthetic-fixture-verified Social Invitation and uncertain Care Cue
-visual gates. Planned vertical slices add person-aware handoff, Skills,
+visual gates, progressive Skills and bounded listening. Planned vertical slices add person-aware handoff,
 ephemeral social state, and target-aware movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 

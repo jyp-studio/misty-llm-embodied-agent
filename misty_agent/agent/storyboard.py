@@ -138,6 +138,8 @@ class Moment:
     tone: str
     robot: RobotState
     facts: Mapping[str, Any] = field(default_factory=dict)
+    active_skills: Tuple[str, ...] = ()
+    skill_status: str = "Active Skills：無（未載入或 Episode 已結束）"
 
 
 #: How each ending reads to somebody who has not met this project's
@@ -179,8 +181,15 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
     pending: Optional[Dict[str, Any]] = None
     turn: Optional[int] = None
     moments = []
+    active_skills: list[str] = []
 
     for record in records:
+        if isinstance(record, Observation) and record.result.get("kind") == "skill_activation":
+            name = record.result["name"]
+            if name not in active_skills:
+                active_skills.append(name)
+        if isinstance(record, EpisodeFinished):
+            active_skills.clear()
         robot, pending = _after(record, robot, pending)
         turn = getattr(record, "turn", None) or turn
         said = describe(record)
@@ -194,6 +203,10 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
                 tone=said.tone,
                 robot=robot,
                 facts=_facts(record),
+                active_skills=tuple(active_skills),
+                skill_status="Active Skills：" + (
+                    "、".join(active_skills) or "無（未載入或 Episode 已結束）"
+                ),
             )
         )
 

@@ -202,7 +202,7 @@
     <div class="result-header">
       <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 05</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">選擇錄音或視覺時間線，查看本機 gate 如何決定是否互動。</p></div>
       <div class="fixture-control" id="fixtureControl" hidden>
-        <label for="wakeFixture">選擇這次要分析的錄音或視覺時間線</label>
+        <label for="wakeFixture">選擇這次要執行的範例</label>
         <select id="wakeFixture"></select>
       </div>
       <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
@@ -219,7 +219,7 @@
         <div class="cue-queue" id="cueQueue"></div>
       </section>
       <div class="replay"><button id="replayJournal" type="button" disabled>重播 Episode Journal</button><span id="replayCounter"></span></div>
-      <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span></div>
+      <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span><span id="replaySkills"></span></div>
     </div>
     <span class="flow-label" id="flow-label">執行前預覽</span>
     <div class="flow" id="flow"></div>
@@ -346,6 +346,7 @@ function replayJournal() {
     byId("replayKind").textContent = moment.kind.replaceAll("_", " ").toUpperCase();
     byId("replayHeadline").textContent = moment.headline;
     byId("replayDetail").textContent = moment.detail || "";
+    byId("replaySkills").textContent = moment.skill_status || "";
     index += 1;
     if (index < state.replayMoments.length) {
       state.replayTimer = window.setTimeout(showNext, 550);

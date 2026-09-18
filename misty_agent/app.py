@@ -76,6 +76,8 @@ from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
+from misty_agent.agent.skills import SkillCatalog, bundled_skills
+from misty_agent.perception.listening import BoundedListener, TranscriptSource
 from misty_agent.audio_input import LiveInputAdapter
 from misty_agent.config import Settings, settings
 from misty_agent.drivers.audio_stream import AudioStream
@@ -179,6 +181,7 @@ class Session:
     #: a session with no microphone is still a session.
     ears: Any = HEARS_NOTHING
     active_perception: Any = NO_ACTIVE_PERCEPTION
+    skills: SkillCatalog = field(default_factory=bundled_skills)
     #: Runtime input owned by the external wake/capture/ASR path. When set,
     #: Episode snapshots must not race it for raw audio segments.
     attention_source: Optional[Any] = None
@@ -320,6 +323,10 @@ class Session:
         episode_perception = self.active_perception.for_track(
             evidence.facts.get("track_reference")
         )
+        microphone = self._microphone()
+        listening_source = self.attention_source
+        if listening_source is None and microphone is not None:
+            listening_source = TranscriptSource(microphone)
         self._running = stop
         try:
             outcome = run_episode(
@@ -333,6 +340,8 @@ class Session:
                     clock=self.clock,
                     ears=self.ears,
                     active_perception=episode_perception,
+                    skills=self.skills,
+                    listener=BoundedListener(listening_source, self.clock, stop),
                 ),
                 journal=journal,
                 perception=self._perception(),

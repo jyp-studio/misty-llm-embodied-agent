@@ -87,6 +87,38 @@ class PlannedScenario(ScenarioCard):
 
 
 @dataclass(frozen=True)
+class TimedSpeech:
+    at_s: float
+    text: str
+
+
+class ScenarioSpeech:
+    """Finite, timed utterances shared by acceptance tests and the Demo."""
+
+    def __init__(self, clock, utterances: Sequence[TimedSpeech]):
+        self._clock = clock
+        self._utterances = list(utterances)
+        self._start = clock.monotonic()
+
+    def mute_for(self, seconds: float) -> None:
+        pass  # Scripted external speech, not acoustic echo or TTS simulation.
+
+    def read(self, timeout: float):
+        if self._utterances and self._clock.monotonic() - self._start >= self._utterances[0].at_s:
+            return self._utterances.pop(0)
+        return None
+
+
+@dataclass(frozen=True)
+class TextScenarioScript:
+    key: str
+    label: str
+    inputs: Tuple[ScheduledInput, ...]
+    decisions: Tuple[Decision, ...]
+    speech: Tuple[TimedSpeech, ...] = ()
+
+
+@dataclass(frozen=True)
 class AcceptanceScenario(ScenarioCard):
     """One deterministic, no-hardware story through SocialAgentRuntime."""
 
@@ -97,6 +129,7 @@ class AcceptanceScenario(ScenarioCard):
     visual_fixtures: Tuple[VisualFixture, ...] = ()
     visual_decisions: Tuple[Decision, ...] = ()
     visual_scripts: Tuple[VisualScenarioScript, ...] = ()
+    text_scripts: Tuple[TextScenarioScript, ...] = ()
 
     def __post_init__(self) -> None:
         if self.availability is not ScenarioAvailability.READY:
@@ -375,12 +408,33 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
 )
 
 
+CALMING_SUPPORT = TextScenarioScript(
+    key="calming-support",
+    label="請協助我冷靜 · Skill、聆聽與表達",
+    inputs=(ScheduledInput(0, TimedText(text="請協助我冷靜")),),
+    decisions=(
+        Decision("activate_skill", {"name": "supportive-interaction"}, 20, 4,
+                 note="先載入支持性互動指引，不診斷或強迫靠近。"),
+        Decision("read_skill_resource", {"name": "supportive-interaction", "resource": "references/conversation.md"}, 22, 4,
+                 note="需要時才讀取後續對話參考。"),
+        Decision("speak", {"text": "我在這裡。你希望安靜陪著，還是想說說話？"}, 30, 8,
+                 note="詢問對方希望的陪伴方式。"),
+        Decision("listen", {}, 32, 3, note="等待對方回答，不把沉默當作同意。"),
+        Decision("move_head", {"roll": 8}, 34, 3, note="以輕微歪頭表達留意，底盤不移動。"),
+        Decision("speak", {"text": "好，我會尊重你的空間。"}, 36, 6,
+                 note="回應對方希望安靜陪伴的話，停止追問。"),
+        Decision("done", {}, 40, 1, note="已回應需求，主動結束並釋放技能脈絡。"),
+    ),
+    speech=(TimedSpeech(1.0, "安靜陪我就好"),),
+)
+
+
 CRYING_CARE = AcceptanceScenario(
     name="crying-care",
     title="有人在 Misty 面前哭泣",
-    subtitle="比較重新觀察、場景檢查與尊重本人說法的決策。",
+    subtitle="觀察不確定線索，或在明確求助時載入支持性互動 Skill。",
     availability=ScenarioAvailability.READY,
-    ticket="06",
+    ticket="07",
     limitation=(
         "只以 synthetic detector signals 驗證 temporal Care Cue；模型決策、"
         "後續聽到的話與 robot 都是腳本／模擬，未使用真實相機或 Misty II。"
@@ -402,6 +456,7 @@ CRYING_CARE = AcceptanceScenario(
     actors=("person",),
     inputs=(),
     decisions=(),
+    text_scripts=(CALMING_SUPPORT,),
     visual_fixtures=CARE_VISUAL_FIXTURES,
     visual_scripts=(
         VisualScenarioScript(

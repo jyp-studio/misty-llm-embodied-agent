@@ -37,6 +37,7 @@ from misty_agent.agent.journal import (
     JOURNAL_SCHEMA,
     OUTCOMES,
     DecisionNoted,
+    SkillsAvailable,
     EpisodeFinished,
     EpisodeStarted,
     ExecutionFailed,
@@ -81,6 +82,7 @@ def one_of_every_kind():
     """
     journal = a_journal()
     journal.record(EpisodeStarted, trigger="speech")
+    journal.record(SkillsAvailable, skills=[{"name": "support", "description": "Offer company"}])
     journal.record(TurnStarted, turn=1)
     journal.record(ModelCalled, turn=1, latency_ms=412, tokens_in=930, tokens_out=17)
     journal.record(
@@ -196,6 +198,7 @@ def test_every_record_kind_becomes_a_moment():
 
     assert [moment.kind for moment in board.moments] == [
         "episode_started",
+        "skills_available",
         "turn_started",
         "model_called",
         "decision_noted",

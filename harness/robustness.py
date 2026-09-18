@@ -64,6 +64,7 @@ from misty_agent.config import Settings, settings as default_settings
 from misty_agent.control.approach import approach
 from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot.interface import Effect
+from misty_agent.robot.simulated import SIMULATED_BEARING
 
 #: Segment B, as ticket 06 measured it. See
 #: docs/measurements/m4-latency-baseline.md — this one *is* a measurement, and
@@ -347,7 +348,7 @@ class _SimulatedWorld:
             frame_arrived_at=frame_arrived_at,
             detected_at=frame_arrived_at + self._pipeline_lag_s,
             bearing_deg=0.0,
-            uncertainty=("simulated: aligned by construction",),
+            uncertainty=(SIMULATED_BEARING,),
         )
 
     def drive(

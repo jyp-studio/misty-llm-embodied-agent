@@ -59,6 +59,7 @@ from misty_agent.agent.journal import (
 )
 from misty_agent.agent.model import MissingApiKey, OpenAIModel
 from misty_agent.agent.storyboard import storyboard_of
+from misty_agent.agent.tools import STEPS_KEY
 from misty_agent.app import (
     API_KEY_FILE,
     TRIGGERS,
@@ -536,6 +537,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
                 fixture_label=selected_fixture.label,
                 input_kind=("audio" if selected_audio else "text" if selected_text else "visual"),
                 actors=case.actors,
+                robot_state=session.robot.as_facts(),
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
@@ -554,6 +556,7 @@ def _scenario_execution(
     fixture_label: str,
     input_kind: str,
     actors: Sequence[str] = (DEFAULT_ACTOR,),
+    robot_state: Optional[Mapping[str, Any]] = None,
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview.
 
@@ -686,6 +689,7 @@ def _scenario_execution(
                 input_kind,
                 during=during.get(record.cue_id, ()),
                 actor_of=actor_of,
+                robot_state=robot_state,
             ))
         else:
             beat = _cue_beat(record, actor_of, input_kind)
@@ -949,31 +953,45 @@ _DROP_WORDING = {
 }
 
 
-_STEP_WORDING = {"turn": "轉向", "forward": "前進", "back": "後退"}
+_MOTION_WORDING = {"rotate": "轉向", "forward": "前進", "back": "後退"}
 
 
-def _approach_beats(result: Mapping[str, Any]) -> list:
-    """The controller's typed result, then each bounded chassis motion with
-    the fresh distance and bearing it was planned from. Simulated only."""
-    trace = result.get("trace") or []
+def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str, Any]]) -> list:
+    """The controller's typed result, each bounded chassis motion with the
+    fresh distance and bearing it was planned from, then where the chassis
+    and the head ended up. Simulated only."""
     ending = (
-        f"{result.get('result')} · {result.get('steps', 0)} 個 Step"
-        f"（{result.get('turns', 0)} 次轉向）"
+        f"{result.get('result')} · {result.get(STEPS_KEY, 0)} 個 Step"
+        f"（{result.get('rotations', 0)} 次轉向）"
     )
+    caveats = "；".join(result.get("uncertainty") or ()) or "沒有額外不確定性註記"
     beats = [PresentationBeat(
         "approach", "Target-aware approach", ending,
         f"最後讀數：距離 {result.get('distance_cm')} cm、bearing "
-        f"{result.get('bearing_deg')}°。底盤先對準再靠近；頭部 yaw 不算對準。"
+        f"{result.get('bearing_deg')}°（{caveats}）。底盤先對準再靠近；"
         "速度、角速度與時間由 controller 決定，模型只表達意圖；常數為模擬值。",
     )]
-    for index, step in enumerate(trace, start=1):
-        unit = "°" if step["kind"] == "turn" else " cm"
+    for index, motion in enumerate(result.get("motions") or [], start=1):
+        amount = (
+            f"{round(motion['rotate_deg'], 1)}°"
+            if motion["kind"] == "rotate"
+            else f"{round(motion['move_cm'], 1)} cm"
+        )
         beats.append(PresentationBeat(
             "movement_step", f"Step {index}",
-            f"Step {index}：{_STEP_WORDING.get(step['kind'], step['kind'])} "
-            f"{round(step['commanded'], 1)}{unit}",
-            f"決策時距離 {step['distance_cm']} cm、bearing {step['bearing_deg']}°；"
+            f"Step {index}：{_MOTION_WORDING.get(motion['kind'], motion['kind'])} {amount}",
+            f"決策時距離 {motion['distance_cm']} cm、bearing {motion['bearing_deg']}°；"
             "每步後需新的 Reading 才能繼續。模擬，非實機。",
+        ))
+    if robot_state is not None:
+        target = robot_state.get("target") or {}
+        beats.append(PresentationBeat(
+            "chassis", "底盤與頭部",
+            f"底盤 heading {robot_state.get('heading_deg')}°，頭部 yaw "
+            f"{robot_state.get('pose', {}).get('head', [0, 0, 0])[2]}°",
+            f"目前 target：距離 {target.get('distance_cm')} cm、bearing "
+            f"{target.get('bearing_deg')}°。頭部 yaw 不算對準，只有底盤 heading 算。"
+            "模擬狀態，非實機。",
         ))
     return beats
 
@@ -1025,6 +1043,7 @@ def _episode_beats(
     *,
     during: Sequence[RuntimeRecord],
     actor_of,
+    robot_state: Optional[Mapping[str, Any]] = None,
 ) -> list:
     """One Episode's evidence, target, notices and Tool results, in order.
 
@@ -1188,7 +1207,7 @@ def _episode_beats(
         elif record.tool == "approach":
             observation = observations.get(record.turn)
             if observation is not None:
-                flow.extend(_approach_beats(observation.result))
+                flow.extend(_approach_beats(observation.result, robot_state))
     flow.extend(collected(None))
     return flow
 

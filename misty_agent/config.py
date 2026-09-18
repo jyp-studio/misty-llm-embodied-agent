@@ -238,6 +238,23 @@ class Settings(BaseSettings):
         ),
     )
 
+    turn_percent: int = Field(
+        default=20, gt=0, le=100,
+        description=(
+            "Angular drive as a PERCENT of max, not a physical unit. "
+            "UNCALIBRATED, like drive_percent: the motor deadband is unknown."
+        ),
+    )
+    deg_per_sec_at_percent: float = Field(
+        default=45.0, gt=0.0,
+        description=(
+            "Rotation rate (deg/s) at turn_percent. UNCALIBRATED: a simulation "
+            "constant, never measured on a Misty II. To measure: "
+            "drive_time(linearVelocity=0, angularVelocity=turn_percent, "
+            "timeMs=2000), measure the angle turned, divide by 2."
+        ),
+    )
+
     # ------------------------------------------------------------------
     # Locomotion — CONTROL LAW (pure software, provable)
     # ------------------------------------------------------------------
@@ -303,22 +320,6 @@ class Settings(BaseSettings):
     max_align_steps: int = Field(
         default=6, gt=0,
         description="Turns allowed before alignment is reported failed.",
-    )
-    turn_percent: int = Field(
-        default=20, gt=0, le=100,
-        description=(
-            "Angular drive as a PERCENT of max, not a physical unit. "
-            "UNCALIBRATED, like drive_percent: the motor deadband is unknown."
-        ),
-    )
-    deg_per_sec_at_percent: float = Field(
-        default=45.0, gt=0.0,
-        description=(
-            "Turning rate (deg/s) at turn_percent. UNCALIBRATED: a simulation "
-            "constant, never measured on a Misty II. Turns are divided by "
-            "max_actual_motion_multiplier so an over-eager robot still stays "
-            "inside align_tolerance_deg."
-        ),
     )
     post_step_settle_s: float = Field(
         default=0.8, ge=0.0,

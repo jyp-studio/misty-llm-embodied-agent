@@ -68,7 +68,7 @@ def test_a_target_is_bound_from_evidence_and_moves_between_lost_and_reacquired()
     ))
     assert visual.reference == "anon-1"
     assert visual.state is TargetState.BOUND
-    assert visual.as_facts() == {"track_reference": "anon-1", "state": "bound", "bound_at": 1.5}
+    assert visual.as_facts() == {"track_reference": "anon-1", "state": "bound", "bound_at_s": 1.5}
 
     assert visual.update_from(observed(visible=True)) is TargetState.VISIBLE
     assert visual.update_from(observed(visible=False)) is TargetState.LOST
@@ -134,7 +134,7 @@ def test_active_perception_tools_report_and_update_the_episode_target():
     journal = Journal(episode_id="ep-1")
 
     seen = dispatch(registry, "observe_target", {}, ctx, journal, turn=1)
-    assert seen.result["target"] == {"track_reference": "anon-1", "state": "visible", "bound_at": 0.0}
+    assert seen.result["target"] == {"track_reference": "anon-1", "state": "visible", "bound_at_s": 0.0}
 
     gate.observe(observed_at=0.3, frame_index=1, image=FRAME, detections=())
     clock.sleep(0.3)

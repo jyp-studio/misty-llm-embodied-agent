@@ -92,7 +92,7 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     fail closed as `bearing_unavailable`, which is what the live distance
     pipeline produces today. Stale readings, the alignment budget, the Step
     cap and the wall-clock deadline are separate typed results, and the Tool
-    result carries a bounded per-Step trace. The simulated adapter has a
+    result carries every motion with the reading it was planned from. The simulated adapter has a
     chassis heading and a relative-polar person; every turning and travel
     constant is a simulated or hardware-unverified value.
 29. The greeting card's "過來陪我" script shows alignment, each Step with the

@@ -9,13 +9,14 @@ error translation — stays behind :func:`approach`.
 
 A reading carries a distance and, when the source can say, a bearing: where
 the person is relative to the chassis heading, positive to the left. Each
-iteration takes one fresh reading and does exactly one of three things: turn
-the chassis toward the person (bounded by `max_turn_deg`, divided by the
-uncalibrated motion multiplier so an over-eager robot cannot swing past the
-other side of the tolerance), move one bounded distance step, or stop with a
-typed status. Turning is a chassis motion; the head's yaw plays no part and
-is never read here, because a head that looks at someone is not a base that
-faces them.
+iteration takes one fresh reading and does exactly one of three things:
+rotate the chassis toward the person (bounded by `max_turn_deg`, divided by
+the uncalibrated motion multiplier so an over-eager robot cannot swing past
+the other side of the tolerance), move one bounded distance step, or stop
+with a typed status. Rotation is a chassis motion; the head's yaw plays no
+part and is never read here, because a head that looks at someone is not a
+base that faces them. The distance is a median over two fresh samples; the
+bearing is the newest fresh sample's, unaggregated.
 
 A reading with no bearing ends the call as `bearing_unavailable` before any
 motion. The live distance pipeline reports none, so on hardware this
@@ -31,9 +32,9 @@ from __future__ import annotations
 
 import statistics
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from misty_agent.config import Settings, settings
 from misty_agent.control.step_policy import ARRIVED, Step, plan_step
@@ -89,17 +90,27 @@ class ApproachStatus(str, Enum):
     DRIVE_ERROR = "drive_error"
 
 
+class MotionKind(str, Enum):
+    """What one chassis motion did. "Rotate", not "turn": a Turn is one ReAct
+    iteration everywhere else in this project."""
+
+    ROTATE = "rotate"
+    FORWARD = "forward"
+    BACK = "back"
+
+
 @dataclass(frozen=True)
 class MovementStep:
     """One bounded chassis motion and the fresh reading it was planned from.
 
-    `commanded` is degrees for a turn and centimetres otherwise, always
-    positive; `kind` carries the direction. The reading is the one the
-    decision used, so a trace reads as distance and bearing converging.
+    A rotation carries `rotate_deg`; a translation carries `move_cm`; both
+    are positive, the kind says which way. The reading is the one the
+    decision used, so the sequence reads as distance and bearing converging.
     """
 
-    kind: str  # "turn", "forward" or "back"
-    commanded: float
+    kind: MotionKind
+    rotate_deg: Optional[float]
+    move_cm: Optional[float]
     distance_cm: float
     bearing_deg: float
 
@@ -107,19 +118,43 @@ class MovementStep:
 @dataclass(frozen=True)
 class ApproachResult:
     status: ApproachStatus
-    #: Every motion issued, turns included: what the Journal counts as Steps.
+    #: Every motion issued, rotations included: what the Journal counts as
+    #: Steps, and what the adapter counts as drives.
     steps: int
-    turns: int = 0
-    #: The last fresh reading, when there was one.
+    rotations: int = 0
+    #: The last fresh reading, when there was one, with its source's caveats.
     distance_cm: Optional[float] = None
     bearing_deg: Optional[float] = None
-    trace: Tuple[MovementStep, ...] = ()
+    uncertainty: Tuple[str, ...] = ()
+    #: Every motion in order. Not a Trace: that word is the harness replay's.
+    motions: Tuple[MovementStep, ...] = ()
+
+    def as_tool_result(self) -> Dict[str, Any]:
+        """The public shape the model reads. Decided here, in the control
+        layer, so the Tool cannot drift from what the controller means."""
+        return {
+            "result": self.status.value,
+            "steps": self.steps,
+            "rotations": self.rotations,
+            "distance_cm": self.distance_cm,
+            "bearing_deg": self.bearing_deg,
+            "uncertainty": list(self.uncertainty),
+            "motions": [
+                {**asdict(step), "kind": step.kind.value} for step in self.motions
+            ],
+        }
 
 
 @dataclass(frozen=True)
 class _Fresh:
     distance_cm: float
     bearing_deg: Optional[float]
+    uncertainty: Tuple[str, ...]
+
+
+def _duration_ms(amount: float, rate_per_s: float) -> int:
+    """How long to command a motion of `amount` at the configured rate."""
+    return int(amount / rate_per_s * 1000)
 
 
 def _fresh_reading(
@@ -138,6 +173,7 @@ def _fresh_reading(
     deadline = min(max(clock.monotonic(), settle_until) + timeout_s, approach_deadline)
     samples: dict[float, int] = {}
     latest_bearing: Optional[float] = None
+    latest_uncertainty: Tuple[str, ...] = ()
     latest_at = float("-inf")
     saw_reading = False
     while clock.monotonic() <= deadline:
@@ -159,9 +195,14 @@ def _fresh_reading(
             if reading.frame_arrived_at >= latest_at:
                 latest_at = reading.frame_arrived_at
                 latest_bearing = reading.bearing_deg
+                latest_uncertainty = tuple(reading.uncertainty)
             if len(samples) >= 2 and now >= settle_until:
                 return (
-                    _Fresh(float(statistics.median(samples.values())), latest_bearing),
+                    _Fresh(
+                        float(statistics.median(samples.values())),
+                        latest_bearing,
+                        latest_uncertainty,
+                    ),
                     True,
                 )
         remaining = deadline - clock.monotonic()
@@ -185,18 +226,19 @@ def approach(
     approach_deadline = invalidated_at + config.approach_timeout_s
     settle_until = invalidated_at
     moves = 0
-    turns = 0
-    trace: List[MovementStep] = []
+    rotations = 0
+    motions: List[MovementStep] = []
     last: Optional[_Fresh] = None
 
     def ended(status: ApproachStatus) -> ApproachResult:
         return ApproachResult(
             status,
-            steps=moves + turns,
-            turns=turns,
+            steps=moves + rotations,
+            rotations=rotations,
             distance_cm=last.distance_cm if last is not None else None,
             bearing_deg=last.bearing_deg if last is not None else None,
-            trace=tuple(trace),
+            uncertainty=last.uncertainty if last is not None else (),
+            motions=tuple(motions),
         )
 
     for _ in range(config.max_approach_steps + config.max_align_steps + 1):
@@ -220,19 +262,20 @@ def approach(
             return ended(ApproachStatus.BEARING_UNAVAILABLE)
 
         if abs(fresh.bearing_deg) > config.align_tolerance_deg:
-            if turns >= config.max_align_steps:
+            if rotations >= config.max_align_steps:
                 return ended(ApproachStatus.ALIGNMENT_FAILED)
             # Divided by the multiplier for the same reason a forward step is:
-            # a robot that turns twice as far as told must still not swing
+            # a robot that rotates twice as far as told must still not swing
             # past the tolerance on the other side.
             angle_deg = (
                 min(abs(fresh.bearing_deg), config.max_turn_deg)
                 / config.max_actual_motion_multiplier
             )
             sign = 1 if fresh.bearing_deg > 0 else -1
-            duration_ms = int(angle_deg / config.deg_per_sec_at_percent * 1000)
-            kind = "turn"
-            commanded = angle_deg
+            duration_ms = _duration_ms(angle_deg, config.deg_per_sec_at_percent)
+            motion = MovementStep(
+                MotionKind.ROTATE, angle_deg, None, fresh.distance_cm, fresh.bearing_deg
+            )
             linear, angular = 0, sign * config.turn_percent
         else:
             outcome = plan_step(fresh.distance_cm, config)
@@ -240,9 +283,11 @@ def approach(
                 return ended(ApproachStatus.ARRIVED)
             if not isinstance(outcome, Step) or moves >= config.max_approach_steps:
                 return ended(ApproachStatus.STEP_LIMIT)
-            duration_ms = int(outcome.commanded_cm / config.cm_per_sec_at_percent * 1000)
-            kind = "forward" if outcome.direction > 0 else "back"
-            commanded = outcome.commanded_cm
+            duration_ms = _duration_ms(outcome.commanded_cm, config.cm_per_sec_at_percent)
+            motion = MovementStep(
+                MotionKind.FORWARD if outcome.direction > 0 else MotionKind.BACK,
+                None, outcome.commanded_cm, fresh.distance_cm, fresh.bearing_deg,
+            )
             linear, angular = outcome.direction * config.drive_percent, 0
 
         motion_s = duration_ms / 1000.0
@@ -264,9 +309,9 @@ def approach(
         if not driven.ok:
             return ended(ApproachStatus.DRIVE_ERROR)
 
-        trace.append(MovementStep(kind, commanded, fresh.distance_cm, fresh.bearing_deg))
-        if kind == "turn":
-            turns += 1
+        motions.append(motion)
+        if motion.kind is MotionKind.ROTATE:
+            rotations += 1
         else:
             moves += 1
         remaining_s = approach_deadline - active_clock.monotonic()

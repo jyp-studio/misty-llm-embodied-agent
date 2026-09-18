@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import (
     Annotated,
     Any,
@@ -818,14 +818,7 @@ def build_registry() -> ToolRegistry:
         # compares and serialises identically and looks harmless — but
         # `TerminalRenderer` puts it in an f-string, where it prints
         # `ApproachStatus.ARRIVED` instead of `arrived`.
-        answer: Dict[str, Any] = {
-            "result": outcome.status.value,
-            "steps": outcome.steps,
-            "turns": outcome.turns,
-            "distance_cm": outcome.distance_cm,
-            "bearing_deg": outcome.bearing_deg,
-            "trace": [asdict(step) for step in outcome.trace],
-        }
+        answer = outcome.as_tool_result()
         if ctx.target is not None:
             answer["target"] = ctx.target.as_facts()
         return answer

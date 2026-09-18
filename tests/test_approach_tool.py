@@ -161,7 +161,8 @@ def timed_out(registry):
 
 
 class StaleReadings:
-    """Readings keep arriving but were all captured before the call began."""
+    """Readings keep arriving but were all captured before the call began.
+    Shared with `test_target_approach.py`."""
 
     def __init__(self, clock):
         self._clock = clock
@@ -445,10 +446,7 @@ def test_the_tool_says_exactly_what_the_backend_said(registry, expected, scenari
         "drive_error": lambda: _direct_drive_error(),
     }[expected]()
 
-    assert through_the_tool.result["result"] == direct.status.value
-    assert through_the_tool.result["steps"] == direct.steps
-    assert through_the_tool.result["turns"] == direct.turns
-    assert len(through_the_tool.result["trace"]) == len(direct.trace)
+    assert through_the_tool.result == direct.as_tool_result()
 
 
 def _direct_arrived():

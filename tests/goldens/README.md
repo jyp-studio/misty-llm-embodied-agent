@@ -30,7 +30,7 @@ social-runtime tickets 01 and 10:
 | The turn cap rising from 5 to 8 | the goldens (§15.19) |
 | `t` again, for the aborted file, in ticket 08 | the golden (§15.24) |
 | The turn cap rising from 8 to 12 | the golden (§16.48) |
-| `approach`'s result gaining `turns`, `distance_cm`, `bearing_deg` and `trace` in ticket 10 | the goldens (§16.59) |
+| `approach`'s result gaining `rotations`, `distance_cm`, `bearing_deg`, `uncertainty` and `motions` in ticket 10 | the goldens (§16.59) |
 
 All four files are now on the timing rule below. The aborted one came last
 because only ticket 08 can produce a `stop_requested`, and retiming a golden

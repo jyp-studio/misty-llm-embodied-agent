@@ -23,7 +23,7 @@ hardware would have supplied.
 Effect and change no state, so the error paths above this — the Observation
 that says `ok: false`, the controller's `drive_error` — actually execute.
 
-`drive` with an angular component turns the chassis; with a linear one it
+`drive` with an angular component rotates the chassis; with a linear one it
 moves the base along its heading through a relative polar model of where the
 person stands. Turning rate and travel speed are the same UNCALIBRATED
 constants the controller plans with. No hazard, obstacle or floor is
@@ -67,6 +67,11 @@ def a_reading(
     )
 
 
+def _wrapped(degrees: float) -> float:
+    """The same direction in (-180, 180], so a bearing is always the short way."""
+    return (degrees + 180.0) % 360.0 - 180.0
+
+
 class SimulatedMistyAdapter:
     """The Robot interface and the reading source, as one object, because a
     simulated room is one thing: driving changes what is measured."""
@@ -93,8 +98,8 @@ class SimulatedMistyAdapter:
         self.heading_deg = 0.0
         self.closest_cm = start_cm
         self.directions: list[int] = []
-        #: Signed degrees of each commanded turn, as actually turned.
-        self.turns: list[float] = []
+        #: Signed degrees of each commanded rotation, as actually rotated.
+        self.rotations: list[float] = []
         self.pose = RobotPose()
         self.speech: Optional[str] = None
         self.sound: Optional[Tuple[str, int]] = None
@@ -212,8 +217,8 @@ class SimulatedMistyAdapter:
                 * self._actual_motion_multiplier
             )
             self.heading_deg += turned
-            self._bearing_deg -= turned
-            self.turns.append(turned)
+            self._bearing_deg = _wrapped(self._bearing_deg - turned)
+            self.rotations.append(turned)
             return Effect(ok=True)
         commanded_cm = seconds * self._config.cm_per_sec_at_percent
         direction = 1 if linear_percent > 0 else -1
@@ -226,7 +231,7 @@ class SimulatedMistyAdapter:
             x = self._distance_cm * math.cos(bearing) - travelled
             y = self._distance_cm * math.sin(bearing)
             self._distance_cm = math.hypot(x, y)
-            self._bearing_deg = math.degrees(math.atan2(y, x))
+            self._bearing_deg = _wrapped(math.degrees(math.atan2(y, x)))
             assert self.closest_cm is not None
             self.closest_cm = min(self.closest_cm, self._distance_cm)
         return Effect(ok=True)

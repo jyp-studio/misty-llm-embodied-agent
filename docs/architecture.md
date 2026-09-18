@@ -210,8 +210,8 @@ reading with no bearing ends the call as `bearing_unavailable` before any
 motion; the live distance pipeline reports none, so on hardware the Tool
 fails closed. Stale readings, a vanished person, the alignment budget, the
 Step cap, the deadline and a refused drive are distinct typed results, and
-the Tool result carries a bounded trace of every motion with the distance
-and bearing it was planned from. The simulated adapter models the person in
+the Tool result carries every motion with the distance and bearing it was
+planned from, plus the reading source's own caveats. The simulated adapter models the person in
 relative polar coordinates with a chassis heading; its turning rate and
 travel speed are simulation constants, never hardware measurements.
 

@@ -8,18 +8,19 @@ prove the control law's shape, not hardware safety.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+
 
 from misty_agent.agent.evidence import EvidenceKind
 from misty_agent.agent.journal import Journal
-from misty_agent.agent.layering import mentions_control_parameter
+from misty_agent.agent.layering import control_parameter
 from misty_agent.agent.target import InteractionTarget
 from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import FakeClock, RecordingCommands, a_reading
-from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
+
+from test_approach_tool import DistanceOnly, SlipsSideways, StaleReadings
 
 CONFIG = Settings(post_step_settle_s=0.0)
 
@@ -39,17 +40,18 @@ def test_a_side_target_is_aligned_by_the_chassis_before_any_forward_step():
     result = approach(room, room, config=CONFIG, clock=clock)
 
     assert result.status is ApproachStatus.ARRIVED
-    kinds = [step.kind for step in result.trace]
-    assert kinds[0] == "turn"
+    kinds = [motion.kind.value for motion in result.motions]
+    assert kinds[0] == "rotate"
     assert "forward" in kinds
     # No forward step is ever planned while the base is not facing the person;
     # re-aligning as the distance closes is allowed, driving sideways is not.
     assert all(
-        abs(step.bearing_deg) <= CONFIG.align_tolerance_deg
-        for step in result.trace if step.kind != "turn"
+        abs(motion.bearing_deg) <= CONFIG.align_tolerance_deg
+        for motion in result.motions if motion.kind.value != "rotate"
     )
-    assert result.turns >= 1
-    assert result.steps == len(result.trace)
+    assert result.rotations >= 1
+    assert result.steps == len(result.motions)
+    assert result.uncertainty == ("simulated relative bearing, not a camera measurement",)
     assert abs(room.target_bearing_deg) <= CONFIG.align_tolerance_deg
     assert room.heading_deg > 0
     assert room.pose.head == (0.0, 0.0, 25.0)
@@ -63,7 +65,7 @@ def test_a_target_within_the_alignment_tolerance_needs_no_turn():
     result = approach(room, room, config=CONFIG, clock=clock)
 
     assert result.status is ApproachStatus.ARRIVED
-    assert result.turns == 0
+    assert result.rotations == 0
     assert room.heading_deg == 0.0
 
 
@@ -83,7 +85,7 @@ def test_already_in_the_band_moves_nothing_and_says_so():
     result = approach(room, room, config=CONFIG, clock=clock)
 
     assert result.status is ApproachStatus.ARRIVED
-    assert result.steps == 0 and result.trace == ()
+    assert result.steps == 0 and result.motions == ()
     assert result.distance_cm == CONFIG.target_distance_cm
     assert result.bearing_deg == 0.0
 
@@ -98,35 +100,24 @@ def test_the_overshoot_assumption_still_holds_with_a_side_target():
 
 
 def test_a_target_that_keeps_slipping_sideways_ends_as_alignment_failed():
-    class SlipsSideways(SimulatedMistyAdapter):
-        def latest_reading(self):
-            reading = super().latest_reading()
-            return replace(reading, bearing_deg=40.0)
-
     clock = FakeClock()
     room = SlipsSideways(clock, start_cm=150.0, bearing_deg=40.0, config=CONFIG)
 
     result = approach(room, room, config=CONFIG, clock=clock)
 
     assert result.status is ApproachStatus.ALIGNMENT_FAILED
-    assert result.turns == CONFIG.max_align_steps
+    assert result.rotations == CONFIG.max_align_steps
     assert room.directions == []
-    assert all(step.kind == "turn" for step in result.trace)
-    assert all(abs(step.commanded) <= CONFIG.max_turn_deg for step in result.trace)
+    assert all(motion.kind.value == "rotate" for motion in result.motions)
+    assert all(motion.rotate_deg <= CONFIG.max_turn_deg for motion in result.motions)
 
 
 def test_a_reading_without_a_bearing_fails_closed():
     """The live distance pipeline reports no bearing. Not knowing where the
     person is relative to the chassis is not permission to drive."""
     clock = FakeClock()
-
-    class DistanceOnly:
-        def latest_reading(self):
-            clock.sleep(0.001)
-            return DistanceReading(distance_cm=150, frame_arrived_at=clock.monotonic(), detected_at=clock.monotonic())
-
     commands = RecordingCommands()
-    result = approach(DistanceOnly(), RealMistyAdapter(commands), config=CONFIG, clock=clock)
+    result = approach(DistanceOnly(clock), RealMistyAdapter(commands), config=CONFIG, clock=clock)
 
     assert result.status is ApproachStatus.BEARING_UNAVAILABLE
     assert result.steps == 0
@@ -135,13 +126,7 @@ def test_a_reading_without_a_bearing_fails_closed():
 
 def test_stale_readings_are_reported_as_stale_and_a_vanished_person_as_lost():
     clock = FakeClock()
-
-    class Stale:
-        def latest_reading(self):
-            clock.sleep(0.001)
-            return a_reading(150, -5.0)
-
-    stale = approach(Stale(), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock)
+    stale = approach(StaleReadings(clock), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock)
     assert stale.status is ApproachStatus.STALE_READING
     assert stale.steps == 0
 
@@ -179,11 +164,22 @@ def test_the_tool_reports_a_typed_result_with_turns_and_a_bounded_trace():
 
     result = outcome.result
     assert result["result"] == "arrived"
-    assert result["turns"] >= 1
-    assert result["steps"] == len(result["trace"]) == outcome.steps
+    assert result["rotations"] >= 1
+    assert result["steps"] == len(result["motions"]) == outcome.steps
     assert result["target"]["track_reference"] == "anon-1"
-    assert {"kind", "commanded", "distance_cm", "bearing_deg"} <= set(result["trace"][0])
-    assert mentions_control_parameter(json.dumps(result)) is None
+    assert {"kind", "rotate_deg", "move_cm", "distance_cm", "bearing_deg"} <= set(result["motions"][0])
+    assert result["uncertainty"] == ["simulated relative bearing, not a camera measurement"]
+    # A result is the system reporting back, so it is screened the way the
+    # Journal screens an Observation: no rates, no drive-command names.
+    def keys_of(value):
+        if isinstance(value, dict):
+            for key, inner in value.items():
+                yield key
+                yield from keys_of(inner)
+        elif isinstance(value, list):
+            for inner in value:
+                yield from keys_of(inner)
+    assert [k for k in keys_of(result) if control_parameter(k, commanded=False)] == []
     schema = next(s for s in build_registry().schemas() if s["function"]["name"] == "approach")
     assert schema["function"]["parameters"].get("properties", {}) == {}
     assert "Interaction Target" in schema["function"]["description"]

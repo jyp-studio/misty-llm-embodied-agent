@@ -2743,3 +2743,20 @@ Goldens：`episode_ends_after_several_turns` 與 aborted 兩檔的 approach resu
 `distance_cm`、`bearing_deg`、`uncertainty`、`motions`，status 與 steps 不變；讓步的是 golden，理由是 ticket 10 要求
 typed result 攜帶這些欄位。Demo 問候卡新增「過來陪我」文字腳本（人在 150 cm、bearing 25°），流程顯示
 controller 結果、每個 Step 的種類與決策讀數，robot 狀態顯示 heading 與未被動的 head yaw。
+
+### 16.60 movement checkpoints：stop、hazard、fail closed（ticket 11）
+
+`control/safety.py` 定義 `HazardReading(blocked, observed_at, uncertainty)`、`HazardSource`、fail-closed
+的 `NO_HAZARD_SOURCE` 與只供模擬的 `ALWAYS_CLEAR`。`approach()` 多了 `stop` 與 `hazards`：第一個動作前、
+每個動作前後，以及動作進行中每 `movement_poll_s` 都做一次 checkpoint。stop → `aborted`（不再下任何
+指令；halt 由 stop 的擁有者 `EmergencyStop` 早已送出）；hazard blocked → controller 呼叫 `halt()` 並回
+`blocked`；沒有讀數或讀數老於 `hazard_max_age_s` → `hazard_unavailable`，不動。所有結果附 `reason`。
+動作中的 checkpoint 讓 halt 落在 hazard 出現後一個 poll 內，測試以時間斷言這一點，少一個 checkpoint
+就會被抓到（negative control）。
+
+真機 Session 沒有 hazard 來源（vendor HazardNotification 尚未接，且無硬體可驗），因此 movement Tool
+在第一個 checkpoint 就 fail closed；`SimulatedMistyAdapter` 由 `Placement.hazard_at_s`／`leaves_at_s`
+提供情境時間線。測試與 harness 的模擬讀數來源明確傳 `hazards=ALWAYS_CLEAR` 或世界本身，符合規格
+「模擬模式由 scenario 明確提供狀態」。Demo 問候卡新增「途中人離開」與「途中出現障礙」兩個腳本。
+Goldens 的 approach result 多 `reason`，status 與 steps 不變。`hazard_max_age_s`、`movement_poll_s`
+為 simulated design values；本節與測試皆不是真機 safety certification。

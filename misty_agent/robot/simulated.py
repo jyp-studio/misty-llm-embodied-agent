@@ -37,6 +37,7 @@ from dataclasses import asdict, replace
 from typing import Iterable, Optional, Tuple
 
 from misty_agent.config import Settings
+from misty_agent.control.safety import HazardReading
 from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot.interface import Effect, RobotPose
 
@@ -85,6 +86,8 @@ class SimulatedMistyAdapter:
         bearing_deg: float = 0.0,
         actual_motion_multiplier: float = 1.0,
         failing: Iterable[str] = (),
+        hazard_at_s: Optional[float] = None,
+        leaves_at_s: Optional[float] = None,
     ) -> None:
         self._clock = clock
         self._config = config
@@ -104,6 +107,12 @@ class SimulatedMistyAdapter:
         self.speech: Optional[str] = None
         self.sound: Optional[Tuple[str, int]] = None
         self.halted = False
+        self.halted_at: Optional[float] = None
+        #: Scenario-provided safety state: from this clock time on, something
+        #: is in the way. `None` means the path stays clear.
+        self._hazard_at_s = hazard_at_s
+        #: From this clock time on, the person is no longer measured.
+        self._leaves_at_s = leaves_at_s
 
     def as_facts(self) -> dict:
         """The simulation's current state as JSON data: not a log."""
@@ -112,6 +121,7 @@ class SimulatedMistyAdapter:
             "speech": self.speech,
             "sound": list(self.sound) if self.sound is not None else None,
             "halted": self.halted,
+            "halted_at_s": self.halted_at,
             "distance_cm": self._distance_cm,
             "heading_deg": round(self.heading_deg, 2),
             "target": (
@@ -134,8 +144,20 @@ class SimulatedMistyAdapter:
     def distance_cm(self) -> Optional[float]:
         return self._distance_cm
 
+    def latest_hazard(self) -> HazardReading:
+        """Scenario-provided, never sensed: the world says whether the base
+        may move, stamped now so the checkpoint's staleness rule still runs."""
+        now = self._clock.monotonic()
+        return HazardReading(
+            blocked=self._hazard_at_s is not None and now >= self._hazard_at_s,
+            observed_at=now,
+            uncertainty=("simulated hazard state, provided by the scenario",),
+        )
+
     def latest_reading(self) -> Optional[DistanceReading]:
         if self._distance_cm is None:
+            return None
+        if self._leaves_at_s is not None and self._clock.monotonic() >= self._leaves_at_s:
             return None
         self._clock.sleep(0.001)
         return a_reading(
@@ -241,6 +263,8 @@ class SimulatedMistyAdapter:
         if refused:
             return refused
         self.halted = True
+        if self.halted_at is None:
+            self.halted_at = self._clock.monotonic()
         return Effect(ok=True)
 
 

@@ -16,6 +16,7 @@ from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.agent.tools import EXPRESSION_IMAGES, ToolContext, build_registry
 from misty_agent.app import LivePerception
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.robot import Effect, RealMistyAdapter, RobotPose, SimulatedMistyAdapter
@@ -104,12 +105,12 @@ def test_the_controller_converges_in_the_simulated_world_and_reports_a_refused_d
     config = Settings()
     clock = FakeClock()
     world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
-    result = approach(world, world, config=config, clock=clock)
+    result = approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
     assert result.status is ApproachStatus.ARRIVED
     assert world.closest_cm >= config.min_safe_distance_cm
 
     refused = SimulatedMistyAdapter(FakeClock(), start_cm=150.0, config=config, failing=("drive",))
-    assert approach(refused, refused, config=config, clock=FakeClock()).status is ApproachStatus.DRIVE_ERROR
+    assert approach(refused, refused, config=config, clock=FakeClock(), hazards=ALWAYS_CLEAR).status is ApproachStatus.DRIVE_ERROR
 
 
 SCRIPT = (
@@ -128,7 +129,7 @@ def one_episode(robot, readings, clock):
         TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="Hi Misty"),
         model=ScenarioModel(SCRIPT),
         registry=build_registry(),
-        ctx=ToolContext(robot=robot, readings=readings, config=Settings(), clock=clock),
+        ctx=ToolContext(robot=robot, readings=readings, config=Settings(), clock=clock, hazards=ALWAYS_CLEAR),
         journal=journal,
         perception=LivePerception(readings),
     )
@@ -215,7 +216,7 @@ def test_a_refused_scan_leaves_the_storyboard_head_where_it_was():
     run_episode(
         TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="Hi"),
         model=ScenarioModel(script), registry=build_registry(),
-        ctx=ToolContext(robot=robot, readings=None, config=Settings(), clock=clock),
+        ctx=ToolContext(robot=robot, readings=None, config=Settings(), clock=clock, hazards=ALWAYS_CLEAR),
         journal=journal, perception=LivePerception(robot),
     )
     scan = next(r for r in journal.records if isinstance(r, Observation) and r.turn == 2)

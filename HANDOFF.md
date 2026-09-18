@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–10 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–11 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -98,8 +98,17 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 29. The greeting card's "過來陪我" script shows alignment, each Step with the
     distance and bearing it was planned from, the chassis heading and the
     untouched head yaw.
+30. Every movement checkpoint, before the first motion, before and after
+    each motion and at a fixed poll during it, asks whether a stop was
+    requested and whether the hazard source says the base may move. A stop
+    ends the call as `aborted` with no further command; a hazard halts the
+    motors and ends it as `blocked`; a missing or stale hazard reading is
+    `hazard_unavailable`, which is every real call today because no hazard
+    signal reaches this process. Every result carries a reason the model can
+    act on. The simulated world provides the scenario's hazard and departure
+    timeline; the greeting card has a target-lost and a hazard case.
 
-Ticket 09 ends at `ab15ad3`; ticket 10 is the current implementation.
+Ticket 10 ends at `e1d2aa9`; ticket 11 is the current implementation.
 
 ## Verification
 
@@ -139,16 +148,18 @@ hardware-unverified.
 
 Handoff is target-aware only in the sense of anonymous track tokens; there is
 no face identity and no sound-source direction, and the A→B card's speaker
-attribution is scripted. Target-aware approach is verified only against the
-simulated relative-polar world: no bearing has ever come from a camera, and
-the live distance pipeline makes the controller fail closed. The care path is supported only by synthetic
-temporal frames and scripted model decisions; it is not validated emotion
-recognition. The A-to-B card runs only scripted text actors. Hazard, bumper
-during a turn and obstacle handling remain ticket 11.
+attribution is scripted. Target-aware approach and its safety checkpoints
+are verified only against the simulated relative-polar world with
+scenario-provided hazard state: no bearing and no hazard signal has ever come
+from a Misty II, so the live path fails closed at the first checkpoint, and
+passing these tests is not a hardware safety certification. The care path is
+supported only by synthetic temporal frames and scripted model decisions; it
+is not validated emotion recognition. The A-to-B card runs only scripted text
+actors. A vendor hazard subscription for the real Session does not exist yet.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/11-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/12-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

@@ -63,6 +63,7 @@ from typing import Dict, List, Literal, Optional, Sequence, Tuple
 from misty_agent.config import Settings, settings as default_settings
 from misty_agent.control.approach import approach
 from misty_agent.perception.distance import DistanceReading
+from misty_agent.control.safety import HazardReading
 from misty_agent.robot.interface import Effect
 from misty_agent.robot.simulated import SIMULATED_BEARING
 
@@ -335,6 +336,14 @@ class _SimulatedWorld:
     def monotonic(self) -> float:
         return self._now_s
 
+    def latest_hazard(self) -> HazardReading:
+        """The sweep is about distance under lag; the world asserts a clear
+        path, stamped now. Simulated, never sensed."""
+        return HazardReading(
+            blocked=False, observed_at=self._now_s,
+            uncertainty=("simulated: the sweep asserts a clear path",),
+        )
+
     def latest_reading(self) -> Optional[DistanceReading]:
         sample = self._eyes.sample(self._now_s)
         if sample is None:
@@ -450,7 +459,7 @@ def simulate_approach(
         jitter_px=jitter_px,
         seed=seed,
     )
-    result = approach(world, world, config=cfg, clock=world)
+    result = approach(world, world, config=cfg, clock=world, hazards=world)
     return ApproachOutcome(
         transport_lag_s=transport_lag_s,
         outcome=result.status.value,

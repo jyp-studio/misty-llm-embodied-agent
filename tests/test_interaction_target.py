@@ -15,6 +15,7 @@ from misty_agent.agent.journal import Journal
 from misty_agent.agent.target import InteractionTarget, TargetState
 from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.robot import RealMistyAdapter
 from misty_agent.perception.active import (
@@ -128,7 +129,7 @@ def test_active_perception_tools_report_and_update_the_episode_target():
     target = InteractionTarget("anon-1", EvidenceKind.VISUAL, 0.0)
     ctx = ToolContext(
         robot=RealMistyAdapter(RecordingCommands()), readings=None, config=Settings(), clock=clock,
-        active_perception=gate.for_track("anon-1"), target=target,
+        active_perception=gate.for_track("anon-1"), target=target, hazards=ALWAYS_CLEAR
     )
     registry = build_registry()
     journal = Journal(episode_id="ep-1")
@@ -148,7 +149,7 @@ def test_approach_refuses_to_move_toward_a_lost_target_but_not_an_unobservable_o
     robot = RecordingCommands()
     lost = InteractionTarget("anon-1", EvidenceKind.VISUAL, 0.0)
     lost.update_from(observed(visible=False))
-    ctx = ToolContext(robot=RealMistyAdapter(robot), readings=None, config=Settings(), clock=FakeClock(), target=lost)
+    ctx = ToolContext(robot=RealMistyAdapter(robot), readings=None, config=Settings(), clock=FakeClock(), target=lost, hazards=ALWAYS_CLEAR)
 
     refused = dispatch(build_registry(), "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1)
     assert refused.result["result"] == "lost_user"
@@ -161,7 +162,7 @@ def test_approach_refuses_to_move_toward_a_lost_target_but_not_an_unobservable_o
             return None
 
     unobservable = InteractionTarget(None, EvidenceKind.SPEECH, 0.0)
-    ctx = ToolContext(robot=RealMistyAdapter(robot), readings=NobodyThere(), config=Settings(), clock=FakeClock(), target=unobservable)
+    ctx = ToolContext(robot=RealMistyAdapter(robot), readings=NobodyThere(), config=Settings(), clock=FakeClock(), target=unobservable, hazards=ALWAYS_CLEAR)
     outcome = dispatch(build_registry(), "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1)
     assert outcome.result["result"] == "lost_user"
     assert outcome.result["target"]["state"] == "unobservable"

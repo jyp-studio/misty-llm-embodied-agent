@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import (
     FakeClock,
@@ -139,7 +140,7 @@ def test_startup_waits_for_two_fresh_readings_before_arriving():
         readings,
         robot,
         config=Settings(approach_reading_timeout_s=0.5),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.ARRIVED
@@ -170,7 +171,7 @@ def test_a_move_is_followed_by_two_post_move_readings_before_arrival():
             approach_reading_timeout_s=0.5,
             post_step_settle_s=0.0,
         ),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
@@ -202,7 +203,7 @@ def test_too_close_commands_one_bounded_backward_step_then_arrives():
             approach_reading_timeout_s=0.5,
             post_step_settle_s=0.0,
         ),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     drive = robot.commands.last("drive/time").body_without_defaults()
@@ -225,7 +226,7 @@ def test_stale_in_band_readings_end_as_stale_without_motion():
         readings,
         robot,
         config=Settings(approach_reading_timeout_s=0.05),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.STALE_READING
@@ -257,7 +258,7 @@ def test_losing_the_user_after_a_step_stops_issuing_drive_commands():
     config = Settings(approach_reading_timeout_s=0.5, post_step_settle_s=0.0)
     world = WorldThatLosesTheUserAfterAStep(clock, start_cm=140, config=config)
 
-    result = approach(world, world, config=config, clock=clock)
+    result = approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert world.drives_when_lost is not None, "the subject never went missing"
     assert len(world.directions) == world.drives_when_lost, (
@@ -286,7 +287,7 @@ def test_two_readings_must_be_fresh_at_the_same_decision_time():
             approach_reading_timeout_s=0.5,
             distance_max_age_s=0.20,
         ),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.STALE_READING
@@ -301,7 +302,7 @@ def test_step_limit_is_reported_as_its_own_status_and_stops_issuing_commands():
         TickReadings(clock, distance_cm=100),
         robot,
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
@@ -316,7 +317,7 @@ def test_robot_refusal_returns_drive_error_without_assuming_a_step_happened():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(RecordingCommands(fail_endpoints=["drive/time"])),
         config=Settings(),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.DRIVE_ERROR
@@ -329,7 +330,7 @@ def test_any_successful_http_status_is_accepted():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(NoContentRobot()),
         config=Settings(max_approach_steps=1, post_step_settle_s=0.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.STEP_LIMIT
@@ -382,7 +383,7 @@ def test_synthetic_video_and_recording_robot_close_one_real_perception_loop(
             config=Settings(
                 approach_reading_timeout_s=2.0,
                 post_step_settle_s=0.05,
-            ),
+            ), hazards=ALWAYS_CLEAR
         )
     finally:
         pipeline.stop()
@@ -400,7 +401,7 @@ def test_robot_exception_returns_drive_error_without_assuming_a_step_happened():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(ExplodingRobot()),
         config=Settings(),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.DRIVE_ERROR
@@ -424,7 +425,7 @@ def test_readings_arriving_during_settle_count_after_motion():
             approach_reading_timeout_s=0.5,
             post_step_settle_s=0.10,
         ),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.ARRIVED
@@ -448,7 +449,7 @@ def test_settle_does_not_consume_the_independent_reading_timeout():
             approach_reading_timeout_s=0.05,
             post_step_settle_s=0.20,
         ),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.ARRIVED
@@ -461,7 +462,7 @@ def test_whole_call_deadline_bounds_an_unresponsive_robot_adapter():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(TimedOutRobot()),
         config=Settings(approach_timeout_s=2.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.DRIVE_ERROR
@@ -475,7 +476,7 @@ def test_whole_call_deadline_includes_commanded_motion_time():
         TickReadings(clock, distance_cm=100),
         robot,
         config=Settings(approach_timeout_s=0.5, post_step_settle_s=0.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     assert result.status is ApproachStatus.TIMEOUT
@@ -494,7 +495,7 @@ def test_public_approach_reserves_enough_headroom_for_two_x_motion():
         config=config,
     )
 
-    result = approach(world, world, config=config, clock=clock)
+    result = approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert world.closest_cm >= config.min_safe_distance_cm
@@ -528,7 +529,7 @@ def test_non_default_controls_do_not_reverse_under_partial_motion(
         config=config,
     )
 
-    result = approach(world, world, config=config, clock=clock)
+    result = approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert world.directions
@@ -564,7 +565,7 @@ def test_non_default_controls_cannot_force_motion_across_the_arrival_band(
         config=config,
     )
 
-    result = approach(world, world, config=config, clock=clock)
+    result = approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 1

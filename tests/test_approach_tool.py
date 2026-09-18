@@ -34,6 +34,8 @@ import pytest
 from misty_agent.agent.journal import Journal, Observation, Snapshot
 from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.config import Settings
+from misty_agent.agent.stop import NEVER_STOPS
+from misty_agent.control.safety import ALWAYS_CLEAR, NO_HAZARD_SOURCE
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import (
     FakeClock,
@@ -56,12 +58,12 @@ def registry():
     return build_registry()
 
 
-def run(registry, *, robot, readings, config=None, clock=None):
+def run(registry, *, robot, readings, config=None, clock=None, hazards=ALWAYS_CLEAR, stop=NEVER_STOPS):
     ctx = ToolContext(
         robot=robot,
         readings=readings,
         config=config or Settings(),
-        clock=clock,
+        clock=clock, hazards=hazards, stop=stop,
     )
     return dispatch(
         registry, "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1
@@ -97,7 +99,7 @@ def test_an_argument_is_refused_rather_than_ignored(registry):
         robot=RealMistyAdapter(RecordingCommands()),
         readings=TickReadings(clock, distance_cm=100),
         config=Settings(),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
     outcome = dispatch(
@@ -213,6 +215,32 @@ def bearing_unavailable(registry):
     )
 
 
+def blocked(registry):
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config, hazard_at_s=1.2)
+    return run(registry, robot=world, readings=world, config=config, clock=clock, hazards=world)
+
+
+def aborted(registry):
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
+
+    class StopAt:
+        def requested(self):
+            return clock.monotonic() >= 0.8
+
+    return run(registry, robot=world, readings=world, config=config, clock=clock, hazards=world, stop=StopAt())
+
+
+def hazard_unavailable(registry):
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
+    return run(registry, robot=world, readings=world, config=config, clock=clock, hazards=NO_HAZARD_SOURCE)
+
+
 def alignment_failed(registry):
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
@@ -236,6 +264,9 @@ SCENARIOS = [
     ("stale_reading", stale_reading),
     ("bearing_unavailable", bearing_unavailable),
     ("alignment_failed", alignment_failed),
+    ("blocked", blocked),
+    ("aborted", aborted),
+    ("hazard_unavailable", hazard_unavailable),
     ("step_limit", step_limited),
     ("timeout", timed_out),
     ("drive_error", drive_error),
@@ -441,6 +472,9 @@ def test_the_tool_says_exactly_what_the_backend_said(registry, expected, scenari
         "stale_reading": lambda: _direct_stale_reading(),
         "bearing_unavailable": lambda: _direct_bearing_unavailable(),
         "alignment_failed": lambda: _direct_alignment_failed(),
+        "blocked": lambda: _direct_blocked(),
+        "aborted": lambda: _direct_aborted(),
+        "hazard_unavailable": lambda: _direct_hazard_unavailable(),
         "step_limit": lambda: _direct_step_limit(),
         "timeout": lambda: _direct_timeout(),
         "drive_error": lambda: _direct_drive_error(),
@@ -456,14 +490,14 @@ def _direct_arrived():
         clock, start_cm=config.target_distance_cm, actual_motion_multiplier=1.0,
         config=config,
     )
-    return approach(world, world, config=config, clock=clock)
+    return approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
 
 def _direct_lost_user():
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
     world = WorldThatLosesTheUserAfterAStep(clock, start_cm=200.0, config=config)
-    return approach(world, world, config=config, clock=clock)
+    return approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
 
 def _direct_step_limit():
@@ -472,7 +506,7 @@ def _direct_step_limit():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(RecordingCommands()),
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
 
@@ -482,7 +516,7 @@ def _direct_timeout():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(RecordingCommands()),
         config=Settings(approach_timeout_s=0.3, post_step_settle_s=0.0),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
 
@@ -490,7 +524,7 @@ def _direct_stale_reading():
     clock = FakeClock()
     return approach(
         StaleReadings(clock), RealMistyAdapter(RecordingCommands()),
-        config=Settings(approach_reading_timeout_s=0.05), clock=clock,
+        config=Settings(approach_reading_timeout_s=0.05), clock=clock, hazards=ALWAYS_CLEAR
     )
 
 
@@ -498,15 +532,41 @@ def _direct_bearing_unavailable():
     clock = FakeClock()
     return approach(
         DistanceOnly(clock), RealMistyAdapter(RecordingCommands()),
-        config=Settings(post_step_settle_s=0.0), clock=clock,
+        config=Settings(post_step_settle_s=0.0), clock=clock, hazards=ALWAYS_CLEAR
     )
+
+
+def _direct_blocked():
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config, hazard_at_s=1.2)
+    return approach(world, world, config=config, clock=clock, hazards=world)
+
+
+def _direct_aborted():
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
+
+    class StopAt:
+        def requested(self):
+            return clock.monotonic() >= 0.8
+
+    return approach(world, world, config=config, clock=clock, hazards=world, stop=StopAt())
+
+
+def _direct_hazard_unavailable():
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
+    return approach(world, world, config=config, clock=clock, hazards=NO_HAZARD_SOURCE)
 
 
 def _direct_alignment_failed():
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
     world = SlipsSideways(clock, start_cm=150.0, bearing_deg=40.0, config=config)
-    return approach(world, world, config=config, clock=clock)
+    return approach(world, world, config=config, clock=clock, hazards=ALWAYS_CLEAR)
 
 
 def _direct_drive_error():
@@ -515,7 +575,7 @@ def _direct_drive_error():
         TickReadings(clock, distance_cm=100),
         RealMistyAdapter(ExplodingRobot()),
         config=Settings(),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
 
 
@@ -624,7 +684,7 @@ def test_a_context_without_a_config_says_which_field_is_missing(registry):
     """Otherwise the failure is an `AttributeError` on `NoneType` raised from
     inside the control layer, naming neither this Tool nor the field.
     """
-    ctx = ToolContext(robot=RealMistyAdapter(RecordingCommands()), readings=None)
+    ctx = ToolContext(robot=RealMistyAdapter(RecordingCommands()), readings=None, hazards=ALWAYS_CLEAR)
 
     with pytest.raises(ValueError, match="ToolContext.config"):
         dispatch(

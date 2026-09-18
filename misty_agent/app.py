@@ -79,6 +79,7 @@ from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.agent.skills import SkillCatalog, bundled_skills
 from misty_agent.agent.handoff import HandoffNotice
 from misty_agent.agent.target import InteractionTarget
+from misty_agent.control.safety import NO_HAZARD_SOURCE
 from misty_agent.perception.listening import BoundedListener, TranscriptSource
 from misty_agent.audio_input import LiveInputAdapter
 from misty_agent.config import Settings, settings
@@ -184,6 +185,11 @@ class Session:
     ears: Any = HEARS_NOTHING
     active_perception: Any = NO_ACTIVE_PERCEPTION
     skills: SkillCatalog = field(default_factory=bundled_skills)
+    #: What says whether the base may move. Fail closed by default: a real
+    #: Session has no hazard signal today, so its movement Tool refuses. The
+    #: simulated Session hands in the world, which states the scenario's own
+    #: hazard timeline.
+    hazards: Any = NO_HAZARD_SOURCE
     #: Runtime input owned by the external wake/capture/ASR path. When set,
     #: Episode snapshots must not race it for raw audio segments.
     attention_source: Optional[Any] = None
@@ -346,6 +352,8 @@ class Session:
                     skills=self.skills.for_episode(),
                     listener=BoundedListener(listening_source, self.clock, stop),
                     target=target,
+                    stop=stop,
+                    hazards=self.hazards,
                 ),
                 journal=journal,
                 perception=self._perception(),
@@ -479,6 +487,7 @@ def room_for(seen: Optional[Any], clock: Any, placement: Optional[Any] = None) -
         world = SimulatedMistyAdapter(
             clock, start_cm=placement.distance_cm,
             bearing_deg=placement.bearing_deg, config=settings,
+            hazard_at_s=placement.hazard_at_s, leaves_at_s=placement.leaves_at_s,
         )
         return world, world
     if seen is None:
@@ -504,6 +513,7 @@ def simulated_session(
     return Session(
         robot=robot,
         readings=readings,
+        hazards=robot,
         model=model,
         memory=Memory(),
         ears=ears,

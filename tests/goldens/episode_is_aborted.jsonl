@@ -3,5 +3,5 @@
 {"episode_id": "ep-aborted", "latency_ms": 1024, "t": 1.024, "tokens_in": 811, "tokens_out": 15, "turn": 1, "type": "model_called"}
 {"args": {}, "episode_id": "ep-aborted", "t": 1.024, "tool": "approach", "turn": 1, "type": "tool_called"}
 {"episode_id": "ep-aborted", "source": "foot_bumper", "t": 1.038, "type": "stop_requested"}
-{"episode_id": "ep-aborted", "result": {"bearing_deg": 0.0, "distance_cm": 200.0, "motions": [{"bearing_deg": 0.0, "distance_cm": 200.0, "kind": "forward", "move_cm": 35.0, "rotate_deg": null}], "result": "timeout", "rotations": 0, "steps": 1, "uncertainty": ["simulated relative bearing, not a camera measurement"]}, "snapshot": {"distance_cm": 97, "face_present": true, "new_speech": null}, "t": 5.025, "turn": 1, "type": "observation"}
+{"episode_id": "ep-aborted", "result": {"bearing_deg": 0.0, "distance_cm": 200.0, "motions": [{"bearing_deg": 0.0, "distance_cm": 200.0, "kind": "forward", "move_cm": 35.0, "rotate_deg": null}], "reason": "deadline passed after 1 motion(s)", "result": "timeout", "rotations": 0, "steps": 1, "uncertainty": ["simulated relative bearing, not a camera measurement"]}, "snapshot": {"distance_cm": 97, "face_present": true, "new_speech": null}, "t": 5.025, "turn": 1, "type": "observation"}
 {"episode_id": "ep-aborted", "outcome": "aborted", "steps": 1, "t": 5.025, "turns": 1, "type": "episode_finished"}

@@ -22,6 +22,18 @@ A reading with no bearing ends the call as `bearing_unavailable` before any
 motion. The live distance pipeline reports none, so on hardware this
 controller fails closed until a bearing source exists.
 
+## Checkpoints
+
+Before the first motion, before every motion, during every motion at
+`movement_poll_s`, and again after it before re-measuring, the controller
+asks two questions: has anyone asked for a stop, and does the hazard source
+say the base may move. A stop ends the call as `aborted` without another
+command; its owner already halted the motors. A hazard halts the motors here
+and ends the call as `blocked`. A hazard source that has nothing to say, or
+only something older than `hazard_max_age_s`, is `hazard_unavailable`: the
+base does not move on a signal it does not have. On real hardware today that
+is every call, because no hazard signal reaches this process.
+
 This behaviour has only been verified in simulation. Its safety statement is
 conditional on the UNCALIBRATED maximum actual-motion multiplier; speed,
 turning rate, motor deadband, transient overshoot, and interaction with real
@@ -36,7 +48,9 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
+from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.config import Settings, settings
+from misty_agent.control.safety import NO_HAZARD_SOURCE, HazardSource
 from misty_agent.control.step_policy import ARRIVED, Step, plan_step
 from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot.interface import Effect
@@ -85,6 +99,12 @@ class ApproachStatus(str, Enum):
     ALIGNMENT_FAILED = "alignment_failed"
     #: The distance-step budget ran out before the arrival band.
     STEP_LIMIT = "step_limit"
+    #: The hazard source said the base may not move; the motors were halted.
+    BLOCKED = "blocked"
+    #: Someone asked for a stop; the stop's owner halted the motors.
+    ABORTED = "aborted"
+    #: No usable hazard reading: the base does not move on a missing signal.
+    HAZARD_UNAVAILABLE = "hazard_unavailable"
     #: The wall-clock deadline for the whole call ran out.
     TIMEOUT = "timeout"
     DRIVE_ERROR = "drive_error"
@@ -128,12 +148,15 @@ class ApproachResult:
     uncertainty: Tuple[str, ...] = ()
     #: Every motion in order. Not a Trace: that word is the harness replay's.
     motions: Tuple[MovementStep, ...] = ()
+    #: Why the call ended, in words the model can act on.
+    reason: str = ""
 
     def as_tool_result(self) -> Dict[str, Any]:
         """The public shape the model reads. Decided here, in the control
         layer, so the Tool cannot drift from what the controller means."""
         return {
             "result": self.status.value,
+            "reason": self.reason,
             "steps": self.steps,
             "rotations": self.rotations,
             "distance_cm": self.distance_cm,
@@ -212,15 +235,22 @@ def _fresh_reading(
     return None, saw_reading
 
 
+class _Halt(Protocol):
+    def halt(self) -> Any: ...
+
+
 def approach(
     readings: ReadingSource,
     robot: RobotAdapter,
     *,
     config: Settings = settings,
     clock: Optional[Clock] = None,
+    stop: Stop = NEVER_STOPS,
+    hazards: HazardSource = NO_HAZARD_SOURCE,
 ) -> ApproachResult:
     """Align the chassis to the person, then close to the arrival band, one
-    bounded motion per fresh reading; return a structured public result."""
+    bounded motion per fresh reading, stopping at the first checkpoint that
+    says not to; return a structured public result."""
     active_clock: Clock = clock or _SystemClock()
     invalidated_at = active_clock.monotonic()
     approach_deadline = invalidated_at + config.approach_timeout_s
@@ -230,7 +260,7 @@ def approach(
     motions: List[MovementStep] = []
     last: Optional[_Fresh] = None
 
-    def ended(status: ApproachStatus) -> ApproachResult:
+    def ended(status: ApproachStatus, reason: str) -> ApproachResult:
         return ApproachResult(
             status,
             steps=moves + rotations,
@@ -239,7 +269,54 @@ def approach(
             bearing_deg=last.bearing_deg if last is not None else None,
             uncertainty=last.uncertainty if last is not None else (),
             motions=tuple(motions),
+            reason=reason,
         )
+
+    def done_so_far() -> str:
+        return f"after {moves + rotations} motion(s)"
+
+    def checkpoint(where: str) -> Optional[ApproachResult]:
+        """One safety check. Returns the result that ends the call, if any."""
+        if stop.requested():
+            return ended(ApproachStatus.ABORTED, f"stop requested {where}, {done_so_far()}")
+        hazard = hazards.latest_hazard()
+        if hazard is None:
+            return ended(
+                ApproachStatus.HAZARD_UNAVAILABLE,
+                f"no hazard reading {where}: the base does not move on a missing signal",
+            )
+        if (
+            hazard.observed_at is not None
+            and active_clock.monotonic() - hazard.observed_at > config.hazard_max_age_s
+        ):
+            return ended(
+                ApproachStatus.HAZARD_UNAVAILABLE,
+                f"hazard reading {where} is older than {config.hazard_max_age_s}s",
+            )
+        if hazard.blocked:
+            try:
+                robot.halt()  # type: ignore[attr-defined]
+            except Exception:
+                pass  # The refusal to move stands whether or not the halt was heard.
+            return ended(ApproachStatus.BLOCKED, f"hazard reported {where}, halted {done_so_far()}")
+        return None
+
+    def wait_through(seconds: float) -> Optional[ApproachResult]:
+        """Ride out a commanded motion in polls, so a stop or a hazard that
+        arrives mid-motion is acted on within one poll, not at the end."""
+        end = active_clock.monotonic() + seconds
+        while True:
+            remaining = end - active_clock.monotonic()
+            if remaining <= 0:
+                return None
+            active_clock.sleep(min(config.movement_poll_s, remaining))
+            stopped = checkpoint("during a motion")
+            if stopped is not None:
+                return stopped
+
+    stopped = checkpoint("before moving")
+    if stopped is not None:
+        return stopped
 
     for _ in range(config.max_approach_steps + config.max_align_steps + 1):
         fresh, seen = _fresh_reading(
@@ -253,17 +330,24 @@ def approach(
         )
         if fresh is None:
             if active_clock.monotonic() >= approach_deadline:
-                return ended(ApproachStatus.TIMEOUT)
-            return ended(
-                ApproachStatus.STALE_READING if seen else ApproachStatus.LOST_USER
-            )
+                return ended(ApproachStatus.TIMEOUT, f"deadline passed {done_so_far()}")
+            if seen:
+                return ended(ApproachStatus.STALE_READING, f"no fresh reading {done_so_far()}")
+            return ended(ApproachStatus.LOST_USER, f"no reading of the person {done_so_far()}")
         last = fresh
         if fresh.bearing_deg is None:
-            return ended(ApproachStatus.BEARING_UNAVAILABLE)
+            return ended(
+                ApproachStatus.BEARING_UNAVAILABLE,
+                "the reading source cannot say where the person is relative to the chassis",
+            )
+
+        stopped = checkpoint("before a motion")
+        if stopped is not None:
+            return stopped
 
         if abs(fresh.bearing_deg) > config.align_tolerance_deg:
             if rotations >= config.max_align_steps:
-                return ended(ApproachStatus.ALIGNMENT_FAILED)
+                return ended(ApproachStatus.ALIGNMENT_FAILED, f"still {fresh.bearing_deg:g} degrees off after {rotations} rotations")
             # Divided by the multiplier for the same reason a forward step is:
             # a robot that rotates twice as far as told must still not swing
             # past the tolerance on the other side.
@@ -280,9 +364,9 @@ def approach(
         else:
             outcome = plan_step(fresh.distance_cm, config)
             if outcome is ARRIVED:
-                return ended(ApproachStatus.ARRIVED)
+                return ended(ApproachStatus.ARRIVED, f"within the arrival band {done_so_far()}")
             if not isinstance(outcome, Step) or moves >= config.max_approach_steps:
-                return ended(ApproachStatus.STEP_LIMIT)
+                return ended(ApproachStatus.STEP_LIMIT, f"step budget spent {done_so_far()}")
             duration_ms = _duration_ms(outcome.commanded_cm, config.cm_per_sec_at_percent)
             motion = MovementStep(
                 MotionKind.FORWARD if outcome.direction > 0 else MotionKind.BACK,
@@ -293,10 +377,10 @@ def approach(
         motion_s = duration_ms / 1000.0
         remaining_s = approach_deadline - active_clock.monotonic()
         if motion_s > remaining_s:
-            return ended(ApproachStatus.TIMEOUT)
+            return ended(ApproachStatus.TIMEOUT, f"not enough time left for a motion {done_so_far()}")
         request_timeout_s = remaining_s - motion_s
         if request_timeout_s <= 0:
-            return ended(ApproachStatus.TIMEOUT)
+            return ended(ApproachStatus.TIMEOUT, f"not enough time left for a motion {done_so_far()}")
         try:
             driven = robot.drive(
                 linear_percent=linear,
@@ -305,9 +389,9 @@ def approach(
                 timeout_s=request_timeout_s,
             )
         except Exception:
-            return ended(ApproachStatus.DRIVE_ERROR)
+            return ended(ApproachStatus.DRIVE_ERROR, f"the robot raised on a drive command {done_so_far()}")
         if not driven.ok:
-            return ended(ApproachStatus.DRIVE_ERROR)
+            return ended(ApproachStatus.DRIVE_ERROR, f"the robot refused a drive command {done_so_far()}")
 
         motions.append(motion)
         if motion.kind is MotionKind.ROTATE:
@@ -316,8 +400,13 @@ def approach(
             moves += 1
         remaining_s = approach_deadline - active_clock.monotonic()
         if remaining_s <= 0:
-            return ended(ApproachStatus.TIMEOUT)
-        active_clock.sleep(motion_s)
+            return ended(ApproachStatus.TIMEOUT, f"deadline passed {done_so_far()}")
+        stopped = wait_through(motion_s)
+        if stopped is not None:
+            return stopped
+        stopped = checkpoint("after a motion")
+        if stopped is not None:
+            return stopped
         # Frames acquired during the command are invalid. The settle window
         # begins here, but fresh samples are collected during it; sleep alone
         # never stands in for timestamp freshness.
@@ -327,4 +416,4 @@ def approach(
             approach_deadline,
         )
 
-    return ended(ApproachStatus.STEP_LIMIT)
+    return ended(ApproachStatus.STEP_LIMIT, f"step budget spent {done_so_far()}")

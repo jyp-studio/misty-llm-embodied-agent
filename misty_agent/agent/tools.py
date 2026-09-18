@@ -54,7 +54,9 @@ from misty_agent.agent.layering import (
     control_parameter,
     refuse_control_parameters,
 )
+from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.control.approach import ApproachStatus, approach as run_approach
+from misty_agent.control.safety import NO_HAZARD_SOURCE
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, ActivePerceptionResult
 from misty_agent.robot import Effect
 from misty_agent.agent.skills import EpisodeSkills, SkillRejected
@@ -121,6 +123,11 @@ class ToolContext:
     #: The one anonymous person this Episode is about. Perception Tools
     #: report and update its visible/lost state; movement refuses a lost one.
     target: Optional[InteractionTarget] = None
+    #: Who may say stop while the base is moving, and what says whether it
+    #: may move at all. Fail closed by default: with no hazard source the
+    #: movement Tool refuses, which is what real hardware gets today.
+    stop: Stop = NEVER_STOPS
+    hazards: Any = NO_HAZARD_SOURCE
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -812,7 +819,8 @@ def build_registry() -> ToolRegistry:
                 "target": ctx.target.as_facts(),
             }
         outcome = run_approach(
-            ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock
+            ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock,
+            stop=ctx.stop, hazards=ctx.hazards,
         )
         # `.value`, not the member: `ApproachStatus` is a str mixin, so it
         # compares and serialises identically and looks harmless — but

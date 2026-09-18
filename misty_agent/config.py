@@ -305,6 +305,21 @@ class Settings(BaseSettings):
         ),
     )
     back_up_step_cm: float = Field(default=20.0, gt=0.0)
+    hazard_max_age_s: float = Field(
+        default=1.0, gt=0.0,
+        description=(
+            "Oldest hazard reading a movement checkpoint accepts. Older or "
+            "missing readings stop the base. SIMULATED design value; no hazard "
+            "signal has been read from a Misty II."
+        ),
+    )
+    movement_poll_s: float = Field(
+        default=0.05, gt=0.0, le=1.0,
+        description=(
+            "How often a commanded motion is interrupted to re-check stop and "
+            "hazard state. SIMULATED design value."
+        ),
+    )
     align_tolerance_deg: float = Field(
         default=10.0, gt=0.0, lt=90.0,
         description=(

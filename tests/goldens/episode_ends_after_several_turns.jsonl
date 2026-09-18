@@ -9,7 +9,7 @@
 {"episode_id": "ep-several-turns", "t": 2.095, "turn": 3, "type": "turn_started"}
 {"episode_id": "ep-several-turns", "latency_ms": 949, "t": 3.044, "tokens_in": 934, "tokens_out": 12, "turn": 3, "type": "model_called"}
 {"args": {}, "episode_id": "ep-several-turns", "t": 3.044, "tool": "approach", "turn": 3, "type": "tool_called"}
-{"episode_id": "ep-several-turns", "result": {"bearing_deg": 0.0, "distance_cm": 200.0, "motions": [{"bearing_deg": 0.0, "distance_cm": 200.0, "kind": "forward", "move_cm": 35.0, "rotate_deg": null}], "result": "lost_user", "rotations": 0, "steps": 1, "uncertainty": ["simulated relative bearing, not a camera measurement"]}, "snapshot": {"distance_cm": null, "face_present": false, "new_speech": null}, "t": 7.446, "turn": 3, "type": "observation"}
+{"episode_id": "ep-several-turns", "result": {"bearing_deg": 0.0, "distance_cm": 200.0, "motions": [{"bearing_deg": 0.0, "distance_cm": 200.0, "kind": "forward", "move_cm": 35.0, "rotate_deg": null}], "reason": "no reading of the person after 1 motion(s)", "result": "lost_user", "rotations": 0, "steps": 1, "uncertainty": ["simulated relative bearing, not a camera measurement"]}, "snapshot": {"distance_cm": null, "face_present": false, "new_speech": null}, "t": 7.446, "turn": 3, "type": "observation"}
 {"episode_id": "ep-several-turns", "t": 7.446, "turn": 4, "type": "turn_started"}
 {"episode_id": "ep-several-turns", "latency_ms": 873, "t": 8.319, "tokens_in": 1013, "tokens_out": 8, "turn": 4, "type": "model_called"}
 {"args": {}, "episode_id": "ep-several-turns", "t": 8.319, "tool": "done", "turn": 4, "type": "tool_called"}

@@ -215,9 +215,23 @@ planned from, plus the reading source's own caveats. The simulated adapter model
 relative polar coordinates with a chassis heading; its turning rate and
 travel speed are simulation constants, never hardware measurements.
 
-This is ticket 10's vertical slice, not the completed social system. Hazard
-and bumper handling during movement remain future tickets in
-`.scratch/social-react-runtime/`.
+Movement has safety checkpoints (`misty_agent/control/safety.py`): before
+the first motion, before and after each motion, and at `movement_poll_s`
+during it, the controller asks whether a stop was requested and reads the
+hazard source. A stop ends the call as `aborted` without another command,
+since the stop's owner already halted the motors; a hazard halts them here
+and ends the call as `blocked`; a missing reading, or one older than
+`hazard_max_age_s`, is `hazard_unavailable` and the base does not move. A
+real Session has no hazard source today, so its movement Tool fails closed at
+the first checkpoint; the simulated world reports the scenario's own hazard
+and departure timeline. Every result carries a short reason, and the Journal
+keeps the intent, the completed motions, the reason and the Snapshot. These
+are simulated checks of the control law's shape, not a hardware safety
+certification.
+
+This is ticket 11's vertical slice, not the completed social system.
+Ephemeral Episode memory and the remaining acceptance scenarios are future
+tickets in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

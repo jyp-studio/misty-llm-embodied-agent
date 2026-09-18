@@ -16,6 +16,7 @@ from misty_agent.agent.layering import control_parameter
 from misty_agent.agent.target import InteractionTarget
 from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import FakeClock, RecordingCommands, a_reading
 from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
@@ -37,7 +38,7 @@ def test_a_side_target_is_aligned_by_the_chassis_before_any_forward_step():
     # The head already looks at the person. That must not count as alignment.
     room.move_head(0.0, 0.0, 25.0)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     kinds = [motion.kind.value for motion in result.motions]
@@ -62,7 +63,7 @@ def test_a_side_target_is_aligned_by_the_chassis_before_any_forward_step():
 def test_a_target_within_the_alignment_tolerance_needs_no_turn():
     clock, room = world(150.0, bearing_deg=2.0)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert result.rotations == 0
@@ -72,7 +73,7 @@ def test_a_target_within_the_alignment_tolerance_needs_no_turn():
 def test_too_close_backs_up_into_the_arrival_band():
     clock, room = world(30.0)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert set(room.directions) == {-1}
@@ -82,7 +83,7 @@ def test_too_close_backs_up_into_the_arrival_band():
 def test_already_in_the_band_moves_nothing_and_says_so():
     clock, room = world(CONFIG.target_distance_cm)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 0 and result.motions == ()
@@ -93,7 +94,7 @@ def test_already_in_the_band_moves_nothing_and_says_so():
 def test_the_overshoot_assumption_still_holds_with_a_side_target():
     clock, room = world(150.0, bearing_deg=20.0, actual_motion_multiplier=2.0)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ARRIVED
     assert room.closest_cm >= CONFIG.min_safe_distance_cm
@@ -103,7 +104,7 @@ def test_a_target_that_keeps_slipping_sideways_ends_as_alignment_failed():
     clock = FakeClock()
     room = SlipsSideways(clock, start_cm=150.0, bearing_deg=40.0, config=CONFIG)
 
-    result = approach(room, room, config=CONFIG, clock=clock)
+    result = approach(room, room, config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.ALIGNMENT_FAILED
     assert result.rotations == CONFIG.max_align_steps
@@ -117,7 +118,7 @@ def test_a_reading_without_a_bearing_fails_closed():
     person is relative to the chassis is not permission to drive."""
     clock = FakeClock()
     commands = RecordingCommands()
-    result = approach(DistanceOnly(clock), RealMistyAdapter(commands), config=CONFIG, clock=clock)
+    result = approach(DistanceOnly(clock), RealMistyAdapter(commands), config=CONFIG, clock=clock, hazards=ALWAYS_CLEAR)
 
     assert result.status is ApproachStatus.BEARING_UNAVAILABLE
     assert result.steps == 0
@@ -126,7 +127,7 @@ def test_a_reading_without_a_bearing_fails_closed():
 
 def test_stale_readings_are_reported_as_stale_and_a_vanished_person_as_lost():
     clock = FakeClock()
-    stale = approach(StaleReadings(clock), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock)
+    stale = approach(StaleReadings(clock), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock, hazards=ALWAYS_CLEAR)
     assert stale.status is ApproachStatus.STALE_READING
     assert stale.steps == 0
 
@@ -135,19 +136,19 @@ def test_stale_readings_are_reported_as_stale_and_a_vanished_person_as_lost():
             clock.sleep(0.001)
             return None
 
-    lost = approach(Nobody(), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock)
+    lost = approach(Nobody(), RealMistyAdapter(RecordingCommands()), config=Settings(approach_reading_timeout_s=0.05), clock=clock, hazards=ALWAYS_CLEAR)
     assert lost.status is ApproachStatus.LOST_USER
 
 
 def test_the_step_cap_is_a_typed_bound_distinct_from_the_deadline():
     clock, room = world(400.0)
 
-    capped = approach(room, room, config=replace_settings(max_approach_steps=2), clock=clock)
+    capped = approach(room, room, config=replace_settings(max_approach_steps=2), clock=clock, hazards=ALWAYS_CLEAR)
     assert capped.status is ApproachStatus.STEP_LIMIT
     assert capped.steps == 2
 
     clock, room = world(400.0)
-    late = approach(room, room, config=replace_settings(approach_timeout_s=0.3), clock=clock)
+    late = approach(room, room, config=replace_settings(approach_timeout_s=0.3), clock=clock, hazards=ALWAYS_CLEAR)
     assert late.status is ApproachStatus.TIMEOUT
 
 
@@ -158,7 +159,7 @@ def replace_settings(**overrides):
 def test_the_tool_reports_a_typed_result_with_turns_and_a_bounded_trace():
     clock, room = world(150.0, bearing_deg=25.0)
     target = InteractionTarget("anon-1", EvidenceKind.VISUAL, 0.0)
-    ctx = ToolContext(robot=room, readings=room, config=CONFIG, clock=clock, target=target)
+    ctx = ToolContext(robot=room, readings=room, config=CONFIG, clock=clock, target=target, hazards=ALWAYS_CLEAR)
 
     outcome = dispatch(build_registry(), "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1)
 

@@ -58,6 +58,7 @@ from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import NoArguments, ToolContext, ToolRegistry, build_registry
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 from misty_agent.perception.distance import DistanceReading
@@ -168,7 +169,7 @@ def an_episode(
         robot=the_world or RealMistyAdapter(RecordingCommands()),
         readings=the_world or readings,
         config=settings,
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
     model = ScriptedModel(clock, *script)
     outcome = run_episode(
@@ -252,7 +253,7 @@ def fails_during_model_call():
             robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -358,7 +359,7 @@ def test_a_model_failure_ends_the_episode_records_why_and_halts():
             robot=robot,
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -402,7 +403,7 @@ def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
             robot=robot,
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -436,7 +437,7 @@ def test_a_tool_failure_ends_the_episode_records_why_and_halts():
             robot=robot,
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -473,7 +474,7 @@ def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
             robot=robot,
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -506,7 +507,7 @@ def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
             robot=robot,
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=PerceptionFails(),
@@ -551,7 +552,7 @@ def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal(leak)
             robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -586,7 +587,7 @@ def test_a_failed_error_halt_cannot_reopen_the_episode():
             robot=RefusesToHalt(),
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -655,7 +656,7 @@ def test_ending_is_read_from_the_registry_not_from_the_tool_name():
         robot=RealMistyAdapter(RecordingCommands()),
         readings=ScriptedReadings(),
         config=Settings(max_turns_per_episode=2),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
     registry._tools["done"] = dataclasses.replace(
         registry.get("done"), ends_episode=False
@@ -873,7 +874,7 @@ def test_the_instructions_the_caller_gave_are_the_ones_the_model_reads():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -900,7 +901,7 @@ def test_an_episode_can_be_run_without_a_persona_but_must_ask():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -969,7 +970,7 @@ def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
             robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(142)),
@@ -1100,7 +1101,7 @@ def test_the_model_cannot_edit_the_loops_working_context():
         robot=RealMistyAdapter(RecordingCommands()),
         readings=ScriptedReadings(),
         config=Settings(),
-        clock=clock,
+        clock=clock, hazards=ALWAYS_CLEAR
     )
     meddler = Meddler(clock)
 
@@ -1198,7 +1199,7 @@ def is_aborted():
     )
     stop = EmergencyStop(journal, world)
     ctx = ToolContext(
-        robot=world, readings=world, config=ABORT_CONFIG, clock=clock
+        robot=world, readings=world, config=ABORT_CONFIG, clock=clock, hazards=ALWAYS_CLEAR
     )
     model = ScriptedModel(clock, ("approach", {}, 1024, 811, 15))
     outcome = run_episode(
@@ -1345,7 +1346,7 @@ def test_a_stop_between_turns_starts_no_new_action():
         model=PressesWhileThinking(),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -1383,7 +1384,7 @@ def test_a_halt_that_fails_still_ends_the_episode():
         model=PressesWhileThinking(),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -1421,7 +1422,7 @@ def test_an_abort_arriving_from_a_real_thread_still_ends_the_episode():
         model=WaitsForTheBumper(),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock
+            robot=robot, readings=ScriptedReadings(), config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -1472,7 +1473,7 @@ def test_a_long_episode_derives_memory_exactly_once():
             robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(*[a_reading() for _ in range(cap * 4)]),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1503,7 +1504,7 @@ def test_what_the_robot_said_is_what_gets_remembered():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1528,7 +1529,7 @@ def test_an_episode_where_the_robot_says_nothing_still_records_the_exchange():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1564,7 +1565,7 @@ def test_the_models_message_list_is_never_stored_as_memory(tmp_path):
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1597,7 +1598,7 @@ def test_what_memory_knows_reaches_the_model_after_the_persona():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1646,7 +1647,7 @@ def test_memory_is_derived_after_the_episode_has_already_ended():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock,
+            config=Settings(), clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),
@@ -1683,7 +1684,7 @@ def test_post_episode_memory_failure_cannot_hide_the_completed_journal():
             robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
-            clock=clock,
+            clock=clock, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(100)),
@@ -1718,7 +1719,7 @@ def test_an_episode_that_speaks_shuts_the_microphone_for_that_long():
         registry=build_registry(),
         ctx=ToolContext(
             robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
-            config=Settings(), clock=clock, ears=ears,
+            config=Settings(), clock=clock, ears=ears, hazards=ALWAYS_CLEAR
         ),
         journal=journal,
         perception=ScriptedPerception(a_snapshot(120)),

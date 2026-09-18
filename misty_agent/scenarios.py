@@ -115,6 +115,10 @@ class Placement:
 
     distance_cm: float
     bearing_deg: float = 0.0
+    #: Scenario-provided safety timeline: when something blocks the path, and
+    #: when the person stops being measurable. Simulated state, never sensed.
+    hazard_at_s: Optional[float] = None
+    leaves_at_s: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +222,36 @@ COME_CLOSER = TextScenarioScript(
         Decision("done", {}, 24, 1, note="陪伴已開始，結束 Episode。"),
     ),
     placement=Placement(distance_cm=150.0, bearing_deg=25.0),
+)
+
+
+COME_CLOSER_TARGET_LOST = TextScenarioScript(
+    key="come-closer-target-lost",
+    label="過來陪我 · 途中人離開，停止並改口",
+    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "好，我過去。"}, 20, 4, note="使用者明確邀請。"),
+        Decision("approach", {}, 22, 1, note="接近目前 Interaction Target。"),
+        Decision("speak", {"text": "我看不到你了，先停在這裡。"}, 24, 8,
+                 note="controller 回報 target lost；不盲目前進，改用說話。"),
+        Decision("done", {}, 22, 1, note="人不在，結束 Episode。"),
+    ),
+    placement=Placement(distance_cm=150.0, bearing_deg=0.0, leaves_at_s=1.2),
+)
+
+
+COME_CLOSER_HAZARD = TextScenarioScript(
+    key="come-closer-hazard",
+    label="過來陪我 · 途中出現障礙，立即停止",
+    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "好，我過去。"}, 20, 4, note="使用者明確邀請。"),
+        Decision("approach", {}, 22, 1, note="接近目前 Interaction Target。"),
+        Decision("speak", {"text": "前面有東西擋住，我先停在這裡，我們用說的。"}, 26, 10,
+                 note="controller 回報 blocked 並已停止底盤；改為遠距對話。"),
+        Decision("done", {}, 22, 1, note="不強行接近，結束 Episode。"),
+    ),
+    placement=Placement(distance_cm=150.0, bearing_deg=0.0, hazard_at_s=1.2),
 )
 
 
@@ -447,7 +481,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             note="已做低風險回應，結束這次互動。",
         ),
     ),
-    text_scripts=(COME_CLOSER,),
+    text_scripts=(COME_CLOSER, COME_CLOSER_TARGET_LOST, COME_CLOSER_HAZARD),
 )
 
 
@@ -664,6 +698,8 @@ __all__ = [
     "SPEAKER_HANDOFF",
     "A_THEN_B",
     "COME_CLOSER",
+    "COME_CLOSER_HAZARD",
+    "COME_CLOSER_TARGET_LOST",
     "Placement",
     "B_EXPIRES",
     "SCRIPTED_ATTRIBUTION",

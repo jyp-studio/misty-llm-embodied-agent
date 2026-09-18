@@ -147,8 +147,8 @@ _SPEC_FIRST = (
 #:
 #: The first version of this banner said the loop "had to be built to produce
 #: it, not the other way round". `tests/goldens/README.md` keeps a table of
-#: every time a golden and the implementation disagreed: **seven times, and
-#: the goldens gave way in six of them.** So the flattering version was false,
+#: every time a golden and the implementation disagreed: **eight times, and
+#: the goldens gave way in seven of them.** So the flattering version was false,
 #: written in the one place this ticket exists to keep honest.
 #:
 #: The true version is the better story anyway — a rule that is never invoked
@@ -156,8 +156,8 @@ _SPEC_FIRST = (
 #: was invoked somebody wrote down which side moved.
 AMENDMENTS = (
     "It has been amended since. Where a golden and the loop disagreed, which "
-    "side gave way is written down — seven times so far, and the goldens gave "
-    "way in six of them (tests/goldens/README.md). Editing one is allowed; "
+    "side gave way is written down — eight times so far, and the goldens gave "
+    "way in seven of them (tests/goldens/README.md). Editing one is allowed; "
     "editing one without saying so is not."
 )
 
@@ -967,9 +967,11 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
     caveats = "；".join(result.get("uncertainty") or ()) or "沒有額外不確定性註記"
     beats = [PresentationBeat(
         "approach", "Target-aware approach", ending,
-        f"最後讀數：距離 {result.get('distance_cm')} cm、bearing "
-        f"{result.get('bearing_deg')}°（{caveats}）。底盤先對準再靠近；"
-        "速度、角速度與時間由 controller 決定，模型只表達意圖；常數為模擬值。",
+        f"停止原因：{result.get('reason') or '—'}。最後讀數：距離 "
+        f"{result.get('distance_cm')} cm、bearing {result.get('bearing_deg')}°（{caveats}）。"
+        "底盤先對準再靠近；每個 checkpoint 檢查 stop 與 hazard；"
+        "速度、角速度與時間由 controller 決定，模型只表達意圖；常數為模擬值，"
+        "不是真機安全驗證。",
     )]
     for index, motion in enumerate(result.get("motions") or [], start=1):
         amount = (

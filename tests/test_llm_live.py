@@ -44,6 +44,7 @@ from misty_agent.agent.model import MissingApiKey, OpenAIModel, api_key_availabl
 from misty_agent.agent.react import run_episode
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.config import Settings
+from misty_agent.control.safety import ALWAYS_CLEAR
 from misty_agent.fakes import FakeClock, RecordingCommands
 from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 
@@ -119,7 +120,7 @@ def a_live_episode(model, trigger, said, distance_cm, *, config=None):
         readings=world or NothingInView(),
         config=settings,
         clock=clock,
-        ears=HEARS_NOTHING,
+        ears=HEARS_NOTHING, hazards=ALWAYS_CLEAR
     )
 
     class Counting:

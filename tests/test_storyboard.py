@@ -38,6 +38,8 @@ from misty_agent.agent.journal import (
     OUTCOMES,
     DecisionNoted,
     SkillsAvailable,
+    TargetBound,
+    HandoffRequested,
     EpisodeFinished,
     EpisodeStarted,
     ExecutionFailed,
@@ -82,6 +84,7 @@ def one_of_every_kind():
     """
     journal = a_journal()
     journal.record(EpisodeStarted, trigger="speech")
+    journal.record(TargetBound, track_reference="anon-1", source="visual", state="bound")
     journal.record(SkillsAvailable, skills=[{"name": "support", "description": "Offer company"}])
     journal.record(TurnStarted, turn=1)
     journal.record(ModelCalled, turn=1, latency_ms=412, tokens_in=930, tokens_out=17)
@@ -93,6 +96,7 @@ def one_of_every_kind():
     )
     journal.record(ToolCalled, turn=1, tool="change_led", args={"red": 255, "green": 0, "blue": 0})
     journal.record(Observation, turn=1, result={"ok": True}, snapshot=a_snapshot())
+    journal.record(HandoffRequested, turn=1, cue_id="cue-2", cue_kind="explicit_request")
     journal.record(ToolRejected, turn=2, tool="move_head", reason="pitch=90 is above the maximum 26")
     journal.record(StopRequested, source="foot_bumper")
     journal.record(ExecutionFailed, phase="model", error_type="TimeoutError", message="took too long")
@@ -176,7 +180,7 @@ def test_a_field_a_record_gains_arrives_without_anybody_wiring_it():
         "latency_ms": 412, "tokens_in": 930, "tokens_out": 17,
     }
     assert by_kind["observation"]["snapshot"] == {
-        "distance_cm": 120, "face_present": True, "new_speech": None,
+        "distance_cm": 120, "face_present": True, "new_speech": None, "target": None,
     }
     assert by_kind["execution_failed"] == {
         "phase": "model", "error_type": "TimeoutError", "message": "took too long",
@@ -198,12 +202,14 @@ def test_every_record_kind_becomes_a_moment():
 
     assert [moment.kind for moment in board.moments] == [
         "episode_started",
+        "target_bound",
         "skills_available",
         "turn_started",
         "model_called",
         "decision_noted",
         "tool_called",
         "observation",
+        "handoff_requested",
         "tool_rejected",
         "stop_requested",
         "execution_failed",

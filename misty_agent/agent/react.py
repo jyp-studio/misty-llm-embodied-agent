@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import logging
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.evidence import TriggerEvidence
@@ -63,11 +63,13 @@ from misty_agent.agent.journal import (
     ExecutionFailed,
     EpisodeFinished,
     EpisodeStarted,
+    HandoffRequested,
     Journal,
     ModelCalled,
     Observation,
     Snapshot,
     SkillsAvailable,
+    TargetBound,
     TurnStarted,
 )
 from misty_agent.agent.layering import mentions_control_parameter
@@ -137,9 +139,13 @@ def run_episode(
     stop: Stop = NEVER_STOPS,
     memory: Remembers = NO_MEMORY,
     instructions: str = PERSONA,
-    at_turn_boundary: Optional[Callable[[], None]] = None,
+    at_turn_boundary: Optional[Callable[[], Any]] = None,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
+
+    `at_turn_boundary` may return a `HandoffNotice`: someone else's Explicit
+    Request is queued. It is recorded and shown to the model once; the loop
+    never ends the Episode for it, the model does, by calling `done`.
 
     `journal` arrives already built, on the same clock as `ctx.clock`: the
     latency this loop measures and the timestamps the Journal writes have to
@@ -149,6 +155,13 @@ def run_episode(
     config = ctx.config
     clock = ctx.clock
     journal.record(EpisodeStarted, trigger=evidence.source.value)
+    if ctx.target is not None:
+        journal.record(
+            TargetBound,
+            track_reference=ctx.target.reference,
+            source=ctx.target.source.value,
+            state=ctx.target.state.value,
+        )
 
     # What the model is shown, and only this. The persona and memory go in at
     # the top as blocks of prose; everything after them is this Episode's own
@@ -192,6 +205,18 @@ def run_episode(
     # therefore what happens when the `for` runs out, which is why it needs no
     # branch of its own and cannot be forgotten.
     outcome = "turn_limit"
+
+    def handoff(turn: int) -> None:
+        notice = boundary()
+        if notice is None:
+            return
+        journal.record(
+            HandoffRequested,
+            turn=turn,
+            cue_id=notice.cue_id,
+            cue_kind=notice.cue_kind,
+        )
+        working_context.append(notice.model_message())
 
     for turn in range(1, config.max_turns_per_episode + 1):
         turns = turn
@@ -258,11 +283,13 @@ def run_episode(
             working_context.append(
                 _refused(dispatched, tool_call_id)
             )
-            boundary()
+            handoff(turn)
             continue
 
         try:
             snapshot = perception.snapshot()
+            if ctx.target is not None:
+                snapshot = replace(snapshot, target=ctx.target.as_facts())
         except Exception as error:
             _record_failure_and_halt(journal, ctx.robot, "perception", error)
             outcome = "error"
@@ -279,7 +306,7 @@ def run_episode(
             outcome = "error"
             break
         working_context.append(_observed(observation, tool_call_id))
-        boundary()
+        handoff(turn)
 
         # The stop may have arrived while the Tool was running. Python cannot
         # interrupt a call that has not returned, so the Tool finished and its
@@ -356,6 +383,11 @@ def _observed(
                 "distance_cm": observation.snapshot.distance_cm,
                 "face_present": observation.snapshot.face_present,
                 "new_speech": observation.snapshot.new_speech,
+                **(
+                    {"target": dict(observation.snapshot.target)}
+                    if observation.snapshot.target is not None
+                    else {}
+                ),
             },
         },
     }

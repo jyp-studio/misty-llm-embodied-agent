@@ -77,6 +77,7 @@ from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.agent.skills import SkillCatalog, bundled_skills
+from misty_agent.agent.target import InteractionTarget
 from misty_agent.perception.listening import BoundedListener, TranscriptSource
 from misty_agent.audio_input import LiveInputAdapter
 from misty_agent.config import Settings, settings
@@ -294,7 +295,7 @@ class Session:
         *,
         render: bool = True,
         journal_path: Optional[pathlib.Path] = None,
-        at_turn_boundary: Optional[Callable[[], None]] = None,
+        at_turn_boundary: Optional[Callable[[], Any]] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
         """Run one Episode from typed Trigger Evidence and return its result.
 
@@ -320,9 +321,10 @@ class Session:
             episode_id=episode_id, clock=self.clock, subscribers=subscribers
         )
         stop = EmergencyStop(journal, self.robot)
-        episode_perception = self.active_perception.for_track(
-            evidence.facts.get("track_reference")
-        )
+        # One anonymous target per Episode, bound from the Evidence and never
+        # inherited: the perception view and the target share one reference.
+        target = InteractionTarget.from_evidence(evidence)
+        episode_perception = self.active_perception.for_track(target.reference)
         microphone = self._microphone()
         listening_source = self.attention_source
         if listening_source is None and microphone is not None:
@@ -342,6 +344,7 @@ class Session:
                     active_perception=episode_perception,
                     skills=self.skills.for_episode(),
                     listener=BoundedListener(listening_source, self.clock, stop),
+                    target=target,
                 ),
                 journal=journal,
                 perception=self._perception(),

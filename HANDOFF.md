@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-15 · branch `refactor/react-agent`
+Last updated: 2026-09-18 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–07 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–08 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -67,8 +67,20 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     with timed scripted speech and shows Skill state during Journal replay.
 23. Bounded listen has explicit silence/unavailable/error/aborted results;
     live audio wiring shares the VAD owner and caps one ASR attempt.
+24. Each Episode binds one anonymous Interaction Target from its Trigger
+    Evidence. Perception Tools report and update visible/lost/reacquired on
+    that track only; a closer or newer face is never a silent switch, and
+    `approach` refuses a lost target. Snapshots carry the target as a fourth
+    fact.
+25. During an Episode, another person's Explicit Request is queued and the
+    model is told once at a Turn boundary. The Episode ends when the model
+    calls `done`; the queued request then opens its own Episode with its own
+    target. Stale queued requests expire; bumper/e-stop still abort at once.
+26. The A→B Demo card runs two scripted anonymous actors and shows target
+    binding, the queued request, the handoff notice, the dequeue and both
+    Episodes. Speaker attribution in that card is scripted, not localised.
 
-Ticket 06 ends at `36fbdc4`; ticket 07 is the current implementation.
+Ticket 07 ends at `446be12`; ticket 08 is the current implementation.
 
 ## Verification
 
@@ -106,15 +118,17 @@ against a real camera. The vendor audio composition is wired to the same
 timing, threshold calibration, association accuracy, and reliability are
 hardware-unverified.
 
-The current social runtime does not yet implement identity-aware handoff,
-or target-aware movement. The care path is supported only by synthetic
+The current social runtime does not yet implement target-aware movement.
+Handoff is target-aware only in the sense of anonymous track tokens; there is
+no face identity and no sound-source direction, and the A→B card's speaker
+attribution is scripted. The care path is supported only by synthetic
 temporal frames and scripted model decisions; it is not validated emotion
 recognition. The A-to-B card remains a roadmap preview and cannot run until
 its target/handoff vertical ticket implements that capability.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/08-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/09-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

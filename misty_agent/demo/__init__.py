@@ -44,12 +44,14 @@ import pathlib
 import webbrowser
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from misty_agent.agent.journal import (
     DecisionNoted,
+    HandoffRequested,
     SkillsAvailable,
     Observation,
+    TargetBound,
     ToolCalled,
     describe,
     from_jsonl,
@@ -304,6 +306,7 @@ def _scenario_payload(case: ScenarioCard) -> dict:
         "preview": [asdict(beat) for beat in case.preview],
     }
     if isinstance(case, AcceptanceScenario):
+        payload["actors"] = list(case.actors)
         audio_fixtures = [
             {"key": item.key, "label": item.label, "input_kind": "audio"}
             for item in case.audio_fixtures
@@ -530,6 +533,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
                 queue_capacity=scenario_config.cue_queue_capacity,
                 fixture_label=selected_fixture.label,
                 input_kind=("audio" if selected_audio else "text" if selected_text else "visual"),
+                actors=case.actors,
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
@@ -544,8 +548,15 @@ def _scenario_execution(
     queue_capacity: int,
     fixture_label: str,
     input_kind: str,
+    actors: Sequence[str] = ("person",),
 ) -> Mapping[str, Any]:
-    """Human-readable evidence derived from this run, not its preview."""
+    """Human-readable evidence derived from this run, not its preview.
+
+    Cue lifecycle records are walked in order, so a second person's queued
+    request, the handoff notice inside the first Episode, and the second
+    Episode all appear where they happened rather than as one flattened
+    Journal.
+    """
     cue = next(
         (
             record
@@ -649,135 +660,54 @@ def _scenario_execution(
         )
         for record in visual_records
     )
-    if cue is not None and evidence is not None:
-        if input_kind in {"audio", "text"}:
-            flow.append(
-                PresentationBeat(
-                    "input",
-                    "人說",
-                    f"「{cue.text}」",
-                    "這段輸入由案例預先定義。",
-                )
-            )
-        flow.extend(
-            (
-                PresentationBeat(
-                    "evidence",
-                    "Trigger Evidence",
-                    f"{'文字腳本' if input_kind == 'text' else '語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
-                    f"{evidence.observed_at_s:g} 秒",
-                    f"{len(evidence.facts)} 個可觀察 facts"
-                    + (
-                        "；選取 1 張 bounded JPEG crop"
-                        if evidence.selected_image_media_type is not None
-                        else ""
-                    )
-                    + f"；不確定性：{uncertainty}",
-                ),
-                PresentationBeat(
-                    "cue",
-                    "系統判定",
-                    (
-                        "明確互動請求"
-                        if cue.cue_kind.value == "explicit_request"
-                        else (
-                            "Care Cue"
-                            if cue.cue_kind.value == "care_cue"
-                            else "Social Invitation"
-                        )
-                    ),
-                    cue.cue_kind.value,
-                ),
-            )
-        )
-    for record in journal_records:
-        if isinstance(record, SkillsAvailable):
-            flow.append(PresentationBeat(
-                "skills_available", "可用 Skills", "可選技能（尚未載入）",
-                " · ".join(f"{item['name']}：{item['description']}" for item in record.skills),
-            ))
-        if not isinstance(record, ToolCalled):
+    runs_by_cue = {run.cue_id: run for run in result.episodes}
+    detected_by_cue = {
+        record.cue_id: record
+        for record in result.records
+        if isinstance(record, CueDetected)
+    }
+    cue_order = list(detected_by_cue)
+
+    def actor_of(cue_id: str) -> str:
+        index = cue_order.index(cue_id) if cue_id in cue_order else 0
+        return actors[min(index, len(actors) - 1)]
+
+    # Cue records appended while an Episode was active belong inside that
+    # Episode's story: they were collected at its Turn boundaries.
+    during: dict[str, list] = {}
+    active_cue: Optional[str] = None
+    for record in result.records:
+        if isinstance(record, EpisodeOpened):
+            active_cue = record.cue_id
+            during[active_cue] = []
+        elif isinstance(record, EpisodeCompleted):
+            active_cue = None
+        elif active_cue is not None and isinstance(
+            record, (CueDetected, CueQueued, CueDeduplicated, CueReplaced, CueDropped)
+        ):
+            during[active_cue].append(record)
+    inside = {id(record) for group in during.values() for record in group}
+
+    for record in result.records:
+        if id(record) in inside:
             continue
-        noted = notes.get(record.turn)
-        tool_call_id = (
-            noted.tool_call_id if noted is not None else f"turn-{record.turn}-tool"
-        )
-        if noted is not None:
-            flow.append(
-                PresentationBeat(
-                    "decision_note",
-                    "Decision Note",
-                    noted.note,
-                    "公開目的，不是私有推理。",
-                )
-            )
-        flow.append(
-            PresentationBeat(
-                "tool_call", "Tool call", record.tool, tool_call_id
-            )
-        )
-        if record.tool == "speak":
-            observation = observations.get(record.turn)
-            succeeded = (
-                observation is not None
-                and observation.result.get("ok") is True
-            )
-            flow.append(
-                PresentationBeat(
-                    "observation",
-                    "Observation",
-                    f"「{record.args['text']}」",
-                    (
-                        "模擬說話成功；Snapshot 已附回下一個 Turn。"
-                        if succeeded
-                        else "模擬說話未成功；Snapshot 已附回下一個 Turn。"
-                    ),
-                )
-            )
-        elif record.tool in {"activate_skill", "read_skill_resource", "listen"}:
-            observation = observations.get(record.turn)
-            if observation is not None:
-                returned = observation.result
-                if "refused" in returned:
-                    headline, detail = "請求被拒絕", returned["refused"]
-                elif record.tool == "activate_skill":
-                    headline, detail = returned["name"], "技能已載入；只引導本次 Episode 後續 Tools。"
-                elif record.tool == "read_skill_resource":
-                    headline, detail = returned["resource"], "已按需讀取；沒有執行 script。"
-                else:
-                    headline = returned.get("transcript") or "這次沒有收到新話語"
-                    detail = f"聆聽結果：{returned['ending']}；{returned['source']}，說話者未辨識。"
-                flow.append(PresentationBeat(
-                    returned.get("kind", "refused"), "本次 Tool 結果", headline, detail,
-                ))
-        elif record.tool in {"observe_target", "inspect_scene"}:
-            observation = observations.get(record.turn)
-            if observation is not None:
-                flow.append(
-                    PresentationBeat(
-                        "observation",
-                        "Observation",
-                        (
-                            "便宜的目標觀察"
-                            if record.tool == "observe_target"
-                            else "較昂貴的場景檢查"
-                        ),
-                        f"{observation.result.get('ending')} · "
-                        f"fresh for {observation.result.get('fresh_for_s')} 秒 · "
-                        "保留不確定性",
-                    )
-                )
-        elif record.tool in {"move_head", "move_arms", "display_image", "change_led"}:
-            observation = observations.get(record.turn)
-            if observation is not None and observation.result.get("ok"):
-                flow.append(PresentationBeat(
-                    "simulated_effect", "模擬表達成功", describe(record).headline,
-                    "姿勢由本次成功的 Tool 結果更新；不是實機動作。",
-                ))
+        if isinstance(record, EpisodeOpened) and record.cue_id in runs_by_cue:
+            flow.extend(_episode_beats(
+                runs_by_cue[record.cue_id],
+                actor_of(record.cue_id),
+                detected_by_cue[record.cue_id],
+                input_kind,
+                during=during.get(record.cue_id, ()),
+                actor_of=actor_of,
+            ))
+        else:
+            beat = _cue_beat(record, actor_of, input_kind)
+            if beat is not None:
+                flow.append(beat)
     completed = bool(
-        episode is not None
+        result.episodes
         and result.ending is RuntimeEnding.INPUT_EXHAUSTED
-        and episode.outcome.outcome == "done"
+        and all(run.outcome.outcome == "done" for run in result.episodes)
     )
     quiet = episode is None and result.ending is RuntimeEnding.INPUT_EXHAUSTED
     flow.append(
@@ -826,6 +756,12 @@ def _scenario_execution(
                 )
                 if input_kind == "audio"
                 else "文字與後續話語、model 決策為預先定義的腳本；Skill 載入、listen、Runtime、Tools 與 Journal 都在這次重新執行。Robot 為模擬，未呼叫真實 model 或 Misty II。"
+                + (
+                    "多位 actors 的發言歸屬由腳本指定：系統沒有聲源方向或人臉身分，"
+                    "只用匿名 track reference 綁定 Interaction Target。"
+                    if len(actors) > 1
+                    else ""
+                )
                 if input_kind == "text"
                 else (
                     "選定的 synthetic frame timeline 由目前程式重新執行本機"
@@ -1015,6 +951,226 @@ def _runtime_example() -> Reply:
             "storyboard": board,
         },
     )
+
+
+_DROP_WORDING = {
+    "expired": "過期，沒有開啟 Episode",
+    "overflow": "因 queue 已滿而被淘汰",
+    "shutdown": "因 runtime 關閉而放棄",
+    "runtime_failure": "因 runtime 失敗而放棄",
+    "episode_error": "因 Episode 錯誤而放棄",
+}
+
+
+def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[PresentationBeat]:
+    """One cue lifecycle record as display copy, or nothing to show."""
+    if isinstance(record, CueDetected):
+        if input_kind not in {"audio", "text"}:
+            return None
+        actor = actor_of(record.cue_id)
+        return PresentationBeat(
+            "input",
+            "人說" if actor == "person" else f"{actor} 說",
+            f"「{record.text}」",
+            "這段輸入由案例預先定義。",
+        )
+    if isinstance(record, CueQueued):
+        return PresentationBeat(
+            "cue_queued",
+            "Cue queue",
+            f"{actor_of(record.cue_id)} 的明確請求排隊等待",
+            f"{actor_of(record.active_cue_id)} 的 Episode 進行中；queue 內有 "
+            f"{record.queue_size} 個 cue。不平行開啟 Episode，也不丟棄。",
+        )
+    if isinstance(record, CueDropped):
+        return PresentationBeat(
+            "cue_dropped",
+            "Cue 丟棄",
+            f"{actor_of(record.cue_id)} 的 cue 已"
+            + _DROP_WORDING.get(record.reason.value, record.reason.value),
+            "依 freshness 與 queue 規則處理；不依舊資料強行互動。",
+        )
+    if isinstance(record, CueDequeued):
+        return PresentationBeat(
+            "cue_dequeued",
+            "交接",
+            f"輪到 {actor_of(record.cue_id)}",
+            "前一個 Episode 已在 Turn boundary 結束；從 queue 取出下一個 cue，"
+            "開啟新 Episode 與新的 Interaction Target。",
+        )
+    return None
+
+
+def _episode_beats(
+    run: RuntimeEpisode,
+    actor: str,
+    cue: CueDetected,
+    input_kind: str,
+    *,
+    during: Sequence[RuntimeRecord] = (),
+    actor_of=lambda cue_id: "person",
+) -> list:
+    """One Episode's evidence, target, notices and Tool results, in order.
+
+    `during` holds cue records the Attention Loop appended while this Episode
+    ran. Those about a cue the model was told of appear at that notice; the
+    rest follow the Journal, still inside this Episode's story.
+    """
+    waiting = list(during)
+
+    def collected(cue_id: Optional[str]) -> list:
+        chosen = [r for r in waiting if cue_id is None or getattr(r, "cue_id", None) == cue_id]
+        for record in chosen:
+            waiting.remove(record)
+        return [beat for beat in (_cue_beat(r, actor_of, input_kind) for r in chosen) if beat]
+    evidence = run.evidence
+    uncertainty = (
+        "、".join(evidence.uncertainty)
+        if evidence.uncertainty
+        else "沒有額外不確定性註記"
+    )
+    observations = {
+        record.turn: record
+        for record in run.journal.records
+        if isinstance(record, Observation)
+    }
+    notes = {
+        record.turn: record
+        for record in run.journal.records
+        if isinstance(record, DecisionNoted)
+    }
+    flow = [
+        PresentationBeat(
+            "evidence",
+            "Trigger Evidence",
+            f"{'文字腳本' if input_kind == 'text' else '語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
+            f"{evidence.observed_at_s:g} 秒",
+            f"{len(evidence.facts)} 個可觀察 facts"
+            + (
+                "；選取 1 張 bounded JPEG crop"
+                if evidence.selected_image_media_type is not None
+                else ""
+            )
+            + f"；不確定性：{uncertainty}",
+        ),
+        PresentationBeat(
+            "cue",
+            "系統判定",
+            (
+                "明確互動請求"
+                if cue.cue_kind.value == "explicit_request"
+                else (
+                    "Care Cue"
+                    if cue.cue_kind.value == "care_cue"
+                    else "Social Invitation"
+                )
+            ),
+            cue.cue_kind.value,
+        ),
+    ]
+    journal_records = run.journal.records
+    for record in journal_records:
+        if isinstance(record, TargetBound):
+            flow.append(PresentationBeat(
+                "target_bound",
+                "Interaction Target",
+                f"{actor}：{record.track_reference or '沒有匿名 track（純語音）'}",
+                f"本 Episode 只鎖定這個匿名 target（{record.state}）；更近或更新的臉"
+                "不會靜默取代，下一個 Episode 也不繼承。",
+            ))
+        if isinstance(record, HandoffRequested):
+            flow.extend(collected(record.cue_id))
+            flow.append(PresentationBeat(
+                "handoff_requested",
+                "交接通知",
+                f"{actor_of(record.cue_id)} 正在等待（{record.cue_id}）",
+                "在 Turn boundary 告知 model 收尾；不中斷目前 Turn，也不平行開啟 Episode。",
+            ))
+        if isinstance(record, SkillsAvailable):
+            flow.append(PresentationBeat(
+                "skills_available", "可用 Skills", "可選技能（尚未載入）",
+                " · ".join(f"{item['name']}：{item['description']}" for item in record.skills),
+            ))
+        if not isinstance(record, ToolCalled):
+            continue
+        noted = notes.get(record.turn)
+        tool_call_id = (
+            noted.tool_call_id if noted is not None else f"turn-{record.turn}-tool"
+        )
+        if noted is not None:
+            flow.append(
+                PresentationBeat(
+                    "decision_note",
+                    "Decision Note",
+                    noted.note,
+                    "公開目的，不是私有推理。",
+                )
+            )
+        flow.append(
+            PresentationBeat(
+                "tool_call", "Tool call", record.tool, tool_call_id
+            )
+        )
+        if record.tool == "speak":
+            observation = observations.get(record.turn)
+            succeeded = (
+                observation is not None
+                and observation.result.get("ok") is True
+            )
+            flow.append(
+                PresentationBeat(
+                    "observation",
+                    "Observation",
+                    f"「{record.args['text']}」",
+                    (
+                        "模擬說話成功；Snapshot 已附回下一個 Turn。"
+                        if succeeded
+                        else "模擬說話未成功；Snapshot 已附回下一個 Turn。"
+                    ),
+                )
+            )
+        elif record.tool in {"activate_skill", "read_skill_resource", "listen"}:
+            observation = observations.get(record.turn)
+            if observation is not None:
+                returned = observation.result
+                if "refused" in returned:
+                    headline, detail = "請求被拒絕", returned["refused"]
+                elif record.tool == "activate_skill":
+                    headline, detail = returned["name"], "技能已載入；只引導本次 Episode 後續 Tools。"
+                elif record.tool == "read_skill_resource":
+                    headline, detail = returned["resource"], "已按需讀取；沒有執行 script。"
+                else:
+                    headline = returned.get("transcript") or "這次沒有收到新話語"
+                    detail = f"聆聽結果：{returned['ending']}；{returned['source']}，說話者未辨識。"
+                flow.append(PresentationBeat(
+                    returned.get("kind", "refused"), "本次 Tool 結果", headline, detail,
+                ))
+        elif record.tool in {"observe_target", "inspect_scene"}:
+            observation = observations.get(record.turn)
+            if observation is not None:
+                flow.append(
+                    PresentationBeat(
+                        "observation",
+                        "Observation",
+                        (
+                            "便宜的目標觀察"
+                            if record.tool == "observe_target"
+                            else "較昂貴的場景檢查"
+                        ),
+                        f"{observation.result.get('ending')} · "
+                        f"fresh for {observation.result.get('fresh_for_s')} 秒 · "
+                        "保留不確定性",
+                    )
+                )
+        elif record.tool in {"move_head", "move_arms", "display_image", "change_led"}:
+            observation = observations.get(record.turn)
+            if observation is not None and observation.result.get("ok"):
+                flow.append(PresentationBeat(
+                    "simulated_effect", "模擬表達成功", describe(record).headline,
+                    "姿勢由本次成功的 Tool 結果更新；不是實機動作。",
+                ))
+    flow.extend(collected(None))
+    return flow
 
 
 def _runtime_payload(result: RuntimeResult) -> dict:

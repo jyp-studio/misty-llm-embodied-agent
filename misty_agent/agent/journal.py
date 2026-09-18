@@ -220,6 +220,31 @@ class SkillsAvailable(Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class TargetBound(Record):
+    """The anonymous Interaction Target this Episode was opened for.
+
+    Recorded once, at the start, so a Journal proves which track token the
+    Episode was about. There is no record for switching, because switching
+    is not something an Episode can do.
+    """
+
+    track_reference: Optional[str]
+    source: str
+    state: str
+    type: str = "target_bound"
+
+
+@dataclass(frozen=True, kw_only=True)
+class HandoffRequested(Record):
+    """The active Episode was told, at a Turn boundary, that someone waits."""
+
+    turn: int
+    cue_id: str
+    cue_kind: str
+    type: str = "handoff_requested"
+
+
+@dataclass(frozen=True, kw_only=True)
 class DecisionNoted(Record):
     """A short public purpose for one Tool choice, never private reasoning."""
 
@@ -301,6 +326,12 @@ class Snapshot:
     distance_cm: Optional[int]
     face_present: bool
     new_speech: Optional[str]
+    #: Ticket 08 adds the one fact that is Episode state rather than a
+    #: perception call: which anonymous Interaction Target this Episode is
+    #: about and whether it is currently visible, lost or reacquired. It
+    #: costs nothing to attach, so it does not widen what a Turn pays for.
+    #: `None` on Journals written before the target existed.
+    target: Optional[Mapping[str, Any]] = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -414,10 +445,12 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
     record_type.__dataclass_fields__["type"].default: record_type
     for record_type in (
         EpisodeStarted,
+        TargetBound,
         TurnStarted,
         ModelCalled,
         DecisionNoted,
         SkillsAvailable,
+        HandoffRequested,
         ToolCalled,
         ToolRejected,
         Observation,
@@ -433,10 +466,20 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
 # Serialisation — pure: records in, text out
 # ---------------------------------------------------------------------------
 
+def _on_the_wire(record: Record) -> Dict[str, Any]:
+    """A record as JSON data, without the optional Snapshot target when
+    there is none: Journals written before ticket 08 round-trip unchanged."""
+    raw = asdict(record)
+    snapshot = raw.get("snapshot")
+    if isinstance(snapshot, dict) and snapshot.get("target") is None:
+        snapshot.pop("target", None)
+    return raw
+
+
 def to_jsonl(records: Sequence[Record]) -> str:
     """One record per line. No IO, no clock."""
     return "".join(
-        json.dumps(asdict(record), ensure_ascii=False, sort_keys=True) + "\n"
+        json.dumps(_on_the_wire(record), ensure_ascii=False, sort_keys=True) + "\n"
         for record in records
     )
 
@@ -764,6 +807,14 @@ def describe(record: Record) -> Described:
         return Described("decision note", record.note)
     if isinstance(record, SkillsAvailable):
         return Described("available Skills", ", ".join(item["name"] for item in record.skills))
+    if isinstance(record, TargetBound):
+        return Described(
+            "Interaction Target bound",
+            f"{record.track_reference or 'no anonymous track'} ({record.state})",
+            tone="boundary",
+        )
+    if isinstance(record, HandoffRequested):
+        return Described("handoff requested", f"{record.cue_id} is waiting")
     if isinstance(record, ToolCalled):
         arguments = ", ".join(f"{k}={v!r}" for k, v in sorted(record.args.items()))
         return Described(f"{record.tool}({arguments})")

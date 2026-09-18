@@ -154,7 +154,7 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "care-sustained-signals",
         "care-expression-words-conflict",
     ]
-    assert listed[2]["availability"] == "planned"
+    assert listed[2]["availability"] == "ready"
     assert listed[2]["ticket"] == "08"
 
 
@@ -364,23 +364,26 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "local wake detection is verified only on synthetic fixtures"
     ]
     assert evidence["selected_image"] is False
-    assert [beat["kind"] for beat in execution["flow"]] == [
+    kinds = [beat["kind"] for beat in execution["flow"]]
+    # The first Episode, then the queued requests it was told about; ticket
+    # 08 shows every Episode of the run rather than only the first one.
+    assert kinds[:12] == [
         "wake",
         "capture",
         "asr",
         "input",
         "evidence",
         "cue",
+        "target_bound",
         "skills_available",
         "decision_note",
         "tool_call",
-        "decision_note",
-        "tool_call",
-        "observation",
-        "decision_note",
-        "tool_call",
-        "ending",
+        "input",
+        "handoff_requested",
     ]
+    assert kinds.count("target_bound") == len(payload["episodes"]) == 4
+    assert kinds.count("cue_dequeued") == 3
+    assert kinds[-1] == "ending"
     assert execution["flow"][-1] == {
         "kind": "ending",
         "label": "結果",
@@ -451,18 +454,24 @@ def test_both_care_cases_run_and_show_evidence_choice_and_ending():
         assert "approach" not in called
 
 
-@pytest.mark.parametrize(
-    ("name", "ticket"),
-    [("speaker-handoff", "08")],
-)
-def test_a_planned_scenario_cannot_be_run_before_its_ticket(name, ticket):
-    reply = answer("POST", f"/scenarios/{name}/run")
+def test_a_planned_scenario_cannot_be_run_before_its_ticket(monkeypatch):
+    """No card is planned any more, so the refusal path is exercised with a
+    roadmap card patched in: the Demo must still refuse to run a preview."""
+    from misty_agent import demo
+    from misty_agent.scenarios import PlannedScenario, ScenarioAvailability
+
+    planned = PlannedScenario(
+        name="future-card", title="未來", subtitle="預覽", ticket="99",
+        availability=ScenarioAvailability.PLANNED, limitation="尚未實作", preview=(),
+    )
+    monkeypatch.setattr(demo, "DEMO_SCENARIOS", (*demo.DEMO_SCENARIOS, planned))
+
+    reply = answer("POST", "/scenarios/future-card/run")
 
     assert reply.status == 409
-    payload = json.loads(reply.body)
-    assert payload == {
-        "error": f"scenario {name!r} is planned for ticket {ticket}",
-        "ticket": ticket,
+    assert json.loads(reply.body) == {
+        "error": "scenario 'future-card' is planned for ticket 99",
+        "ticket": "99",
     }
 
 

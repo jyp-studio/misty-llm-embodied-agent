@@ -406,7 +406,7 @@ async function runScenario() {
     const ending = execution.flow.at(-1);
     byId("truth-title").textContent = ending.headline;
     byId("truth-copy").textContent = ending.detail;
-    state.replayMoments = payload.episodes[0]?.storyboard?.moments || [];
+    state.replayMoments = payload.episodes.flatMap((episode) => episode.storyboard?.moments || []);
     byId("replayJournal").disabled = state.replayMoments.length === 0;
     byId("evidence").textContent = JSON.stringify({
       scenario: payload.scenario.name,

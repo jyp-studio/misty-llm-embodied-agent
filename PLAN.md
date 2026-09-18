@@ -2669,3 +2669,28 @@ activate → read reference → speak → listen → gentle head expression → 
 執行 Skill 載入、Runtime、Tools 與 Journal；model Decisions、後續話語仍是預先編寫的 fixtures，
 不是過去真 model 的輸出，也不證明模型自主採用指引的品質。畫面與文件持續明示 scripted／simulation；
 未呼叫付費模型，沒有 Misty II，沒有任何實機成果。
+
+### 16.57 一個 Episode 一個匿名 Interaction Target，交接只在 Turn boundary（ticket 08）
+
+`InteractionTarget` 在 `Session.episode()` 從 Trigger Evidence 建立：有 `track_reference` 就綁定
+該匿名 track，純語音則為 `unobservable`。同一 reference 同時交給 active perception view，因此
+`observe_target`／`inspect_scene` 只會回報那條 track；更近、更大或更新的臉在 tracker 裡是另一條
+track，對本 Episode 只呈現為 `unavailable`（`lost`），同一 track 回來才是 `reacquired`，TTL 過後
+同位置的新臉是新 reference，不算重新取得。Tool result 與每個 Snapshot 都附上 target 的
+reference 與狀態；`approach` 對 `lost` 的 target 直接回 `target_lost`，不依舊 reading 前進。
+Journal 新增 `target_bound`（Episode 起點）與 `handoff_requested`（Turn boundary）。
+
+§15.4 的「Snapshot 恰好三個事實」在此修正為三個感知事實加一個 Episode 狀態事實：target 不需要
+任何感知呼叫，附上不增加每個 Turn 的成本；`target` 為 `None` 時 JSONL 不寫出，舊 golden 逐字
+不變。
+
+交接：Episode 進行中 B 的 Explicit Request 由既有 cue queue 保存；`collect_available` 在 Turn
+boundary 回傳一次 `HandoffNotice`，loop 記錄並以 system message 告知 model 收尾後 `done`。
+Runtime 不會為了交接結束 Episode；bumper／e-stop／shutdown 仍立即中止。B 的 cue 沿用 freshness，
+A 太久就 `expired`，不強行互動。B 的 Episode 從新 Evidence 綁新 target，不繼承 A。
+
+Demo 第三張卡改為可執行：`A_THEN_B` 與 `B_EXPIRES` 兩個文字腳本，actors 為 A／B，發言歸屬由腳本
+用 `track_reference` 指定並在 uncertainty 與 provenance 明說「沒有聲源方向、沒有人臉身分」。
+執行流程改為依 cue lifecycle records 順序呈現所有 Episodes：Episode 進行中收到的 cue records
+放在該 Episode 的 handoff 通知處，其餘接在 Journal 之後。問候卡因此也會顯示它原本就有的四個
+Episodes 與排隊事件，而不再只顯示第一個。

@@ -158,9 +158,33 @@ Its timed reply is consumed by `listen`, not inserted by the model script.
 The decisions and speech remain authored fixtures, not recorded LLM outputs.
 This verifies the current wiring, not autonomous model policy quality.
 
-This is ticket 07's vertical slice, not the completed social system.
-Person-aware handoff and target-aware movement remain future tickets
-in `.scratch/social-react-runtime/`.
+Each Episode binds one anonymous `InteractionTarget` from its Trigger
+Evidence: the track reference the Attention Loop named, or none for speech
+without a visual track. The visual gate keeps several candidate tracks, but
+the Episode's active-perception view is fixed to that one reference, so a
+closer, larger or newer face is reported as unavailable rather than as the
+target. `observe_target` and `inspect_scene` update the target's
+bound/visible/lost/reacquired state and return it; every Snapshot carries it
+as a fourth fact; `approach` refuses a lost target with `target_lost`. A new
+Episode never inherits a target, and reacquisition requires the same
+anonymous track within the tracker's TTL.
+
+While an Episode runs, another person's Explicit Request is queued rather
+than dropped or run in parallel. At the next Turn boundary the runtime hands
+the loop a `HandoffNotice`, recorded as `handoff_requested` and shown to the
+model once, asking it to close the current interaction and call `done`. The
+runtime never ends an Episode for a handoff; bumper, e-stop and shutdown
+still abort immediately. Queued requests keep their freshness bound and are
+dropped as expired if the active Episode outlasts them.
+
+The A→B Demo card runs two scripted anonymous actors through this path and
+renders target binding, the queued request, the notice, the dequeue and both
+Episodes in order. Speaker attribution there is scripted: the runtime has no
+sound-source direction and no face identity.
+
+This is ticket 08's vertical slice, not the completed social system.
+Shared robot adapters and target-aware movement remain future tickets in
+`.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

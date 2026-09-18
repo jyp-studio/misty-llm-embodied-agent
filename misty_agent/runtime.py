@@ -27,6 +27,7 @@ from misty_agent.agent.evidence import (
     TriggerEvidence,
     TriggerEvidenceSummary,
 )
+from misty_agent.agent.handoff import HandoffNotice
 from misty_agent.agent.journal import Journal
 from misty_agent.agent.react import EpisodeOutcome
 from misty_agent.config import Settings, settings as default_settings
@@ -319,7 +320,7 @@ class EpisodeSession(Protocol):
         *,
         render: bool = False,
         journal_path: Optional[Path] = None,
-        at_turn_boundary: Optional[Callable[[], None]] = None,
+        at_turn_boundary: Optional[Callable[[], Optional[HandoffNotice]]] = None,
     ) -> Tuple[EpisodeOutcome, Journal]: ...
 
     def request_stop(self, source: str) -> bool: ...
@@ -668,14 +669,16 @@ class SocialAgentRuntime:
                     selected_image=cue.input.selected_image,
                 )
                 active_input_failure: Optional[Exception] = None
+                announced: set[str] = set()
 
-                def collect_available() -> None:
+                def collect_available() -> Optional[HandoffNotice]:
+                    """Queue what arrived, then say once if someone waits."""
                     nonlocal active_input_failure, cue_count
                     if (
                         active_input_failure is not None
                         or self._stop_requested.is_set()
                     ):
-                        return
+                        return None
                     try:
                         waiting_inputs = self._source.read_available()
                         for waiting in waiting_inputs:
@@ -700,6 +703,30 @@ class SocialAgentRuntime:
                             # The input failure remains the primary bounded
                             # ending; stopping is best effort at this boundary.
                             pass
+                        return None
+                    self._discard_expired(pending, records)
+                    waiting = next(
+                        (
+                            item
+                            for item in sorted(
+                                pending,
+                                key=lambda item: (
+                                    -item.priority,
+                                    item.observed_at_s,
+                                    item.arrival_sequence,
+                                ),
+                            )
+                            if item.cue_kind is CueKind.EXPLICIT_REQUEST
+                            and item.cue_id not in announced
+                        ),
+                        None,
+                    )
+                    if waiting is None:
+                        return None
+                    announced.add(waiting.cue_id)
+                    return HandoffNotice(
+                        cue_id=waiting.cue_id, cue_kind=waiting.cue_kind.value
+                    )
 
                 outcome, journal = self._session.episode(
                     evidence,

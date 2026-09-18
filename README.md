@@ -73,6 +73,13 @@ progressive Skill discovery → activation → reference reading → speak/liste
 Moment and clears it when the Episode ends. This is a freshly executed
 **scripted acceptance run**, not a previously recorded model output.
 
+The third card, **A 聊完後，切換成 B**, runs two scripted anonymous actors:
+A's Episode binds one Interaction Target, B's explicit request is queued and
+announced to the model at a Turn boundary, A is brought to a close, and only
+then does B get a separate Episode and target. A second variant lets B's
+request expire before A finishes. Which actor said what is scripted; the
+runtime has no sound-source direction and no face identity.
+
 Add local Skills as `misty_agent/skills/<name>/SKILL.md` with YAML `name` and
 `description` frontmatter. Only metadata reaches the first Turn; instructions
 and references/text assets load on demand. Resources are UTF-8 text, capped
@@ -166,8 +173,10 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
 gate, plus synthetic-fixture-verified Social Invitation and uncertain Care Cue
-visual gates, progressive Skills and bounded listening. Planned vertical slices add person-aware handoff,
-ephemeral social state, and target-aware movement. See
+visual gates, progressive Skills, bounded listening, and anonymous
+Interaction Target ownership with Turn-boundary handoff. Planned vertical
+slices add shared robot adapters, ephemeral social state, and target-aware
+movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

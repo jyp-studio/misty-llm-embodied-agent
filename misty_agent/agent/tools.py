@@ -55,8 +55,9 @@ from misty_agent.agent.layering import (
     refuse_control_parameters,
 )
 from misty_agent.control.approach import approach as run_approach
-from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
+from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, ActivePerceptionResult
 from misty_agent.agent.skills import EpisodeSkills, SkillRejected
+from misty_agent.agent.target import InteractionTarget, TargetState
 from misty_agent.perception.listening import ListeningEnding, ListeningResult
 
 
@@ -115,6 +116,9 @@ class ToolContext:
     #: the object dies with the Episode, so loaded guidance cannot outlive it.
     skills: Optional[EpisodeSkills] = None
     listener: Any = None
+    #: The one anonymous person this Episode is about. Perception Tools
+    #: report and update its visible/lost state; movement refuses a lost one.
+    target: Optional[InteractionTarget] = None
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -699,9 +703,10 @@ def build_registry() -> ToolRegistry:
     def observe_target(
         args: NoArguments, ctx: ToolContext
     ) -> Mapping[str, Any]:
-        return ctx.active_perception.observe_target(
-            now_s=ctx.clock.monotonic()
-        ).as_tool_result()
+        return _about_the_target(
+            ctx.active_perception.observe_target(now_s=ctx.clock.monotonic()),
+            ctx,
+        )
 
     @registry.tool(
         "inspect_scene",
@@ -711,9 +716,10 @@ def build_registry() -> ToolRegistry:
     def inspect_scene(
         args: NoArguments, ctx: ToolContext
     ) -> Mapping[str, Any]:
-        return ctx.active_perception.inspect_scene(
-            now_s=ctx.clock.monotonic()
-        ).as_tool_result()
+        return _about_the_target(
+            ctx.active_perception.inspect_scene(now_s=ctx.clock.monotonic()),
+            ctx,
+        )
 
     @registry.tool("speak", "Say something out loud.", speaks="text")
     def speak(args: SpeakArgs, ctx: ToolContext) -> Mapping[str, Any]:
@@ -801,6 +807,12 @@ def build_registry() -> ToolRegistry:
                 "approach needs ToolContext.config: the control layer reads "
                 "its step size, timeouts and tolerances from it"
             )
+        # Movement intent is about the active Interaction Target. A target
+        # this Episode last saw missing is not approached on stale readings;
+        # the model re-observes first. A speech-only Episode has no track to
+        # lose and keeps the distance-reading behaviour.
+        if ctx.target is not None and ctx.target.state is TargetState.LOST:
+            return {"result": "target_lost", "steps": 0, "target": ctx.target.as_facts()}
         outcome = run_approach(
             ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock
         )
@@ -808,7 +820,10 @@ def build_registry() -> ToolRegistry:
         # compares and serialises identically and looks harmless — but
         # `TerminalRenderer` puts it in an f-string, where it prints
         # `ApproachStatus.ARRIVED` instead of `arrived`.
-        return {"result": outcome.status.value, "steps": outcome.steps}
+        answer = {"result": outcome.status.value, "steps": outcome.steps}
+        if ctx.target is not None:
+            answer["target"] = ctx.target.as_facts()
+        return answer
 
     @registry.tool(
         "look_around",
@@ -847,3 +862,14 @@ def build_registry() -> ToolRegistry:
         return {"ok": True, "found_at_yaw": None}
 
     return registry
+
+
+def _about_the_target(
+    result: ActivePerceptionResult, ctx: ToolContext
+) -> Mapping[str, Any]:
+    """One perception result, plus the Episode target it updated."""
+    answer = dict(result.as_tool_result())
+    if ctx.target is not None:
+        ctx.target.noted(result)
+        answer["target"] = ctx.target.as_facts()
+    return answer

@@ -134,10 +134,13 @@ class AcceptanceScenario(ScenarioCard):
     def __post_init__(self) -> None:
         if self.availability is not ScenarioAvailability.READY:
             raise ValueError("an acceptance scenario must be ready to run")
-        if not self.inputs and not self.visual_fixtures:
+        if not self.inputs and not self.visual_fixtures and not self.text_scripts:
             raise ValueError("a runnable scenario must declare an input")
-        if not self.decisions and not self.visual_scripts:
+        if not self.decisions and not self.visual_scripts and not self.text_scripts:
             raise ValueError("a runnable scenario must declare model decisions")
+        text_keys = [script.key for script in self.text_scripts]
+        if len(text_keys) != len(set(text_keys)):
+            raise ValueError("text scenario scripts need distinct keys")
         if not self.actors:
             raise ValueError("a runnable scenario must name its expected episodes")
         fixture_keys = {fixture.key for fixture in self.visual_fixtures}
@@ -524,35 +527,96 @@ CRYING_CARE = AcceptanceScenario(
 )
 
 
-SPEAKER_HANDOFF = PlannedScenario(
+SCRIPTED_ATTRIBUTION = (
+    "speaker attribution is scripted: the runtime has no sound-source "
+    "direction and no face identity, only anonymous track references"
+)
+
+
+def _said_by(at_s: float, text: str, who: str, **fields) -> ScheduledInput:
+    return ScheduledInput(at_s, TimedText(
+        text=text, facts={"track_reference": who},
+        uncertainty=(SCRIPTED_ATTRIBUTION,), **fields,
+    ))
+
+
+A_THEN_B = TextScenarioScript(
+    key="a-then-b",
+    label="A 互動中 B 呼叫 · 排隊、收尾、交接",
+    inputs=(
+        _said_by(0.0, "Hi Misty，我是 A", "person-a"),
+        _said_by(0.5, "Hey Misty，換我", "person-b"),
+    ),
+    decisions=(
+        Decision("speak", {"text": "你好 A，今天想聊什麼？"}, 20, 6,
+                 note="回應 A；A 是本次 Episode 唯一的 Interaction Target。"),
+        Decision("listen", {}, 22, 3, note="等待 A 回答。"),
+        Decision("speak", {"text": "B 在等我，我們先聊到這裡，再見。"}, 30, 8,
+                 note="收到交接通知：向 A 說明並收尾，不平行處理 B。"),
+        Decision("done", {}, 24, 1, note="A 的 Episode 結束，釋放 target。"),
+        Decision("speak", {"text": "你好 B，換你了，有什麼想說的？"}, 20, 8,
+                 note="B 的新 Episode 從新的 Trigger Evidence 與新 target 開始。"),
+        Decision("done", {}, 22, 1, note="B 的互動完成。"),
+    ),
+    speech=(TimedSpeech(0.6, "今天天氣不錯"),),
+)
+
+
+B_EXPIRES = TextScenarioScript(
+    key="b-expires",
+    label="B 呼叫後離開 · 過期 cue 不開 Episode",
+    inputs=(
+        _said_by(0.0, "Hi Misty，我是 A", "person-a"),
+        _said_by(0.5, "Hey Misty，換我", "person-b", fresh_for_s=0.3),
+    ),
+    decisions=(
+        Decision("speak", {"text": "你好 A，今天想聊什麼？"}, 20, 6,
+                 note="回應 A；A 是本次 Episode 唯一的 Interaction Target。"),
+        Decision("listen", {}, 22, 3, note="等待 A 回答。"),
+        Decision("listen", {}, 22, 3,
+                 note="收到交接通知；先聽 A 說完，不中斷。"),
+        Decision("speak", {"text": "剛才有人叫我，不過我們先聊完。"}, 26, 8,
+                 note="B 的 cue 已過期；不依舊資料強行交接。"),
+        Decision("done", {}, 24, 1, note="A 的 Episode 結束。"),
+    ),
+    speech=(TimedSpeech(0.6, "今天天氣不錯"),),
+)
+
+
+SPEAKER_HANDOFF = AcceptanceScenario(
     name="speaker-handoff",
     title="A 聊完後，切換成 B",
-    subtitle="未來將結束 A 的互動，再由 B 開啟新 Episode。",
-    availability=ScenarioAvailability.PLANNED,
+    subtitle="A 互動中 B 明確呼叫：B 先排隊，A 在 Turn boundary 收尾後，B 才取得新 Episode。",
+    availability=ScenarioAvailability.READY,
     ticket="08",
     limitation=(
-        "Ticket 08 尚未實作：目前沒有 target ownership、Cue queue 或人物交接。"
+        "兩位 actors 的發言歸屬由腳本指定；系統沒有聲源方向或人臉身分，只用"
+        "匿名 track reference。model 決策與後續話語為腳本，robot 為模擬。"
     ),
+    actors=("A", "B"),
     preview=(
         PresentationBeat(
             "input",
-            "預計收到",
+            "收到",
             "A 互動期間，B 明確呼叫 Misty",
-            "B 的 request 將先進入 Cue queue。",
+            "B 的 request 先進入 Cue queue，不平行開 Episode，也不丟棄。",
         ),
         PresentationBeat(
             "decision",
-            "預計決定",
-            "先安全結束 A",
-            "不平行開啟第二個 Episode。",
+            "決定",
+            "在 Turn boundary 告知 model，讓 A 得到收尾",
+            "只有 bumper／e-stop 才能立即中止，不必等交接。",
         ),
         PresentationBeat(
             "effect",
-            "預計動作",
-            "再向 B 開始新互動",
-            "完整 target handoff 將由 ticket 08 驗收。",
+            "動作",
+            "B 取得新 Episode 與新 target",
+            "上一個 Interaction Target 不被繼承；過期的 B 不會被強行處理。",
         ),
     ),
+    inputs=(),
+    decisions=(),
+    text_scripts=(A_THEN_B, B_EXPIRES),
 )
 
 
@@ -568,6 +632,9 @@ __all__ = [
     "PlannedScenario",
     "PresentationBeat",
     "SPEAKER_HANDOFF",
+    "A_THEN_B",
+    "B_EXPIRES",
+    "SCRIPTED_ATTRIBUTION",
     "ScenarioCard",
     "ScenarioAvailability",
     "ScenarioModel",

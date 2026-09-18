@@ -2760,3 +2760,11 @@ controller 結果、每個 Step 的種類與決策讀數，robot 狀態顯示 he
 「模擬模式由 scenario 明確提供狀態」。Demo 問候卡新增「途中人離開」與「途中出現障礙」兩個腳本。
 Goldens 的 approach result 多 `reason`，status 與 steps 不變。`hazard_max_age_s`、`movement_poll_s`
 為 simulated design values；本節與測試皆不是真機 safety certification。
+
+補記（ticket 11 review）：`checkpoint("after a motion")` 與 `wait_through` 最後一個 poll 落在同一個時刻，
+是重複的檢查，已移除；「每個 Step 後」的檢查就是動作結束時的最後一個 poll。動作中被停下的 motion 在
+`motions` 標記 `interrupted=True`，`steps` 仍計入（Journal Steps 必須等於 adapter 收到的 drive 數），
+reason 改說「during motion N」。`RobotAdapter` Protocol 明列 `halt`。aborted golden 改回報 `aborted`：
+以前 `is_aborted()` 沒把 stop 交給 ToolContext，controller 只能等到 deadline 回 `timeout`；現在測試
+與 production 一樣把 stop 接進去，golden 讓步。`HazardReading` 改名 `HazardState`，避免與 CONTEXT.md
+的 Reading 混用。

@@ -98,8 +98,8 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 29. The greeting card's "過來陪我" script shows alignment, each Step with the
     distance and bearing it was planned from, the chassis heading and the
     untouched head yaw.
-30. Every movement checkpoint, before the first motion, before and after
-    each motion and at a fixed poll during it, asks whether a stop was
+30. Every movement checkpoint, before the first motion, before each motion
+    and at a fixed poll during it ending exactly at its end, asks whether a stop was
     requested and whether the hazard source says the base may move. A stop
     ends the call as `aborted` with no further command; a hazard halts the
     motors and ends it as `blocked`; a missing or stale hazard reading is

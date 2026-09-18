@@ -215,6 +215,17 @@ def bearing_unavailable(registry):
     )
 
 
+class StopAt:
+    """A stop that arrives at a fixed clock time. Shared with
+    `test_movement_safety.py`."""
+
+    def __init__(self, clock, at_s=0.8):
+        self._clock, self._at_s = clock, at_s
+
+    def requested(self):
+        return self._clock.monotonic() >= self._at_s
+
+
 def blocked(registry):
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
@@ -226,12 +237,7 @@ def aborted(registry):
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
     world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
-
-    class StopAt:
-        def requested(self):
-            return clock.monotonic() >= 0.8
-
-    return run(registry, robot=world, readings=world, config=config, clock=clock, hazards=world, stop=StopAt())
+    return run(registry, robot=world, readings=world, config=config, clock=clock, hazards=world, stop=StopAt(clock))
 
 
 def hazard_unavailable(registry):
@@ -547,12 +553,7 @@ def _direct_aborted():
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
     world = SimulatedMistyAdapter(clock, start_cm=150.0, config=config)
-
-    class StopAt:
-        def requested(self):
-            return clock.monotonic() >= 0.8
-
-    return approach(world, world, config=config, clock=clock, hazards=world, stop=StopAt())
+    return approach(world, world, config=config, clock=clock, hazards=world, stop=StopAt(clock))
 
 
 def _direct_hazard_unavailable():

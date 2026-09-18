@@ -956,6 +956,11 @@ _DROP_WORDING = {
 _MOTION_WORDING = {"rotate": "轉向", "forward": "前進", "back": "後退"}
 
 
+def replace_beat(beat: PresentationBeat, **changes: Any) -> PresentationBeat:
+    from dataclasses import replace as _replace
+    return _replace(beat, **changes)
+
+
 def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str, Any]]) -> list:
     """The controller's typed result, each bounded chassis motion with the
     fresh distance and bearing it was planned from, then where the chassis
@@ -985,6 +990,11 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
             f"決策時距離 {motion['distance_cm']} cm、bearing {motion['bearing_deg']}°；"
             "每步後需新的 Reading 才能繼續。模擬，非實機。",
         ))
+    if robot_state is not None and robot_state.get("halted_at_s") is not None:
+        beats[0] = replace_beat(
+            beats[0],
+            detail=beats[0].detail + f" 底盤於 {robot_state['halted_at_s']:g} 秒停止。",
+        )
     if robot_state is not None:
         target = robot_state.get("target") or {}
         beats.append(PresentationBeat(

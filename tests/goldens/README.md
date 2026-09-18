@@ -31,7 +31,7 @@ social-runtime tickets 01, 10 and 11:
 | `t` again, for the aborted file, in ticket 08 | the golden (§15.24) |
 | The turn cap rising from 8 to 12 | the golden (§16.48) |
 | `approach`'s result gaining `rotations`, `distance_cm`, `bearing_deg`, `uncertainty` and `motions` in ticket 10 | the goldens (§16.59) |
-| `approach`'s result gaining `reason` in ticket 11 | the goldens (§16.60) |
+| `approach`'s result gaining `reason`, and the aborted approach reporting `aborted` instead of `timeout`, in ticket 11 | the goldens (§16.60) |
 
 All four files are now on the timing rule below. The aborted one came last
 because only ticket 08 can produce a `stop_requested`, and retiming a golden
@@ -99,7 +99,7 @@ twelve complete Turns and then the ending.
 work succeeded.** The stop arrives from another thread part way through a Tool
 call, and Python cannot interrupt a call that has not returned. So the Tool
 finishes and its Observation is recorded — but the bumper has halted the
-motors, so what it reports is `timeout`, not `arrived`. An `arrived` after a
+motors, so what it reports is `aborted`, not `arrived` (it was `timeout` until ticket 11 gave the controller its own stop checkpoint). An `arrived` after a
 stop would say the robot completed a drive it was forbidden to finish.
 
 The gap between `stop_requested` and `episode_finished` is the interrupt

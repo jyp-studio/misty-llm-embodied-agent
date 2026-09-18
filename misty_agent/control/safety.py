@@ -19,8 +19,11 @@ from typing import Optional, Protocol, Tuple
 
 
 @dataclass(frozen=True)
-class HazardReading:
+class HazardState:
     """Whether the base may move, as of `observed_at` on the caller's clock.
+
+    Not a Reading: that word is the distance measurement's. This is the
+    safety state a checkpoint consults.
 
     `observed_at` is `None` only for a scenario assertion that is true by
     construction; a measured reading always carries its time, so staleness
@@ -32,8 +35,12 @@ class HazardReading:
     uncertainty: Tuple[str, ...] = ()
 
 
+#: The one caveat every simulated hazard state carries.
+SIMULATED_HAZARD = "simulated hazard state, provided by the scenario, never sensed"
+
+
 class HazardSource(Protocol):
-    def latest_hazard(self) -> Optional[HazardReading]: ...
+    def latest_hazard(self) -> Optional[HazardState]: ...
 
 
 class NoHazardSource:
@@ -46,11 +53,11 @@ class NoHazardSource:
 class AlwaysClear:
     """A simulated scenario's assertion that nothing is in the way."""
 
-    def latest_hazard(self) -> HazardReading:
-        return HazardReading(
+    def latest_hazard(self) -> HazardState:
+        return HazardState(
             blocked=False,
             observed_at=None,
-            uncertainty=("simulated: the scenario asserts a clear path",),
+            uncertainty=(SIMULATED_HAZARD,),
         )
 
 
@@ -58,9 +65,10 @@ NO_HAZARD_SOURCE = NoHazardSource()
 ALWAYS_CLEAR = AlwaysClear()
 
 __all__ = [
+    "SIMULATED_HAZARD",
     "ALWAYS_CLEAR",
     "AlwaysClear",
-    "HazardReading",
+    "HazardState",
     "HazardSource",
     "NO_HAZARD_SOURCE",
     "NoHazardSource",

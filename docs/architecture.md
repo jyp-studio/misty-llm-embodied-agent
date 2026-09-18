@@ -216,8 +216,8 @@ relative polar coordinates with a chassis heading; its turning rate and
 travel speed are simulation constants, never hardware measurements.
 
 Movement has safety checkpoints (`misty_agent/control/safety.py`): before
-the first motion, before and after each motion, and at `movement_poll_s`
-during it, the controller asks whether a stop was requested and reads the
+the first motion, before each motion, and at `movement_poll_s` during it
+with the last poll at its end, the controller asks whether a stop was requested and reads the
 hazard source. A stop ends the call as `aborted` without another command,
 since the stop's owner already halted the motors; a hazard halts them here
 and ends the call as `blocked`; a missing reading, or one older than

@@ -1199,7 +1199,8 @@ def is_aborted():
     )
     stop = EmergencyStop(journal, world)
     ctx = ToolContext(
-        robot=world, readings=world, config=ABORT_CONFIG, clock=clock, hazards=ALWAYS_CLEAR
+        robot=world, readings=world, config=ABORT_CONFIG, clock=clock, hazards=ALWAYS_CLEAR,
+        stop=stop,
     )
     model = ScriptedModel(clock, ("approach", {}, 1024, 811, 15))
     outcome = run_episode(
@@ -1263,9 +1264,11 @@ def test_the_stop_arrives_in_the_middle_of_a_turn_not_at_its_edge():
     drives = world.directions
     assert drives, "nothing was moving, so nothing was interrupted"
     assert called.t < stopped.t, "the stop landed on the Turn boundary"
-    assert observed.t - stopped.t > 1.0, (
-        "the Tool returned almost immediately, so this says nothing about "
-        "interrupting one that was still running"
+    # Ticket 11: the controller sees the stop at its next in-motion poll and
+    # returns without riding out the motion or its deadline. Before that the
+    # Tool ran on for seconds after the bumper; now the gap is one poll.
+    assert 0 < observed.t - stopped.t <= ABORT_CONFIG.movement_poll_s + 0.01, (
+        "the Tool did not return within one poll of the stop"
     )
     assert called.turn == observed.turn
 
@@ -1304,7 +1307,7 @@ def test_the_interrupted_tool_does_not_claim_it_arrived():
     observed = next(r for r in journal.records if isinstance(r, Observation))
 
     assert observed.result["result"] != "arrived"
-    assert observed.result["result"] == "timeout"
+    assert observed.result["result"] == "aborted"
 
 
 def test_everything_is_halted_when_the_bumper_is_pressed():

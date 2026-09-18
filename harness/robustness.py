@@ -63,7 +63,7 @@ from typing import Dict, List, Literal, Optional, Sequence, Tuple
 from misty_agent.config import Settings, settings as default_settings
 from misty_agent.control.approach import approach
 from misty_agent.perception.distance import DistanceReading
-from misty_agent.control.safety import HazardReading
+from misty_agent.control.safety import SIMULATED_HAZARD, HazardState
 from misty_agent.robot.interface import Effect
 from misty_agent.robot.simulated import SIMULATED_BEARING
 
@@ -336,12 +336,12 @@ class _SimulatedWorld:
     def monotonic(self) -> float:
         return self._now_s
 
-    def latest_hazard(self) -> HazardReading:
+    def latest_hazard(self) -> HazardState:
         """The sweep is about distance under lag; the world asserts a clear
         path, stamped now. Simulated, never sensed."""
-        return HazardReading(
+        return HazardState(
             blocked=False, observed_at=self._now_s,
-            uncertainty=("simulated: the sweep asserts a clear path",),
+            uncertainty=(SIMULATED_HAZARD,),
         )
 
     def latest_reading(self) -> Optional[DistanceReading]:

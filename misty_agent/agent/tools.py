@@ -56,7 +56,7 @@ from misty_agent.agent.layering import (
 )
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.control.approach import ApproachStatus, approach as run_approach
-from misty_agent.control.safety import NO_HAZARD_SOURCE
+from misty_agent.control.safety import NO_HAZARD_SOURCE, HazardSource
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, ActivePerceptionResult
 from misty_agent.robot import Effect
 from misty_agent.agent.skills import EpisodeSkills, SkillRejected
@@ -127,7 +127,7 @@ class ToolContext:
     #: may move at all. Fail closed by default: with no hazard source the
     #: movement Tool refuses, which is what real hardware gets today.
     stop: Stop = NEVER_STOPS
-    hazards: Any = NO_HAZARD_SOURCE
+    hazards: HazardSource = NO_HAZARD_SOURCE
 
 
 #: What a Tool may be called. The function-calling APIs this feeds accept
@@ -815,6 +815,7 @@ def build_registry() -> ToolRegistry:
             # target block beside it says the loss was already known.
             return {
                 "result": ApproachStatus.LOST_USER.value,
+                "reason": "the Interaction Target was lost at its last observation; observe it again before approaching",
                 "steps": 0,
                 "target": ctx.target.as_facts(),
             }

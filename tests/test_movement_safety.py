@@ -18,10 +18,12 @@ from misty_agent.agent.tools import ToolContext, build_registry, dispatch
 from misty_agent.app import LivePerception
 from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
-from misty_agent.control.safety import ALWAYS_CLEAR, NO_HAZARD_SOURCE, HazardReading
+from misty_agent.control.safety import ALWAYS_CLEAR, NO_HAZARD_SOURCE, HazardState
 from misty_agent.fakes import FakeClock
 from misty_agent.robot import SimulatedMistyAdapter
 from misty_agent.scenarios import ScenarioModel
+
+from test_approach_tool import StopAt
 
 CONFIG = Settings(post_step_settle_s=0.0)
 
@@ -58,14 +60,12 @@ def test_a_stop_during_the_motion_wait_aborts_before_the_next_drive():
     clock = FakeClock()
     world = room(clock)
 
-    class StopAt:
-        def requested(self):
-            return clock.monotonic() >= 0.8
-
-    result = approach(world, world, config=CONFIG, clock=clock, stop=StopAt(), hazards=world)
+    result = approach(world, world, config=CONFIG, clock=clock, stop=StopAt(clock, 0.8), hazards=world)
 
     assert result.status is ApproachStatus.ABORTED
     assert len(world.directions) == 1
+    assert result.motions[-1].interrupted is True
+    assert "during motion 1" in result.reason
     # The stop's owner halted the motors; the controller only stops asking.
     assert world.halted is False
     assert "stop" in result.reason
@@ -92,7 +92,7 @@ def test_a_stale_hazard_reading_counts_as_unavailable():
 
     class StaleHazard:
         def latest_hazard(self):
-            return HazardReading(blocked=False, observed_at=-5.0, uncertainty=("old",))
+            return HazardState(blocked=False, observed_at=-5.0, uncertainty=("old",))
 
     result = approach(world, world, config=CONFIG, clock=clock, hazards=StaleHazard())
 
@@ -114,6 +114,57 @@ def test_a_hazard_during_a_motion_is_caught_by_the_in_motion_checkpoint():
     assert result.status is ApproachStatus.BLOCKED
     assert world.halted_at is not None
     assert 0.3 <= world.halted_at <= 0.3 + CONFIG.movement_poll_s + 0.01
+
+
+def test_a_hazard_that_appears_while_settling_is_caught_before_the_next_motion():
+    """Negative control for the before-motion checkpoint. With a settle
+    window the last in-motion poll sees a clear path; only the check before
+    the next motion can see the hazard that appeared while settling. A
+    controller without that check would issue a second drive."""
+    settling = Settings(post_step_settle_s=0.5)
+    clock = FakeClock()
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=settling)
+    first_motion_s = 35.0 / settling.cm_per_sec_at_percent
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=settling, hazard_at_s=first_motion_s + 0.2)
+
+    result = approach(world, world, config=settling, clock=clock, hazards=world)
+
+    assert result.status is ApproachStatus.BLOCKED
+    assert len(world.directions) == 1
+    assert result.motions[-1].interrupted is False
+    assert "before a motion" in result.reason
+    assert world.halted_at is not None and world.halted_at >= first_motion_s + settling.post_step_settle_s
+
+
+def test_a_real_session_without_a_hazard_signal_refuses_to_move():
+    """The Session seam, not just the Tool: a real Session has no hazard
+    source, so its approach ends at the first checkpoint with no drive."""
+    from misty_agent.agent.memory import Memory
+    from misty_agent.app import Session
+    from misty_agent.fakes import RecordingCommands, a_reading
+    from misty_agent.robot import RealMistyAdapter
+
+    clock = FakeClock()
+    commands = RecordingCommands()
+
+    class Aligned:
+        def latest_reading(self):
+            clock.sleep(0.001)
+            return a_reading(150, clock.monotonic())
+
+    session = Session(
+        robot=RealMistyAdapter(commands), readings=Aligned(),
+        model=ScenarioModel((Decision("approach", {}, 1, 1), Decision("done", {}, 1, 1))),
+        memory=Memory(), config=CONFIG, clock=clock,
+    )
+    outcome, journal = session.episode(
+        TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="過來"), render=False,
+    )
+
+    approached = next(r for r in journal.records if isinstance(r, Observation))
+    assert approached.result["result"] == "hazard_unavailable"
+    assert "drive/time" not in commands.endpoints
+    assert outcome.outcome == "done"
 
 
 def test_a_hazard_before_the_first_motion_means_no_drive_at_all():
@@ -181,5 +232,10 @@ def test_the_demo_stops_the_chassis_at_the_right_moment_for_both_built_in_cases(
     assert approach_beat["headline"].startswith("blocked")
     assert hazard["robot"]["halted"] is True
     assert "hazard" in approach_beat["detail"]
-    assert any("certif" not in b["detail"].lower() for b in beats)
+    # The chassis stopped at the Moment the scenario's hazard appeared, within
+    # one poll, and the page says so; nothing on the page claims certification.
+    halted_at = hazard["robot"]["halted_at_s"]
+    assert 1.2 <= halted_at <= 1.2 + CONFIG.movement_poll_s + 0.01
+    assert f"{halted_at:g}" in approach_beat["detail"]
+    assert all("certification" not in b["detail"] for b in beats)
     assert hazard["episodes"][0]["outcome"]["outcome"] == "done"

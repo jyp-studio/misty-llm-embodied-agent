@@ -37,7 +37,7 @@ from dataclasses import asdict, replace
 from typing import Iterable, Optional, Tuple
 
 from misty_agent.config import Settings
-from misty_agent.control.safety import HazardReading
+from misty_agent.control.safety import SIMULATED_HAZARD, HazardState
 from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot.interface import Effect, RobotPose
 
@@ -144,14 +144,14 @@ class SimulatedMistyAdapter:
     def distance_cm(self) -> Optional[float]:
         return self._distance_cm
 
-    def latest_hazard(self) -> HazardReading:
+    def latest_hazard(self) -> HazardState:
         """Scenario-provided, never sensed: the world says whether the base
         may move, stamped now so the checkpoint's staleness rule still runs."""
         now = self._clock.monotonic()
-        return HazardReading(
+        return HazardState(
             blocked=self._hazard_at_s is not None and now >= self._hazard_at_s,
             observed_at=now,
-            uncertainty=("simulated hazard state, provided by the scenario",),
+            uncertainty=(SIMULATED_HAZARD,),
         )
 
     def latest_reading(self) -> Optional[DistanceReading]:

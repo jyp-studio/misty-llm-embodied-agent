@@ -24,9 +24,9 @@ controller fails closed until a bearing source exists.
 
 ## Checkpoints
 
-Before the first motion, before every motion, during every motion at
-`movement_poll_s`, and again after it before re-measuring, the controller
-asks two questions: has anyone asked for a stop, and does the hazard source
+Before the first motion, before every motion, and during every motion at
+`movement_poll_s` with the last poll landing exactly at its end, the
+controller asks two questions: has anyone asked for a stop, and does the hazard source
 say the base may move. A stop ends the call as `aborted` without another
 command; its owner already halted the motors. A hazard halts the motors here
 and ends the call as `blocked`. A hazard source that has nothing to say, or
@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import statistics
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
@@ -61,7 +61,8 @@ class ReadingSource(Protocol):
 
 
 class RobotAdapter(Protocol):
-    """The one behaviour this controller needs from `misty_agent.robot.Robot`."""
+    """The two behaviours this controller needs from `misty_agent.robot.Robot`:
+    one to move, one to stop moving when a checkpoint says so."""
 
     def drive(
         self,
@@ -71,6 +72,8 @@ class RobotAdapter(Protocol):
         duration_ms: int,
         timeout_s: float,
     ) -> Effect: ...
+
+    def halt(self) -> Effect: ...
 
 
 class Clock(Protocol):
@@ -133,6 +136,9 @@ class MovementStep:
     move_cm: Optional[float]
     distance_cm: float
     bearing_deg: float
+    #: True when a checkpoint stopped the base part way through this motion:
+    #: the command went out, the full amount did not happen.
+    interrupted: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,7 +169,7 @@ class ApproachResult:
             "bearing_deg": self.bearing_deg,
             "uncertainty": list(self.uncertainty),
             "motions": [
-                {**asdict(step), "kind": step.kind.value} for step in self.motions
+                {**asdict(motion), "kind": motion.kind.value} for motion in self.motions
             ],
         }
 
@@ -235,10 +241,6 @@ def _fresh_reading(
     return None, saw_reading
 
 
-class _Halt(Protocol):
-    def halt(self) -> Any: ...
-
-
 def approach(
     readings: ReadingSource,
     robot: RobotAdapter,
@@ -295,7 +297,7 @@ def approach(
             )
         if hazard.blocked:
             try:
-                robot.halt()  # type: ignore[attr-defined]
+                robot.halt()
             except Exception:
                 pass  # The refusal to move stands whether or not the halt was heard.
             return ended(ApproachStatus.BLOCKED, f"hazard reported {where}, halted {done_so_far()}")
@@ -303,16 +305,24 @@ def approach(
 
     def wait_through(seconds: float) -> Optional[ApproachResult]:
         """Ride out a commanded motion in polls, so a stop or a hazard that
-        arrives mid-motion is acted on within one poll, not at the end."""
+        arrives mid-motion is acted on within one poll, not at the end. The
+        last poll lands exactly at the end of the motion, which is the
+        "after each Step" check; a stop there marks the motion interrupted."""
         end = active_clock.monotonic() + seconds
         while True:
             remaining = end - active_clock.monotonic()
             if remaining <= 0:
                 return None
             active_clock.sleep(min(config.movement_poll_s, remaining))
-            stopped = checkpoint("during a motion")
+            stopped = checkpoint(
+                f"during motion {moves + rotations}"
+                if active_clock.monotonic() < end
+                else f"at the end of motion {moves + rotations}"
+            )
             if stopped is not None:
-                return stopped
+                if active_clock.monotonic() < end:
+                    motions[-1] = replace(motions[-1], interrupted=True)
+                return replace(stopped, motions=tuple(motions))
 
     stopped = checkpoint("before moving")
     if stopped is not None:
@@ -402,9 +412,6 @@ def approach(
         if remaining_s <= 0:
             return ended(ApproachStatus.TIMEOUT, f"deadline passed {done_so_far()}")
         stopped = wait_through(motion_s)
-        if stopped is not None:
-            return stopped
-        stopped = checkpoint("after a motion")
         if stopped is not None:
             return stopped
         # Frames acquired during the command are invalid. The settle window

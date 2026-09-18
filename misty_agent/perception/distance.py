@@ -16,7 +16,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 from misty_agent.config import settings
 from misty_agent.drivers.av_stream import VideoSource, WorkerThread
@@ -35,6 +35,12 @@ class DistanceReading:
     distance_cm: int
     frame_arrived_at: float
     detected_at: float
+    #: Where the person is relative to the chassis heading, positive to the
+    #: left, or None when the source cannot say. The live distance pipeline
+    #: cannot: a face width gives a distance, not a direction, and the head
+    #: camera's yaw is not the base's. Movement fails closed without it.
+    bearing_deg: Optional[float] = None
+    uncertainty: Tuple[str, ...] = ()
 
     def age_s(self, now: Optional[float] = None) -> float:
         """Age of the effective source frame at decision time."""

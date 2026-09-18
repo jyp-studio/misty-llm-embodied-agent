@@ -23,12 +23,16 @@ hardware would have supplied.
 Effect and change no state, so the error paths above this — the Observation
 that says `ok: false`, the controller's `drive_error` — actually execute.
 
-`drive` ignores `angular_percent` and models no hazard, target loss or
-obstacle: those consequences belong to the target-aware controller tickets.
+`drive` with an angular component turns the chassis; with a linear one it
+moves the base along its heading through a relative polar model of where the
+person stands. Turning rate and travel speed are the same UNCALIBRATED
+constants the controller plans with. No hazard, obstacle or floor is
+modelled.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, replace
 from typing import Iterable, Optional, Tuple
 
@@ -37,17 +41,29 @@ from misty_agent.perception.distance import DistanceReading
 from misty_agent.robot.interface import Effect, RobotPose
 
 
-def a_reading(distance_cm: int, arrived_at: float) -> DistanceReading:
+SIMULATED_BEARING = "simulated relative bearing, not a camera measurement"
+
+
+def a_reading(
+    distance_cm: int,
+    arrived_at: float,
+    bearing_deg: Optional[float] = 0.0,
+    uncertainty: Tuple[str, ...] = (SIMULATED_BEARING,),
+) -> DistanceReading:
     """A reading whose frame arrived and was detected at the same instant.
 
     The gap between those two is what `harness/` exists to measure. Nothing
     that uses this simulation is measuring it, so collapsing it here keeps
-    the simulation from implying a precision it does not have.
+    the simulation from implying a precision it does not have. The bearing
+    defaults to straight ahead: a simulated scenario states its alignment
+    explicitly rather than leaving the controller to guess.
     """
     return DistanceReading(
         distance_cm=distance_cm,
         frame_arrived_at=arrived_at,
         detected_at=arrived_at,
+        bearing_deg=bearing_deg,
+        uncertainty=uncertainty,
     )
 
 
@@ -61,6 +77,7 @@ class SimulatedMistyAdapter:
         *,
         start_cm: Optional[float],
         config: Settings,
+        bearing_deg: float = 0.0,
         actual_motion_multiplier: float = 1.0,
         failing: Iterable[str] = (),
     ) -> None:
@@ -70,8 +87,14 @@ class SimulatedMistyAdapter:
         self._failing = frozenset(failing)
         #: `None` is an empty room: the robot is real, nobody is measured.
         self._distance_cm = start_cm
+        #: The person relative to the chassis heading, positive to the left.
+        self._bearing_deg = float(bearing_deg)
+        #: Where the chassis faces, degrees counter-clockwise from its start.
+        self.heading_deg = 0.0
         self.closest_cm = start_cm
         self.directions: list[int] = []
+        #: Signed degrees of each commanded turn, as actually turned.
+        self.turns: list[float] = []
         self.pose = RobotPose()
         self.speech: Optional[str] = None
         self.sound: Optional[Tuple[str, int]] = None
@@ -85,7 +108,20 @@ class SimulatedMistyAdapter:
             "sound": list(self.sound) if self.sound is not None else None,
             "halted": self.halted,
             "distance_cm": self._distance_cm,
+            "heading_deg": round(self.heading_deg, 2),
+            "target": (
+                {
+                    "distance_cm": round(self._distance_cm, 1),
+                    "bearing_deg": round(self._bearing_deg, 2),
+                }
+                if self._distance_cm is not None
+                else None
+            ),
         }
+
+    @property
+    def target_bearing_deg(self) -> float:
+        return self._bearing_deg
 
     # ---------- what perception sees ----------
 
@@ -97,7 +133,11 @@ class SimulatedMistyAdapter:
         if self._distance_cm is None:
             return None
         self._clock.sleep(0.001)
-        return a_reading(round(self._distance_cm), self._clock.monotonic())
+        return a_reading(
+            round(self._distance_cm),
+            self._clock.monotonic(),
+            bearing_deg=round(self._bearing_deg, 2),
+        )
 
     # ---------- the Robot interface ----------
 
@@ -161,13 +201,32 @@ class SimulatedMistyAdapter:
         refused = self._attempt("drive")
         if refused:
             return refused
-        commanded_cm = duration_ms / 1000 * self._config.cm_per_sec_at_percent
+        seconds = duration_ms / 1000
+        if angular_percent:
+            # A turn: the chassis heading changes and the person's relative
+            # bearing changes by the same amount the other way. The head is
+            # untouched, which is the whole point.
+            turned = (
+                (1 if angular_percent > 0 else -1)
+                * seconds * self._config.deg_per_sec_at_percent
+                * self._actual_motion_multiplier
+            )
+            self.heading_deg += turned
+            self._bearing_deg -= turned
+            self.turns.append(turned)
+            return Effect(ok=True)
+        commanded_cm = seconds * self._config.cm_per_sec_at_percent
         direction = 1 if linear_percent > 0 else -1
         self.directions.append(direction)
         if self._distance_cm is not None:
-            self._distance_cm -= (
-                direction * commanded_cm * self._actual_motion_multiplier
-            )
+            travelled = direction * commanded_cm * self._actual_motion_multiplier
+            # Relative polar to relative Cartesian, move along the heading,
+            # and back: the person stays where they are while the base moves.
+            bearing = math.radians(self._bearing_deg)
+            x = self._distance_cm * math.cos(bearing) - travelled
+            y = self._distance_cm * math.sin(bearing)
+            self._distance_cm = math.hypot(x, y)
+            self._bearing_deg = math.degrees(math.atan2(y, x))
             assert self.closest_cm is not None
             self.closest_cm = min(self.closest_cm, self._distance_cm)
         return Effect(ok=True)

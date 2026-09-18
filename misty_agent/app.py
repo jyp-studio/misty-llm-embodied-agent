@@ -464,7 +464,7 @@ def look_at(frame: Any) -> Any:
         return detector.detect(frame)
 
 
-def room_for(seen: Optional[Any], clock: Any) -> Tuple[Any, Any]:
+def room_for(seen: Optional[Any], clock: Any, placement: Optional[Any] = None) -> Tuple[Any, Any]:
     """The robot and the readings, as one pair because the world is one thing.
 
     `SimulatedMistyAdapter` is both: it answers behaviours and it answers
@@ -475,6 +475,12 @@ def room_for(seen: Optional[Any], clock: Any) -> Tuple[Any, Any]:
     having looked and found nobody: the first gets the default simulated
     world, the second gets a room with nobody in it.
     """
+    if placement is not None:
+        world = SimulatedMistyAdapter(
+            clock, start_cm=placement.distance_cm,
+            bearing_deg=placement.bearing_deg, config=settings,
+        )
+        return world, world
     if seen is None:
         world = SimulatedMistyAdapter(clock, start_cm=DEFAULT_START_CM, config=settings)
         return world, world
@@ -488,11 +494,13 @@ def simulated_session(
     seen: Optional[Any], *, model: Any, clock: Any,
     ears: Any = HEARS_NOTHING,
     active_perception: Any = NO_ACTIVE_PERCEPTION,
+    placement: Optional[Any] = None,
 ) -> Session:
     """One Session against a simulated robot, with the person where
-    perception put them. Shared by the command and the demo page, so both
-    reach a model through exactly the same assembly."""
-    robot, readings = room_for(seen, clock)
+    perception put them, or where a scenario's placement says. Shared by the
+    command and the demo page, so both reach a model through exactly the
+    same assembly."""
+    robot, readings = room_for(seen, clock, placement)
     return Session(
         robot=robot,
         readings=readings,

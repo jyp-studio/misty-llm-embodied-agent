@@ -110,12 +110,21 @@ class ScenarioSpeech:
 
 
 @dataclass(frozen=True)
+class Placement:
+    """Where the simulated person stands relative to the chassis at the start."""
+
+    distance_cm: float
+    bearing_deg: float = 0.0
+
+
+@dataclass(frozen=True)
 class TextScenarioScript:
     key: str
     label: str
     inputs: Tuple[ScheduledInput, ...]
     decisions: Tuple[Decision, ...]
     speech: Tuple[TimedSpeech, ...] = ()
+    placement: Optional[Placement] = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +189,36 @@ class ScenarioModel:
         if not self._remaining:
             raise RuntimeError("the acceptance scenario ran out of decisions")
         return self._remaining.pop(0)
+
+
+SCRIPTED_ATTRIBUTION = (
+    "speaker attribution is scripted: the runtime has no sound-source "
+    "direction and no face identity, only anonymous track references"
+)
+
+
+def _said_by(at_s: float, text: str, who: str, **fields) -> ScheduledInput:
+    return ScheduledInput(at_s, TimedText(
+        text=text, facts={"track_reference": who},
+        uncertainty=(SCRIPTED_ATTRIBUTION,), **fields,
+    ))
+
+
+COME_CLOSER = TextScenarioScript(
+    key="come-closer",
+    label="過來陪我 · 先轉向、再靠近",
+    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "好，我過去。"}, 20, 4,
+                 note="使用者明確邀請；底盤會先對準再靠近。"),
+        Decision("approach", {}, 22, 1,
+                 note="只表達接近目前 Interaction Target 的意圖；速度與步幅由 controller 決定。"),
+        Decision("speak", {"text": "我到了，這個距離可以嗎？"}, 26, 8,
+                 note="到達社交距離後確認對方的感受。"),
+        Decision("done", {}, 24, 1, note="陪伴已開始，結束 Episode。"),
+    ),
+    placement=Placement(distance_cm=150.0, bearing_deg=25.0),
+)
 
 
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
@@ -408,6 +447,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             note="已做低風險回應，結束這次互動。",
         ),
     ),
+    text_scripts=(COME_CLOSER,),
 )
 
 
@@ -530,19 +570,6 @@ CRYING_CARE = AcceptanceScenario(
 #: The actor name single-person cards use; the Demo reads it as "someone".
 DEFAULT_ACTOR = "person"
 
-SCRIPTED_ATTRIBUTION = (
-    "speaker attribution is scripted: the runtime has no sound-source "
-    "direction and no face identity, only anonymous track references"
-)
-
-
-def _said_by(at_s: float, text: str, who: str, **fields) -> ScheduledInput:
-    return ScheduledInput(at_s, TimedText(
-        text=text, facts={"track_reference": who},
-        uncertainty=(SCRIPTED_ATTRIBUTION,), **fields,
-    ))
-
-
 A_THEN_B = TextScenarioScript(
     key="a-then-b",
     label="A 互動中 B 呼叫 · 排隊、收尾、交接",
@@ -636,6 +663,8 @@ __all__ = [
     "PresentationBeat",
     "SPEAKER_HANDOFF",
     "A_THEN_B",
+    "COME_CLOSER",
+    "Placement",
     "B_EXPIRES",
     "SCRIPTED_ATTRIBUTION",
     "DEFAULT_ACTOR",

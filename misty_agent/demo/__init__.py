@@ -146,8 +146,8 @@ _SPEC_FIRST = (
 #:
 #: The first version of this banner said the loop "had to be built to produce
 #: it, not the other way round". `tests/goldens/README.md` keeps a table of
-#: every time a golden and the implementation disagreed: **six times, and the
-#: goldens gave way in five of them.** So the flattering version was false,
+#: every time a golden and the implementation disagreed: **seven times, and
+#: the goldens gave way in six of them.** So the flattering version was false,
 #: written in the one place this ticket exists to keep honest.
 #:
 #: The true version is the better story anyway — a rule that is never invoked
@@ -155,8 +155,8 @@ _SPEC_FIRST = (
 #: was invoked somebody wrote down which side moved.
 AMENDMENTS = (
     "It has been amended since. Where a golden and the loop disagreed, which "
-    "side gave way is written down — six times so far, and the goldens gave "
-    "way in five of them (tests/goldens/README.md). Editing one is allowed; "
+    "side gave way is written down — seven times so far, and the goldens gave "
+    "way in six of them (tests/goldens/README.md). Editing one is allowed; "
     "editing one without saying so is not."
 )
 
@@ -489,6 +489,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
         None,
         model=ScenarioModel(decisions),
         clock=clock,
+        placement=selected_text.placement if selected_text else None,
         ears=ScenarioSpeech(clock, selected_text.speech) if selected_text else _ScenarioEars(
             list(visual_script.heard_after_first_tool)
             if visual_script
@@ -948,6 +949,35 @@ _DROP_WORDING = {
 }
 
 
+_STEP_WORDING = {"turn": "轉向", "forward": "前進", "back": "後退"}
+
+
+def _approach_beats(result: Mapping[str, Any]) -> list:
+    """The controller's typed result, then each bounded chassis motion with
+    the fresh distance and bearing it was planned from. Simulated only."""
+    trace = result.get("trace") or []
+    ending = (
+        f"{result.get('result')} · {result.get('steps', 0)} 個 Step"
+        f"（{result.get('turns', 0)} 次轉向）"
+    )
+    beats = [PresentationBeat(
+        "approach", "Target-aware approach", ending,
+        f"最後讀數：距離 {result.get('distance_cm')} cm、bearing "
+        f"{result.get('bearing_deg')}°。底盤先對準再靠近；頭部 yaw 不算對準。"
+        "速度、角速度與時間由 controller 決定，模型只表達意圖；常數為模擬值。",
+    )]
+    for index, step in enumerate(trace, start=1):
+        unit = "°" if step["kind"] == "turn" else " cm"
+        beats.append(PresentationBeat(
+            "movement_step", f"Step {index}",
+            f"Step {index}：{_STEP_WORDING.get(step['kind'], step['kind'])} "
+            f"{round(step['commanded'], 1)}{unit}",
+            f"決策時距離 {step['distance_cm']} cm、bearing {step['bearing_deg']}°；"
+            "每步後需新的 Reading 才能繼續。模擬，非實機。",
+        ))
+    return beats
+
+
 def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[PresentationBeat]:
     """One cue lifecycle record as display copy, or nothing to show."""
     if isinstance(record, CueDetected):
@@ -1155,6 +1185,10 @@ def _episode_beats(
                     "simulated_effect", "模擬表達成功", describe(record).headline,
                     "姿勢由本次成功的 Tool 結果更新；不是實機動作。",
                 ))
+        elif record.tool == "approach":
+            observation = observations.get(record.turn)
+            if observation is not None:
+                flow.extend(_approach_beats(observation.result))
     flow.extend(collected(None))
     return flow
 

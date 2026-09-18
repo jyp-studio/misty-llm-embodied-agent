@@ -8,6 +8,8 @@ sample containers, invalidation bookkeeping, polling, or threads.
 
 from __future__ import annotations
 
+import dataclasses
+
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -210,7 +212,7 @@ def test_too_close_commands_one_bounded_backward_step_then_arrives():
     assert drive["timeMs"] == 954
 
 
-def test_stale_in_band_readings_end_as_lost_user_without_motion():
+def test_stale_in_band_readings_end_as_stale_without_motion():
     clock = FakeClock()
     readings = ScheduledReadings(
         clock,
@@ -226,7 +228,7 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
         clock=clock,
     )
 
-    assert result.status is ApproachStatus.LOST_USER
+    assert result.status is ApproachStatus.STALE_READING
     assert result.steps == 0
     assert robot.commands.requests == []
     assert clock.monotonic() == 0.05
@@ -287,11 +289,11 @@ def test_two_readings_must_be_fresh_at_the_same_decision_time():
         clock=clock,
     )
 
-    assert result.status is ApproachStatus.LOST_USER
+    assert result.status is ApproachStatus.STALE_READING
     assert result.steps == 0
 
 
-def test_step_limit_returns_timeout_and_stops_issuing_commands():
+def test_step_limit_is_reported_as_its_own_status_and_stops_issuing_commands():
     clock = FakeClock()
     robot = RealMistyAdapter(RecordingCommands())
 
@@ -303,7 +305,7 @@ def test_step_limit_returns_timeout_and_stops_issuing_commands():
     )
 
     drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
-    assert result.status is ApproachStatus.TIMEOUT
+    assert result.status is ApproachStatus.STEP_LIMIT
     assert result.steps == 2
     assert len(drives) == 2
 
@@ -330,7 +332,7 @@ def test_any_successful_http_status_is_accepted():
         clock=clock,
     )
 
-    assert result.status is ApproachStatus.TIMEOUT
+    assert result.status is ApproachStatus.STEP_LIMIT
     assert result.steps == 1
 
 
@@ -360,12 +362,22 @@ def test_synthetic_video_and_recording_robot_close_one_real_perception_loop(
             return response
 
     pipeline = DistancePipeline(camera, read_timeout_s=0.01)
+
+    class AlignedByTheScenario:
+        """The pipeline measures distance only. The scenario states the
+        alignment explicitly, as the spec allows a simulation to; on hardware
+        the controller would fail closed here instead."""
+
+        def latest_reading(self):
+            reading = pipeline.latest_reading()
+            return None if reading is None else dataclasses.replace(reading, bearing_deg=0.0)
+
     robot = RealMistyAdapter(MovingRecordingRobot())
     camera.start()
     pipeline.start()
     try:
         result = approach(
-            pipeline,
+            AlignedByTheScenario(),
             robot,
             config=Settings(
                 approach_reading_timeout_s=2.0,

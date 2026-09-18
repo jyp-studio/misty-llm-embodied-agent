@@ -203,7 +203,10 @@ class ApproachOutcome:
     """What one approach did, under one assumed transport lag."""
 
     transport_lag_s: float
-    outcome: Literal["arrived", "lost_user", "timeout", "drive_error"]
+    outcome: Literal[
+        "arrived", "lost_user", "stale_reading", "bearing_unavailable",
+        "alignment_failed", "step_limit", "timeout", "drive_error",
+    ]
     steps: int
     closest_cm: float
     final_cm: float
@@ -337,10 +340,14 @@ class _SimulatedWorld:
             return None
         captured_at, distance_cm = sample
         frame_arrived_at = captured_at + self._transport_lag_s
+        # The sweep is about distance under lag. The world states its
+        # alignment explicitly rather than leaving the controller to guess.
         return DistanceReading(
             distance_cm=distance_cm,
             frame_arrived_at=frame_arrived_at,
             detected_at=frame_arrived_at + self._pipeline_lag_s,
+            bearing_deg=0.0,
+            uncertainty=("simulated: aligned by construction",),
         )
 
     def drive(
@@ -501,6 +508,10 @@ class RobustnessEnvelope:
             "overshoot",
             "safety_floor_breach",
             "lost_user",
+            "stale_reading",
+            "bearing_unavailable",
+            "alignment_failed",
+            "step_limit",
             "timeout",
             "drive_error",
         ]

@@ -288,6 +288,38 @@ class Settings(BaseSettings):
         ),
     )
     back_up_step_cm: float = Field(default=20.0, gt=0.0)
+    align_tolerance_deg: float = Field(
+        default=10.0, gt=0.0, lt=90.0,
+        description=(
+            "Bearing (degrees, target relative to the chassis heading) within "
+            "which the base counts as facing the person. SIMULATED design "
+            "value; no camera bearing has been measured on hardware."
+        ),
+    )
+    max_turn_deg: float = Field(
+        default=30.0, gt=0.0, le=180.0,
+        description="Largest single chassis turn per Step. SIMULATED design value.",
+    )
+    max_align_steps: int = Field(
+        default=6, gt=0,
+        description="Turns allowed before alignment is reported failed.",
+    )
+    turn_percent: int = Field(
+        default=20, gt=0, le=100,
+        description=(
+            "Angular drive as a PERCENT of max, not a physical unit. "
+            "UNCALIBRATED, like drive_percent: the motor deadband is unknown."
+        ),
+    )
+    deg_per_sec_at_percent: float = Field(
+        default=45.0, gt=0.0,
+        description=(
+            "Turning rate (deg/s) at turn_percent. UNCALIBRATED: a simulation "
+            "constant, never measured on a Misty II. Turns are divided by "
+            "max_actual_motion_multiplier so an over-eager robot still stays "
+            "inside align_tolerance_deg."
+        ),
+    )
     post_step_settle_s: float = Field(
         default=0.8, ge=0.0,
         description=(

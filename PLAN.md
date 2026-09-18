@@ -2717,3 +2717,29 @@ request 斷言改經 `robot.commands`；world 測試改用 `SimulatedMistyAdapte
 `halted`）而不是 request log。同一個 scripted Episode 在兩個 adapter 上跑出相同的 ToolCalled／Observation
 序列，且 real adapter 的 endpoints 與 simulated pose 各自符合預期，這是「同一條 Tool/controller code
 path」的證據。Demo 的 run payload 附上模擬 robot 的最終狀態，並以測試確認它與 Journal 推導的 pose 一致。
+
+### 16.59 approach 先對準底盤，再以有界 Step 靠近；沒有 bearing 就不動（ticket 10）
+
+`DistanceReading` 增加 `bearing_deg`（相對底盤 heading，左為正）與 `uncertainty`。`control.approach`
+每輪取一次新鮮讀數，然後只做三件事之一：|bearing| 超過 `align_tolerance_deg` 就轉底盤（單次上限
+`max_turn_deg`，再除以 `max_actual_motion_multiplier`，讓轉過頭的機器人也不會擺到另一側容差外）；否則
+依既有 `plan_step` 前進或後退一個有界 Step；或以 typed status 結束。頭部 yaw 完全不參與。每個 Step
+後必須有新的 Reading 才能繼續，這一點沿用原本的 freshness epoch。
+
+Status 拆開：`lost_user`（等待結束時完全沒有讀數）、`stale_reading`（一直有讀數但沒有一筆夠新）、
+`bearing_unavailable`（來源說不出方向；live `DistancePipeline` 只有距離，因此真機路徑 fail closed）、
+`alignment_failed`（轉向預算用完）、`step_limit`（Step 上限，原本與 `timeout` 混用）、`timeout`
+（wall-clock）、`drive_error`。`ApproachResult` 帶 `turns`、最後讀數與 `trace`（每個動作的種類、
+量與決策時的距離／bearing），Tool result 原樣傳給 model 與 Journal；schema 仍無參數，描述不含
+距離或速度詞彙。`steps` 現在含轉向，因此 Journal 的 Steps 與 adapter 實際下達的 drive 數仍相等。
+
+`SimulatedMistyAdapter` 有 `heading_deg` 與相對極座標的人：角速度轉底盤並反向改 bearing，線速度沿
+heading 平移後重算距離與 bearing。轉速 `deg_per_sec_at_percent` 與 `turn_percent` 和既有平移常數一樣
+標示 UNCALIBRATED；`align_tolerance_deg`、`max_turn_deg`、`max_align_steps` 為 simulated design values。
+模擬 world（測試、harness）在讀數上明說 bearing=0「aligned by construction」，符合規格「模擬模式可由
+scenario 明確提供 safety state」；`a_reading` 預設如此，直接建 `DistanceReading` 的地方則沒有 bearing。
+
+Goldens：`episode_ends_after_several_turns` 與 aborted 兩檔的 approach result 多了 `turns`、
+`distance_cm`、`bearing_deg`、`trace`，status 與 steps 不變；讓步的是 golden，理由是 ticket 10 要求
+typed result 攜帶這些欄位。Demo 問候卡新增「過來陪我」文字腳本（人在 150 cm、bearing 25°），流程顯示
+controller 結果、每個 Step 的種類與決策讀數，robot 狀態顯示 heading 與未被動的 head yaw。

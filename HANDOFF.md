@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–09 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–10 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -85,8 +85,21 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     light, last speech and the measured distance, so a refused behaviour
     reaches the Observation and the storyboard as `ok: false` and no move.
     There is no recording robot; the Journal is the only behaviour record.
+28. `approach` is target-aware: a reading carries distance, bearing,
+    timestamp and uncertainty; the controller turns the chassis until the
+    bearing is within tolerance, then closes by bounded Steps, each planned
+    from a fresh reading. Head yaw plays no part. Readings without a bearing
+    fail closed as `bearing_unavailable`, which is what the live distance
+    pipeline produces today. Stale readings, the alignment budget, the Step
+    cap and the wall-clock deadline are separate typed results, and the Tool
+    result carries a bounded per-Step trace. The simulated adapter has a
+    chassis heading and a relative-polar person; every turning and travel
+    constant is a simulated or hardware-unverified value.
+29. The greeting card's "過來陪我" script shows alignment, each Step with the
+    distance and bearing it was planned from, the chassis heading and the
+    untouched head yaw.
 
-Ticket 08 ends at `7b8eba4`; ticket 09 is the current implementation.
+Ticket 09 ends at `ab15ad3`; ticket 10 is the current implementation.
 
 ## Verification
 
@@ -124,17 +137,18 @@ against a real camera. The vendor audio composition is wired to the same
 timing, threshold calibration, association accuracy, and reliability are
 hardware-unverified.
 
-The current social runtime does not yet implement target-aware movement.
 Handoff is target-aware only in the sense of anonymous track tokens; there is
 no face identity and no sound-source direction, and the A→B card's speaker
-attribution is scripted. The care path is supported only by synthetic
+attribution is scripted. Target-aware approach is verified only against the
+simulated relative-polar world: no bearing has ever come from a camera, and
+the live distance pipeline makes the controller fail closed. The care path is supported only by synthetic
 temporal frames and scripted model decisions; it is not validated emotion
-recognition. The A-to-B card runs only scripted text actors; distance
-readings used by `approach` are still not target-specific until ticket 10.
+recognition. The A-to-B card runs only scripted text actors. Hazard, bumper
+during a turn and obstacle handling remain ticket 11.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/10-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/11-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

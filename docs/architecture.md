@@ -199,8 +199,24 @@ the storyboard's pose where it was. Neither adapter records what happened;
 the Journal written by the ReAct loop and Tool dispatch is the only
 behaviour record, and the Demo replays from it.
 
-This is ticket 09's vertical slice, not the completed social system.
-Target-aware movement remains a future ticket in
+`approach` is the only movement Tool and takes no arguments: the model states
+the intent to approach the current Interaction Target and nothing about how.
+A reading now carries a bearing beside its distance, timestamp and
+uncertainty. The controller turns the chassis while the bearing exceeds
+`align_tolerance_deg`, each turn bounded by `max_turn_deg` and divided by the
+uncalibrated motion multiplier, then moves one bounded distance Step per
+fresh reading until the arrival band. Head yaw is never read as alignment. A
+reading with no bearing ends the call as `bearing_unavailable` before any
+motion; the live distance pipeline reports none, so on hardware the Tool
+fails closed. Stale readings, a vanished person, the alignment budget, the
+Step cap, the deadline and a refused drive are distinct typed results, and
+the Tool result carries a bounded trace of every motion with the distance
+and bearing it was planned from. The simulated adapter models the person in
+relative polar coordinates with a chassis heading; its turning rate and
+travel speed are simulation constants, never hardware measurements.
+
+This is ticket 10's vertical slice, not the completed social system. Hazard
+and bumper handling during movement remain future tickets in
 `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on

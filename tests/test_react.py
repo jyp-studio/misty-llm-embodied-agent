@@ -134,7 +134,8 @@ def a_snapshot(distance_cm, face_present=True, new_speech=None):
 
 def a_reading(distance_cm=154):
     return DistanceReading(
-        distance_cm=distance_cm, frame_arrived_at=0.0, detected_at=0.0
+        distance_cm=distance_cm, frame_arrived_at=0.0, detected_at=0.0,
+        bearing_deg=0.0,
     )
 
 

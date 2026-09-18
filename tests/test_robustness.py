@@ -351,6 +351,7 @@ def test_the_envelope_reports_where_convergence_stops():
     assert limits.failure_mode in (
         None,
         "timeout",
+        "step_limit",
         "safety_floor_breach",
         "lost_user",
     )
@@ -637,7 +638,7 @@ def test_the_sweep_accepts_jitter_and_still_terminates():
     outcome = simulate_approach(transport_lag_s=0.0, jitter_px=3.0)
 
     assert outcome.steps <= SETTINGS.max_approach_steps
-    assert outcome.outcome in ("arrived", "lost_user", "timeout", "drive_error")
+    assert outcome.outcome in ("arrived", "lost_user", "step_limit", "timeout", "drive_error")
 
 
 def test_jitter_reaches_the_controller_through_the_sweep():

@@ -102,7 +102,7 @@ class InteractionTarget:
         return {
             "track_reference": self._reference,
             "state": self._state.value,
-            "bound_at_s": self._bound_at_s,
+            "bound_at": self._bound_at_s,
         }
 
 

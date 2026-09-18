@@ -25,6 +25,8 @@ What this file tests is the seam:
 
 from __future__ import annotations
 
+import dataclasses
+
 import json
 
 import pytest
@@ -136,7 +138,7 @@ def lost_user(registry):
     return run(registry, robot=world, readings=world, config=config, clock=clock)
 
 
-def timed_out(registry):
+def step_limited(registry):
     clock = FakeClock()
     return run(
         registry,
@@ -145,6 +147,76 @@ def timed_out(registry):
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
         clock=clock,
     )
+
+
+def timed_out(registry):
+    clock = FakeClock()
+    return run(
+        registry,
+        robot=RealMistyAdapter(RecordingCommands()),
+        readings=TickReadings(clock, distance_cm=100),
+        config=Settings(approach_timeout_s=0.3, post_step_settle_s=0.0),
+        clock=clock,
+    )
+
+
+class StaleReadings:
+    """Readings keep arriving but were all captured before the call began."""
+
+    def __init__(self, clock):
+        self._clock = clock
+
+    def latest_reading(self):
+        self._clock.sleep(0.001)
+        return a_reading(100, -5.0)
+
+
+class DistanceOnly:
+    """What the live pipeline gives: a distance and no bearing."""
+
+    def __init__(self, clock):
+        self._clock = clock
+
+    def latest_reading(self):
+        self._clock.sleep(0.001)
+        return a_reading(100, self._clock.monotonic(), bearing_deg=None, uncertainty=())
+
+
+class SlipsSideways(SimulatedMistyAdapter):
+    """However far the base turns, the person is still 40 degrees off."""
+
+    def latest_reading(self):
+        reading = super().latest_reading()
+        return dataclasses.replace(reading, bearing_deg=40.0)
+
+
+def stale_reading(registry):
+    clock = FakeClock()
+    return run(
+        registry,
+        robot=RealMistyAdapter(RecordingCommands()),
+        readings=StaleReadings(clock),
+        config=Settings(approach_reading_timeout_s=0.05),
+        clock=clock,
+    )
+
+
+def bearing_unavailable(registry):
+    clock = FakeClock()
+    return run(
+        registry,
+        robot=RealMistyAdapter(RecordingCommands()),
+        readings=DistanceOnly(clock),
+        config=Settings(post_step_settle_s=0.0),
+        clock=clock,
+    )
+
+
+def alignment_failed(registry):
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SlipsSideways(clock, start_cm=150.0, bearing_deg=40.0, config=config)
+    return run(registry, robot=world, readings=world, config=config, clock=clock)
 
 
 def drive_error(registry):
@@ -160,6 +232,10 @@ def drive_error(registry):
 SCENARIOS = [
     ("arrived", arrived),
     ("lost_user", lost_user),
+    ("stale_reading", stale_reading),
+    ("bearing_unavailable", bearing_unavailable),
+    ("alignment_failed", alignment_failed),
+    ("step_limit", step_limited),
     ("timeout", timed_out),
     ("drive_error", drive_error),
 ]
@@ -226,7 +302,8 @@ def test_a_refused_drive_is_not_counted_as_a_step(registry):
         clock=clock,
     )
 
-    assert outcome.result == {"result": "drive_error", "steps": 0}
+    assert outcome.result["result"] == "drive_error"
+    assert outcome.result["steps"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -360,14 +437,18 @@ def test_the_tool_says_exactly_what_the_backend_said(registry, expected, scenari
     direct = {
         "arrived": lambda: _direct_arrived(),
         "lost_user": lambda: _direct_lost_user(),
+        "stale_reading": lambda: _direct_stale_reading(),
+        "bearing_unavailable": lambda: _direct_bearing_unavailable(),
+        "alignment_failed": lambda: _direct_alignment_failed(),
+        "step_limit": lambda: _direct_step_limit(),
         "timeout": lambda: _direct_timeout(),
         "drive_error": lambda: _direct_drive_error(),
     }[expected]()
 
-    assert through_the_tool.result == {
-        "result": direct.status.value,
-        "steps": direct.steps,
-    }
+    assert through_the_tool.result["result"] == direct.status.value
+    assert through_the_tool.result["steps"] == direct.steps
+    assert through_the_tool.result["turns"] == direct.turns
+    assert len(through_the_tool.result["trace"]) == len(direct.trace)
 
 
 def _direct_arrived():
@@ -387,7 +468,7 @@ def _direct_lost_user():
     return approach(world, world, config=config, clock=clock)
 
 
-def _direct_timeout():
+def _direct_step_limit():
     clock = FakeClock()
     return approach(
         TickReadings(clock, distance_cm=100),
@@ -395,6 +476,39 @@ def _direct_timeout():
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
         clock=clock,
     )
+
+
+def _direct_timeout():
+    clock = FakeClock()
+    return approach(
+        TickReadings(clock, distance_cm=100),
+        RealMistyAdapter(RecordingCommands()),
+        config=Settings(approach_timeout_s=0.3, post_step_settle_s=0.0),
+        clock=clock,
+    )
+
+
+def _direct_stale_reading():
+    clock = FakeClock()
+    return approach(
+        StaleReadings(clock), RealMistyAdapter(RecordingCommands()),
+        config=Settings(approach_reading_timeout_s=0.05), clock=clock,
+    )
+
+
+def _direct_bearing_unavailable():
+    clock = FakeClock()
+    return approach(
+        DistanceOnly(clock), RealMistyAdapter(RecordingCommands()),
+        config=Settings(post_step_settle_s=0.0), clock=clock,
+    )
+
+
+def _direct_alignment_failed():
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SlipsSideways(clock, start_cm=150.0, bearing_deg=40.0, config=config)
+    return approach(world, world, config=config, clock=clock)
 
 
 def _direct_drive_error():
@@ -448,7 +562,8 @@ def test_the_tool_does_not_retry_a_failed_drive(registry):
         clock=clock,
     )
 
-    assert outcome.result == {"result": "drive_error", "steps": 0}
+    assert outcome.result["result"] == "drive_error"
+    assert outcome.result["steps"] == 0
     assert robot.commands.drives == 1
 
 

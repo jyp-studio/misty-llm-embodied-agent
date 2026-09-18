@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import (
     Annotated,
     Any,
@@ -767,8 +767,9 @@ def build_registry() -> ToolRegistry:
 
     @registry.tool(
         "approach",
-        "Move closer to the person you can see, or step back if they are too "
-        "near. Stops on its own.",
+        "Approach the current Interaction Target: the chassis turns to face "
+        "them, then comes closer, or steps back if they are too near. Stops "
+        "on its own.",
     )
     def approach(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         """The whole of `PLAN.md` §4's layering claim, in six lines.
@@ -817,7 +818,14 @@ def build_registry() -> ToolRegistry:
         # compares and serialises identically and looks harmless — but
         # `TerminalRenderer` puts it in an f-string, where it prints
         # `ApproachStatus.ARRIVED` instead of `arrived`.
-        answer = {"result": outcome.status.value, "steps": outcome.steps}
+        answer: Dict[str, Any] = {
+            "result": outcome.status.value,
+            "steps": outcome.steps,
+            "turns": outcome.turns,
+            "distance_cm": outcome.distance_cm,
+            "bearing_deg": outcome.bearing_deg,
+            "trace": [asdict(step) for step in outcome.trace],
+        }
         if ctx.target is not None:
             answer["target"] = ctx.target.as_facts()
         return answer

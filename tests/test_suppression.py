@@ -35,6 +35,7 @@ from misty_agent.agent.journal import Journal
 from misty_agent.config import Settings
 from misty_agent.drivers.audio_stream import AudioStream, Segment
 from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter
 
 
 class Ticking:
@@ -70,7 +71,7 @@ def spoke(text, *, ears, config=None):
     """Run the real `speak` Tool with a microphone attached."""
     registry = build_registry()
     ctx = ToolContext(
-        robot=RecordingCommands(),
+        robot=RealMistyAdapter(RecordingCommands()),
         readings=None,
         config=config or Settings(),
         clock=FakeClock(),
@@ -221,7 +222,7 @@ def test_the_microphone_is_shut_before_the_request_goes_out():
     robot = OrderWatchingRobot(ears)
     registry = build_registry()
     ctx = ToolContext(
-        robot=robot, readings=None, config=Settings(),
+        robot=RealMistyAdapter(robot), readings=None, config=Settings(),
         clock=FakeClock(), ears=ears,
     )
 
@@ -244,7 +245,7 @@ def test_speaking_does_not_wait_out_its_own_window():
     ears = RecordingEars()
     registry = build_registry()
     ctx = ToolContext(
-        robot=RecordingCommands(), readings=None, config=Settings(),
+        robot=RealMistyAdapter(RecordingCommands()), readings=None, config=Settings(),
         clock=clock, ears=ears,
     )
 
@@ -443,7 +444,7 @@ def test_a_tool_that_makes_no_sound_leaves_the_microphone_open():
     ears = RecordingEars()
     registry = build_registry()
     ctx = ToolContext(
-        robot=RecordingCommands(), readings=None, config=Settings(),
+        robot=RealMistyAdapter(RecordingCommands()), readings=None, config=Settings(),
         clock=FakeClock(), ears=ears,
     )
 
@@ -463,7 +464,7 @@ def test_an_episode_with_no_microphone_needs_no_none_check():
     one shape rather than testing for `None`."""
     from misty_agent.agent.tools import HEARS_NOTHING
 
-    ctx = ToolContext(robot=RecordingCommands(), readings=None, config=Settings())
+    ctx = ToolContext(robot=RealMistyAdapter(RecordingCommands()), readings=None, config=Settings())
 
     assert ctx.ears is HEARS_NOTHING
     ctx.ears.mute_for(1.0)

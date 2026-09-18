@@ -44,7 +44,8 @@ from misty_agent.agent.model import MissingApiKey, OpenAIModel, api_key_availabl
 from misty_agent.agent.react import run_episode
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.config import Settings
-from misty_agent.fakes import FakeClock, MovingWorld, RecordingCommands
+from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 
 pytestmark = pytest.mark.llm_live
 
@@ -86,7 +87,7 @@ SCENARIOS = [
 def a_live_episode(model, trigger, said, distance_cm, *, config=None):
     """One Episode against the real model, on a simulated world.
 
-    The world is `test_approach.MovingWorld` — the same double M5 was verified
+    The world is `SimulatedMistyAdapter` — the same simulation M5 was verified
     against, for ticket 06's reason: a second definition of what the robot
     does is a second thing to keep true. It matters more here than it looks.
     An earlier version used a reading source that stamped every reading at
@@ -99,14 +100,14 @@ def a_live_episode(model, trigger, said, distance_cm, *, config=None):
     settings = config or Settings()
     clock = FakeClock()
     world = (
-        MovingWorld(
+        SimulatedMistyAdapter(
             clock, start_cm=float(distance_cm),
             actual_motion_multiplier=1.0, config=settings,
         )
         if distance_cm is not None
         else None
     )
-    robot = world or RecordingCommands()
+    robot = world or RealMistyAdapter(RecordingCommands())
     snapshot = Snapshot(
         distance_cm=distance_cm,
         face_present=distance_cm is not None,
@@ -188,9 +189,9 @@ def test_the_robot_really_moved_in_at_least_one_scenario(episodes):
     broke. This is the negative control for the live run as a whole.
     """
     drives = sum(
-        len([r for r in episode.robot.requests if r.endpoint == "drive/time"])
+        len(episode.robot.directions)
         for episode, _ in episodes.values()
-        if hasattr(episode.robot, "requests")
+        if hasattr(episode.robot, "directions")
     )
 
     assert drives > 0, (

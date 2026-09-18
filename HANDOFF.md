@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–08 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–09 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -79,8 +79,14 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 26. The A→B Demo card runs two scripted anonymous actors and shows target
     binding, the queued request, the handoff notice, the dequeue and both
     Episodes. Speaker attribution in that card is scripted, not localised.
+27. Tools and the approach controller depend on one `Robot` interface that
+    returns a typed `Effect`. `RealMistyAdapter` maps behaviours to vendor
+    requests (hardware-unverified); `SimulatedMistyAdapter` holds pose, chest
+    light, last speech and the measured distance, so a refused behaviour
+    reaches the Observation and the storyboard as `ok: false` and no move.
+    There is no recording robot; the Journal is the only behaviour record.
 
-Ticket 07 ends at `446be12`; ticket 08 is the current implementation.
+Ticket 08 ends at `7b8eba4`; ticket 09 is the current implementation.
 
 ## Verification
 
@@ -128,7 +134,7 @@ readings used by `approach` are still not target-specific until ticket 10.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/09-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/10-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

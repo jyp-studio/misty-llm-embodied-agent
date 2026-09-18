@@ -538,6 +538,9 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
             ),
             "runtime": _runtime_payload(result),
             "episodes": episodes,
+            # State, not a log: where the simulated Misty ended up. The
+            # storyboard above derives the same pose from the Journal.
+            "robot": _simulated_robot_state(session.robot),
         },
     )
 
@@ -1154,6 +1157,18 @@ def _episode_beats(
                 ))
     flow.extend(collected(None))
     return flow
+
+
+def _simulated_robot_state(robot: Any) -> dict:
+    """The simulated adapter's final state, for the evidence panel."""
+    return {
+        "pose": asdict(robot.pose),
+        "speech": robot.speech,
+        "sound": list(robot.sound) if robot.sound is not None else None,
+        "halted": robot.halted,
+        "distance_cm": robot.distance_cm,
+        "provenance": "SimulatedMistyAdapter state after this run; not a robot",
+    }
 
 
 def _runtime_payload(result: RuntimeResult) -> dict:

@@ -89,8 +89,7 @@ class EmergencyStop:
         # Before the halt, deliberately: see the module docstring.
         self._journal.record(StopRequested, source=source)
         try:
-            self._robot.halt()
-            self.halted = True
+            self.halted = self._robot.halt().ok
         except Exception:
             # Swallowed on purpose, and this is the one place in the project
             # where that is right. This runs on the sensor's thread, where

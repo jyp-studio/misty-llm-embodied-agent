@@ -158,15 +158,23 @@ def every_drive_came_from_approach(episode: Episode) -> List[str]:
     it through M5's controller.
 
     Counted rather than asserted structurally: the Journal says how many Steps
-    `approach` reported, and the recording robot says how many drives were
-    actually issued. If any other route reached `drive/time`, the two differ.
+    `approach` reported, and the robot says how many drives were actually
+    issued — the simulated adapter from the directions it drove, the real
+    adapter from the requests its transport recorded. If any other route
+    reached the base, the two differ.
     """
-    if episode.robot is None:
+    robot = episode.robot
+    if robot is None:
         return []
-    drives = [
-        request for request in getattr(episode.robot, "requests", [])
-        if request.endpoint == "drive/time"
-    ]
+    if hasattr(robot, "directions"):
+        drives = list(robot.directions)
+    elif hasattr(robot, "commands"):
+        drives = [
+            request for request in getattr(robot.commands, "requests", [])
+            if request.endpoint == "drive/time"
+        ]
+    else:
+        return []
     ending = next(
         (r for r in episode.records if isinstance(r, EpisodeFinished)), None
     )

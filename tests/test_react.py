@@ -58,7 +58,8 @@ from misty_agent.agent.react import Decision, EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import NoArguments, ToolContext, ToolRegistry, build_registry
 from misty_agent.config import Settings
-from misty_agent.fakes import FakeClock, MovingWorld, RecordingCommands
+from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 from misty_agent.perception.distance import DistanceReading
 
 from test_approach import WorldThatLosesTheUserAfterAStep
@@ -163,7 +164,7 @@ def an_episode(
         episode_id=episode_id, clock=clock, wall_clock=lambda: WALL_CLOCK
     )
     ctx = ToolContext(
-        robot=the_world or RecordingCommands(),
+        robot=the_world or RealMistyAdapter(RecordingCommands()),
         readings=the_world or readings,
         config=settings,
         clock=clock,
@@ -247,7 +248,7 @@ def fails_during_model_call():
         model=model,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
             clock=clock,
@@ -342,7 +343,7 @@ def test_a_model_failure_ends_the_episode_records_why_and_halts():
     journal = Journal(
         episode_id="ep-model-error", clock=clock, wall_clock=lambda: WALL_CLOCK
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     class ModelFails:
         def decide(self, working_context, tools):
@@ -372,7 +373,7 @@ def test_a_model_failure_ends_the_episode_records_why_and_halts():
     assert len(endings) == 1
     assert endings[0].outcome == "error"
     assert journal.records[-1] is endings[0]
-    assert "halt" in robot.endpoints
+    assert "halt" in robot.commands.endpoints
 
 
 def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
@@ -380,7 +381,7 @@ def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
     journal = Journal(
         episode_id="ep-memory-error", clock=clock, wall_clock=lambda: WALL_CLOCK
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     class MemoryFails:
         def as_prompt_block(self):
@@ -411,7 +412,7 @@ def test_a_memory_prompt_failure_ends_the_episode_before_the_first_turn():
     assert outcome == EpisodeOutcome(outcome="error", turns=0, steps=0)
     assert (failed.phase, failed.error_type) == ("memory", "RuntimeError")
     assert isinstance(journal.records[-1], EpisodeFinished)
-    assert "halt" in robot.endpoints
+    assert "halt" in robot.commands.endpoints
 
 
 def test_a_tool_failure_ends_the_episode_records_why_and_halts():
@@ -425,7 +426,7 @@ def test_a_tool_failure_ends_the_episode_records_why_and_halts():
         def move_head(self, *args, **kwargs):
             raise RuntimeError("head motor failed")
 
-    robot = MotorFails()
+    robot = RealMistyAdapter(MotorFails())
     outcome = run_episode(
         evidence(),
         model=ScriptedModel(clock, ("move_head", {}, 10, 1, 1)),
@@ -448,7 +449,7 @@ def test_a_tool_failure_ends_the_episode_records_why_and_halts():
     ]
     assert len(endings) == 1
     assert journal.records[-1] is endings[0]
-    assert "halt" in robot.endpoints
+    assert "halt" in robot.commands.endpoints
 
 
 def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
@@ -456,7 +457,7 @@ def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
     journal = Journal(
         episode_id="ep-tool-result-error", clock=clock, wall_clock=lambda: WALL_CLOCK
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
     registry = ToolRegistry()
 
     @registry.tool("bad_result", "Return something a Journal cannot store.")
@@ -481,7 +482,7 @@ def test_an_invalid_tool_result_cannot_leave_the_episode_half_open():
     assert outcome.outcome == "error"
     assert failed.phase == "tool"
     assert isinstance(journal.records[-1], EpisodeFinished)
-    assert "halt" in robot.endpoints
+    assert "halt" in robot.commands.endpoints
 
 
 def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
@@ -490,7 +491,7 @@ def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
     journal = Journal(
         episode_id="ep-perception-error", clock=clock, wall_clock=lambda: WALL_CLOCK
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     class PerceptionFails:
         def snapshot(self):
@@ -518,8 +519,8 @@ def test_a_snapshot_failure_ends_the_episode_records_why_and_halts():
     ]
     assert len(endings) == 1
     assert journal.records[-1] is endings[0]
-    assert "head" in robot.endpoints
-    assert "halt" in robot.endpoints
+    assert "head" in robot.commands.endpoints
+    assert "halt" in robot.commands.endpoints
 
 
 @pytest.mark.parametrize(
@@ -546,7 +547,7 @@ def test_an_error_message_cannot_leak_a_control_parameter_into_the_journal(leak)
         model=LeakyFailure(),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
             clock=clock,
@@ -650,7 +651,7 @@ def test_ending_is_read_from_the_registry_not_from_the_tool_name():
     clock = FakeClock()
     journal = Journal(episode_id="ep-x", clock=clock, wall_clock=lambda: WALL_CLOCK)
     ctx = ToolContext(
-        robot=RecordingCommands(),
+        robot=RealMistyAdapter(RecordingCommands()),
         readings=ScriptedReadings(),
         config=Settings(max_turns_per_episode=2),
         clock=clock,
@@ -870,7 +871,7 @@ def test_the_instructions_the_caller_gave_are_the_ones_the_model_reads():
         model=scripted,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -897,7 +898,7 @@ def test_an_episode_can_be_run_without_a_persona_but_must_ask():
         model=scripted,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -964,7 +965,7 @@ def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
         model=model,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
             clock=clock,
@@ -1095,7 +1096,7 @@ def test_the_model_cannot_edit_the_loops_working_context():
     clock = FakeClock()
     journal = Journal(episode_id="ep-m", clock=clock, wall_clock=lambda: WALL_CLOCK)
     ctx = ToolContext(
-        robot=RecordingCommands(),
+        robot=RealMistyAdapter(RecordingCommands()),
         readings=ScriptedReadings(),
         config=Settings(),
         clock=clock,
@@ -1142,7 +1143,7 @@ def test_the_journal_itself_refuses_a_second_ending():
 # only one that can falsify "every Episode provably returns to idle" rather
 # than demonstrate it.
 
-class StopsAfterOneDrive(MovingWorld):
+class StopsAfterOneDrive(SimulatedMistyAdapter):
     """A bumper pressed while the base is moving.
 
     The stop fires from inside `drive_time`, which is the honest shape: the
@@ -1161,12 +1162,12 @@ class StopsAfterOneDrive(MovingWorld):
         self._press = press
         self.stopped_at = None
 
-    def drive_time(self, **kwargs):
-        response = super().drive_time(**kwargs)
+    def drive(self, **kwargs):
+        effect = super().drive(**kwargs)
         if self.stopped_at is None:
             self.stopped_at = self._clock.monotonic()
             self._press()
-        return response
+        return effect
 
     def latest_reading(self):
         self._clock.sleep(0.001)
@@ -1257,7 +1258,7 @@ def test_the_stop_arrives_in_the_middle_of_a_turn_not_at_its_edge():
     stopped = next(r for r in records if isinstance(r, StopRequested))
     observed = next(r for r in records if isinstance(r, Observation))
 
-    drives = [r for r in world.requests if r.endpoint == "drive/time"]
+    drives = world.directions
     assert drives, "nothing was moving, so nothing was interrupted"
     assert called.t < stopped.t, "the stop landed on the Turn boundary"
     assert observed.t - stopped.t > 1.0, (
@@ -1309,7 +1310,7 @@ def test_everything_is_halted_when_the_bumper_is_pressed():
     _, _, _, stop, world = is_aborted()
 
     assert stop.halted
-    assert "halt" in world.endpoints
+    assert world.halted
 
 
 def test_no_further_turn_begins_after_an_abort():
@@ -1329,7 +1330,7 @@ def test_a_stop_between_turns_starts_no_new_action():
     """
     clock = FakeClock()
     journal = Journal(episode_id="ep-mid", clock=clock, wall_clock=lambda: WALL_CLOCK)
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
     stop = EmergencyStop(journal, robot)
 
     class PressesWhileThinking:
@@ -1353,7 +1354,7 @@ def test_a_stop_between_turns_starts_no_new_action():
     kinds = [r.type for r in journal.records]
     assert outcome.outcome == "aborted"
     assert "tool_called" not in kinds
-    assert "drive/time" not in robot.endpoints
+    assert "drive/time" not in robot.commands.endpoints
 
 
 def test_a_halt_that_fails_still_ends_the_episode():
@@ -1399,7 +1400,7 @@ def test_an_abort_arriving_from_a_real_thread_still_ends_the_episode():
     """
     clock = FakeClock()
     journal = Journal(episode_id="ep-thread", clock=clock, wall_clock=lambda: WALL_CLOCK)
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
     stop = EmergencyStop(journal, robot)
     pressed = threading.Event()
 
@@ -1467,7 +1468,7 @@ def test_a_long_episode_derives_memory_exactly_once():
         ),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(*[a_reading() for _ in range(cap * 4)]),
             config=Settings(),
             clock=clock,
@@ -1500,7 +1501,7 @@ def test_what_the_robot_said_is_what_gets_remembered():
         ),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -1525,7 +1526,7 @@ def test_an_episode_where_the_robot_says_nothing_still_records_the_exchange():
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -1561,7 +1562,7 @@ def test_the_models_message_list_is_never_stored_as_memory(tmp_path):
         model=scripted,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -1594,7 +1595,7 @@ def test_what_memory_knows_reaches_the_model_after_the_persona():
         model=scripted,
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -1643,7 +1644,7 @@ def test_memory_is_derived_after_the_episode_has_already_ended():
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock,
         ),
         journal=journal,
@@ -1678,7 +1679,7 @@ def test_post_episode_memory_failure_cannot_hide_the_completed_journal():
         model=ScriptedModel(clock, ("done", {}, 10, 1, 1)),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ScriptedReadings(),
             config=Settings(),
             clock=clock,
@@ -1715,7 +1716,7 @@ def test_an_episode_that_speaks_shuts_the_microphone_for_that_long():
         ),
         registry=build_registry(),
         ctx=ToolContext(
-            robot=RecordingCommands(), readings=ScriptedReadings(),
+            robot=RealMistyAdapter(RecordingCommands()), readings=ScriptedReadings(),
             config=Settings(), clock=clock, ears=ears,
         ),
         journal=journal,

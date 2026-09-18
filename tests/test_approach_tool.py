@@ -8,7 +8,7 @@ Step, drive it, read again.
 
 So the thing to test here is not the control law. That is `tests/test_approach.py`,
 which is why this file **imports its worlds instead of building new ones**: a
-second `MovingWorld` would be a second definition of what the robot does, and
+second `SimulatedMistyAdapter` would be a second definition of what the robot does, and
 the point of a thin adapter is that it adds nothing. If these fakes drift from
 the ones M5 was verified against, that is a fact worth finding out about.
 
@@ -35,10 +35,10 @@ from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import (
     FakeClock,
-    MovingWorld,
     RecordingCommands,
     a_reading,
 )
+from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 
 from test_approach import (
     ExplodingRobot,
@@ -92,7 +92,7 @@ def test_an_argument_is_refused_rather_than_ignored(registry):
     would believe it had control it does not have."""
     clock = FakeClock()
     ctx = ToolContext(
-        robot=RecordingCommands(),
+        robot=RealMistyAdapter(RecordingCommands()),
         readings=TickReadings(clock, distance_cm=100),
         config=Settings(),
         clock=clock,
@@ -122,7 +122,7 @@ def test_it_does_not_end_the_episode(registry):
 def arrived(registry):
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
-    world = MovingWorld(
+    world = SimulatedMistyAdapter(
         clock, start_cm=config.target_distance_cm, actual_motion_multiplier=1.0,
         config=config,
     )
@@ -140,7 +140,7 @@ def timed_out(registry):
     clock = FakeClock()
     return run(
         registry,
-        robot=RecordingCommands(),
+        robot=RealMistyAdapter(RecordingCommands()),
         readings=TickReadings(clock, distance_cm=100),
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
         clock=clock,
@@ -151,7 +151,7 @@ def drive_error(registry):
     clock = FakeClock()
     return run(
         registry,
-        robot=ExplodingRobot(),
+        robot=RealMistyAdapter(ExplodingRobot()),
         readings=TickReadings(clock, distance_cm=100),
         clock=clock,
     )
@@ -200,7 +200,7 @@ def test_the_step_count_reaches_the_model_too(registry, expected, scenario):
 
 def test_the_steps_reported_are_the_drives_that_actually_happened(registry):
     clock = FakeClock()
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     outcome = run(
         registry,
@@ -210,7 +210,7 @@ def test_the_steps_reported_are_the_drives_that_actually_happened(registry):
         clock=clock,
     )
 
-    drives = [r for r in robot.requests if r.endpoint == "drive/time"]
+    drives = [r for r in robot.commands.requests if r.endpoint == "drive/time"]
     assert outcome.result["steps"] == len(drives) == 2
 
 
@@ -221,7 +221,7 @@ def test_a_refused_drive_is_not_counted_as_a_step(registry):
 
     outcome = run(
         registry,
-        robot=RecordingCommands(fail_endpoints=["drive/time"]),
+        robot=RealMistyAdapter(RecordingCommands(fail_endpoints=["drive/time"])),
         readings=TickReadings(clock, distance_cm=100),
         clock=clock,
     )
@@ -254,7 +254,7 @@ def test_the_drives_underneath_really_do_carry_what_must_not_escape(registry):
     parameters exist, one layer down, and are the control layer's.
     """
     clock = FakeClock()
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     run(
         registry,
@@ -264,7 +264,7 @@ def test_the_drives_underneath_really_do_carry_what_must_not_escape(registry):
         clock=clock,
     )
 
-    drive = robot.last("drive/time").json
+    drive = robot.commands.last("drive/time").json
     assert "linearVelocity" in drive
     assert "timeMs" in drive
 
@@ -318,7 +318,7 @@ def test_standing_too_close_makes_this_tool_reverse(registry):
         ScheduledReading(1.17, a_reading(50, 1.17)),
         ScheduledReading(1.18, a_reading(51, 1.18)),
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     outcome = run(
         registry,
@@ -329,7 +329,7 @@ def test_standing_too_close_makes_this_tool_reverse(registry):
     )
 
     assert outcome.result["result"] == "arrived"
-    assert robot.last("drive/time").json["linearVelocity"] < 0
+    assert robot.commands.last("drive/time").json["linearVelocity"] < 0
 
 
 def test_there_is_no_second_tool_for_going_backwards(registry):
@@ -373,7 +373,7 @@ def test_the_tool_says_exactly_what_the_backend_said(registry, expected, scenari
 def _direct_arrived():
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
-    world = MovingWorld(
+    world = SimulatedMistyAdapter(
         clock, start_cm=config.target_distance_cm, actual_motion_multiplier=1.0,
         config=config,
     )
@@ -391,7 +391,7 @@ def _direct_timeout():
     clock = FakeClock()
     return approach(
         TickReadings(clock, distance_cm=100),
-        RecordingCommands(),
+        RealMistyAdapter(RecordingCommands()),
         config=Settings(max_approach_steps=2, post_step_settle_s=0.0),
         clock=clock,
     )
@@ -401,7 +401,7 @@ def _direct_drive_error():
     clock = FakeClock()
     return approach(
         TickReadings(clock, distance_cm=100),
-        ExplodingRobot(),
+        RealMistyAdapter(ExplodingRobot()),
         config=Settings(),
         clock=clock,
     )
@@ -439,7 +439,7 @@ def test_the_tool_does_not_retry_a_failed_drive(registry):
     it: `drive_error` means stop and tell the model.
     """
     clock = FakeClock()
-    robot = FlakyRobot()
+    robot = RealMistyAdapter(FlakyRobot())
 
     outcome = run(
         registry,
@@ -449,7 +449,7 @@ def test_the_tool_does_not_retry_a_failed_drive(registry):
     )
 
     assert outcome.result == {"result": "drive_error", "steps": 0}
-    assert robot.drives == 1
+    assert robot.commands.drives == 1
 
 
 def test_a_failed_drive_is_never_reported_as_success(registry):
@@ -461,7 +461,7 @@ def test_a_failed_drive_is_never_reported_as_success(registry):
 
     outcome = run(
         registry,
-        robot=ExplodingRobot(),
+        robot=RealMistyAdapter(ExplodingRobot()),
         readings=TickReadings(clock, distance_cm=100),
         clock=clock,
     )
@@ -511,7 +511,7 @@ def test_a_context_without_a_config_says_which_field_is_missing(registry):
     """Otherwise the failure is an `AttributeError` on `NoneType` raised from
     inside the control layer, naming neither this Tool nor the field.
     """
-    ctx = ToolContext(robot=RecordingCommands(), readings=None)
+    ctx = ToolContext(robot=RealMistyAdapter(RecordingCommands()), readings=None)
 
     with pytest.raises(ValueError, match="ToolContext.config"):
         dispatch(
@@ -566,7 +566,7 @@ def test_a_failure_from_outside_the_control_loop_is_not_turned_into_success(
     with pytest.raises(RuntimeError, match="aborted"):
         run(
             registry,
-            robot=RecordingCommands(),
+            robot=RealMistyAdapter(RecordingCommands()),
             readings=ReadingsThatFail(),
             clock=clock,
         )

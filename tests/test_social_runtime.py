@@ -14,6 +14,7 @@ import threading
 import pytest
 
 from misty_agent.agent.journal import (
+    ToolCalled,
     DecisionNoted,
     EpisodeFinished,
     ExecutionFailed,
@@ -86,7 +87,7 @@ def test_a_timed_explicit_request_runs_from_attention_to_a_simulated_effect():
     episode = result.episodes[0]
     assert episode.outcome.outcome == "done"
     assert isinstance(episode.journal.records[-1], EpisodeFinished)
-    assert "tts/speak" in session.robot.endpoints
+    assert session.robot.speech, "the simulated Misty said nothing"
 
 
 def test_trigger_evidence_reaches_the_first_turn_before_any_observation():
@@ -499,7 +500,7 @@ def test_shutdown_aborts_the_active_episode_and_returns_a_bounded_result():
         if isinstance(record, StopRequested)
     ]
     assert [stop.source for stop in stops] == ["runtime_shutdown"]
-    assert "tts/speak" not in session.robot.endpoints
+    assert session.robot.speech is None
 
 
 def test_shutdown_interrupts_a_source_that_is_waiting_for_input():
@@ -606,7 +607,7 @@ def test_shutdown_during_episode_close_falls_back_to_a_robot_halt():
 
     assert result.ending == "shutdown"
     assert result.episodes[0].outcome.outcome == "done"
-    assert session.robot.endpoints.count("halt") == 1
+    assert session.robot.halted is True
 
 
 def test_the_existing_turn_cap_remains_the_runtime_episode_bound():
@@ -639,7 +640,7 @@ def test_the_existing_turn_cap_remains_the_runtime_episode_bound():
     episode = result.episodes[0]
     assert episode.outcome.outcome == "turn_limit"
     assert episode.outcome.turns == 2
-    assert session.robot.endpoints.count("tts/speak") == 2
+    assert [r.tool for r in episode.journal.records if isinstance(r, ToolCalled)] == ["speak", "speak"]
 
 
 def test_an_episode_error_closes_both_episode_and_runtime():

@@ -30,6 +30,7 @@ from misty_agent.app import (
 )
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter
 from misty_agent.perception.distance import DistanceReading
 
 
@@ -106,7 +107,7 @@ def a_session(
     *, model=None, ears=None, events=None, readings=None, robot=None, **rest
 ):
     return Session(
-        robot=robot or RecordingCommands(),
+        robot=RealMistyAdapter(robot or RecordingCommands()),
         readings=readings or Readings(150),
         model=model or Says(),
         memory=Memory(summariser=None, extractor=None, window=6),
@@ -251,7 +252,7 @@ def test_the_default_clock_is_a_real_one():
     """The negative control: a session that quietly used a fake would make
     every latency in production zero."""
     session = Session(
-        robot=RecordingCommands(), readings=Readings(), model=Says(),
+        robot=RealMistyAdapter(RecordingCommands()), readings=Readings(), model=Says(),
         memory=Memory(summariser=None, extractor=None, window=6),
     )
 
@@ -319,8 +320,8 @@ def test_sessions_sharing_an_event_stream_each_arm_their_own_bumper():
     ]
     callbacks[0]({})
     callbacks[1]({})
-    assert "halt" in first.robot.endpoints
-    assert "halt" in second.robot.endpoints
+    assert "halt" in first.robot.commands.endpoints
+    assert "halt" in second.robot.commands.endpoints
 
 
 def test_a_session_cannot_finish_construction_with_an_unarmed_bumper():

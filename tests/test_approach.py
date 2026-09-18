@@ -17,10 +17,10 @@ from misty_agent.config import Settings
 from misty_agent.control.approach import ApproachStatus, approach
 from misty_agent.fakes import (
     FakeClock,
-    MovingWorld,
     RecordingCommands,
     a_reading,
 )
+from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 from misty_agent.perception.distance import DistanceReading
 
 
@@ -58,7 +58,7 @@ class TickReadings:
         return a_reading(self._distance_cm, self._clock.monotonic())
 
 
-class WorldThatLosesTheUserAfterAStep(MovingWorld):
+class WorldThatLosesTheUserAfterAStep(SimulatedMistyAdapter):
     """The subject walks out of frame once at least one Step has been issued.
 
     It mirrors what the production pipeline does rather than a convenient
@@ -131,7 +131,7 @@ def test_startup_waits_for_two_fresh_readings_before_arriving():
         ScheduledReading(0.10, a_reading(61, 0.10)),
         ScheduledReading(0.20, a_reading(60, 0.20)),
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     result = approach(
         readings,
@@ -142,7 +142,7 @@ def test_startup_waits_for_two_fresh_readings_before_arriving():
 
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 0
-    assert robot.requests == []
+    assert robot.commands.requests == []
     assert clock.monotonic() >= 0.20
 
 
@@ -159,7 +159,7 @@ def test_a_move_is_followed_by_two_post_move_readings_before_arrival():
         ScheduledReading(1.49, a_reading(72, 1.49)),
         ScheduledReading(1.50, a_reading(70, 1.50)),
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     result = approach(
         readings,
@@ -171,7 +171,7 @@ def test_a_move_is_followed_by_two_post_move_readings_before_arrival():
         clock=clock,
     )
 
-    drives = [request for request in robot.requests if request.endpoint == "drive/time"]
+    drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 1
     assert len(drives) == 1
@@ -191,7 +191,7 @@ def test_too_close_commands_one_bounded_backward_step_then_arrives():
         ScheduledReading(1.17, a_reading(50, 1.17)),
         ScheduledReading(1.18, a_reading(51, 1.18)),
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     result = approach(
         readings,
@@ -203,7 +203,7 @@ def test_too_close_commands_one_bounded_backward_step_then_arrives():
         clock=clock,
     )
 
-    drive = robot.last("drive/time").body_without_defaults()
+    drive = robot.commands.last("drive/time").body_without_defaults()
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 1
     assert drive["linearVelocity"] == -20
@@ -217,7 +217,7 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
         ScheduledReading(0.0, a_reading(60, -0.20)),
         ScheduledReading(0.0, a_reading(60, -0.10)),
     )
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     result = approach(
         readings,
@@ -228,7 +228,7 @@ def test_stale_in_band_readings_end_as_lost_user_without_motion():
 
     assert result.status is ApproachStatus.LOST_USER
     assert result.steps == 0
-    assert robot.requests == []
+    assert robot.commands.requests == []
     assert clock.monotonic() == 0.05
 
 
@@ -279,7 +279,7 @@ def test_two_readings_must_be_fresh_at_the_same_decision_time():
 
     result = approach(
         readings,
-        RecordingCommands(),
+        RealMistyAdapter(RecordingCommands()),
         config=Settings(
             approach_reading_timeout_s=0.5,
             distance_max_age_s=0.20,
@@ -293,7 +293,7 @@ def test_two_readings_must_be_fresh_at_the_same_decision_time():
 
 def test_step_limit_returns_timeout_and_stops_issuing_commands():
     clock = FakeClock()
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
 
     result = approach(
         TickReadings(clock, distance_cm=100),
@@ -302,7 +302,7 @@ def test_step_limit_returns_timeout_and_stops_issuing_commands():
         clock=clock,
     )
 
-    drives = [request for request in robot.requests if request.endpoint == "drive/time"]
+    drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
     assert result.status is ApproachStatus.TIMEOUT
     assert result.steps == 2
     assert len(drives) == 2
@@ -312,7 +312,7 @@ def test_robot_refusal_returns_drive_error_without_assuming_a_step_happened():
     clock = FakeClock()
     result = approach(
         TickReadings(clock, distance_cm=100),
-        RecordingCommands(fail_endpoints=["drive/time"]),
+        RealMistyAdapter(RecordingCommands(fail_endpoints=["drive/time"])),
         config=Settings(),
         clock=clock,
     )
@@ -325,7 +325,7 @@ def test_any_successful_http_status_is_accepted():
     clock = FakeClock()
     result = approach(
         TickReadings(clock, distance_cm=100),
-        NoContentRobot(),
+        RealMistyAdapter(NoContentRobot()),
         config=Settings(max_approach_steps=1, post_step_settle_s=0.0),
         clock=clock,
     )
@@ -360,7 +360,7 @@ def test_synthetic_video_and_recording_robot_close_one_real_perception_loop(
             return response
 
     pipeline = DistancePipeline(camera, read_timeout_s=0.01)
-    robot = MovingRecordingRobot()
+    robot = RealMistyAdapter(MovingRecordingRobot())
     camera.start()
     pipeline.start()
     try:
@@ -376,7 +376,7 @@ def test_synthetic_video_and_recording_robot_close_one_real_perception_loop(
         pipeline.stop()
         camera.stop()
 
-    drives = [request for request in robot.requests if request.endpoint == "drive/time"]
+    drives = [request for request in robot.commands.requests if request.endpoint == "drive/time"]
     assert result.status is ApproachStatus.ARRIVED
     assert 1 <= result.steps <= 2
     assert len(drives) == result.steps
@@ -386,7 +386,7 @@ def test_robot_exception_returns_drive_error_without_assuming_a_step_happened():
     clock = FakeClock()
     result = approach(
         TickReadings(clock, distance_cm=100),
-        ExplodingRobot(),
+        RealMistyAdapter(ExplodingRobot()),
         config=Settings(),
         clock=clock,
     )
@@ -407,7 +407,7 @@ def test_readings_arriving_during_settle_count_after_motion():
 
     result = approach(
         readings,
-        RecordingCommands(),
+        RealMistyAdapter(RecordingCommands()),
         config=Settings(
             approach_reading_timeout_s=0.5,
             post_step_settle_s=0.10,
@@ -431,7 +431,7 @@ def test_settle_does_not_consume_the_independent_reading_timeout():
 
     result = approach(
         readings,
-        RecordingCommands(),
+        RealMistyAdapter(RecordingCommands()),
         config=Settings(
             approach_reading_timeout_s=0.05,
             post_step_settle_s=0.20,
@@ -447,7 +447,7 @@ def test_whole_call_deadline_bounds_an_unresponsive_robot_adapter():
     clock = FakeClock()
     result = approach(
         TickReadings(clock, distance_cm=100),
-        TimedOutRobot(),
+        RealMistyAdapter(TimedOutRobot()),
         config=Settings(approach_timeout_s=2.0),
         clock=clock,
     )
@@ -458,7 +458,7 @@ def test_whole_call_deadline_bounds_an_unresponsive_robot_adapter():
 
 def test_whole_call_deadline_includes_commanded_motion_time():
     clock = FakeClock()
-    robot = RecordingCommands()
+    robot = RealMistyAdapter(RecordingCommands())
     result = approach(
         TickReadings(clock, distance_cm=100),
         robot,
@@ -468,14 +468,14 @@ def test_whole_call_deadline_includes_commanded_motion_time():
 
     assert result.status is ApproachStatus.TIMEOUT
     assert result.steps == 0
-    assert not robot.requests
+    assert not robot.commands.requests
 
 
 def test_public_approach_reserves_enough_headroom_for_two_x_motion():
     """Regression for M4's 100 -> 44 cm calibration-error counterexample."""
     clock = FakeClock()
     config = Settings(post_step_settle_s=0.0)
-    world = MovingWorld(
+    world = SimulatedMistyAdapter(
         clock,
         start_cm=100.0,
         actual_motion_multiplier=2.0,
@@ -509,7 +509,7 @@ def test_non_default_controls_do_not_reverse_under_partial_motion(
     config = Settings(post_step_settle_s=0.0, **override)
     start_cm = config.target_distance_cm + expected_direction * 14.0
     clock = FakeClock()
-    world = MovingWorld(
+    world = SimulatedMistyAdapter(
         clock,
         start_cm=start_cm,
         actual_motion_multiplier=1.0,
@@ -545,7 +545,7 @@ def test_non_default_controls_cannot_force_motion_across_the_arrival_band(
         config.distance_tolerance_cm + 1.0
     )
     clock = FakeClock()
-    world = MovingWorld(
+    world = SimulatedMistyAdapter(
         clock,
         start_cm=start_cm,
         actual_motion_multiplier=2.0,
@@ -554,15 +554,9 @@ def test_non_default_controls_cannot_force_motion_across_the_arrival_band(
 
     result = approach(world, world, config=config, clock=clock)
 
-    drives = [
-        request for request in world.requests if request.endpoint == "drive/time"
-    ]
     assert result.status is ApproachStatus.ARRIVED
     assert result.steps == 1
-    assert (
-        drives[0].body_without_defaults()["linearVelocity"] * expected_direction
-        > 0
-    )
+    assert world.directions[0] == expected_direction
     assert world.closest_cm >= config.min_safe_distance_cm
     assert (
         config.target_distance_cm - config.distance_tolerance_cm

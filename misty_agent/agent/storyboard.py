@@ -61,6 +61,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from misty_agent.robot import RobotPose
 from misty_agent.agent.journal import (
     EpisodeFinished,
     EpisodeStarted,
@@ -98,20 +99,10 @@ _DESCRIBED_ON_THE_MOMENT = {
 FOUND_AT_YAW = "found_at_yaw"
 
 
-@dataclass(frozen=True)
-class RobotState:
-    """What the robot looks like at one moment.
-
-    The defaults are the pose every Tool assumes it starts from: arms down,
-    head level and forward, chest light off, neutral face.
-    """
-
-    expression: str = "neutral"
-    led: Tuple[int, int, int] = (0, 0, 0)
-    #: pitch, roll, yaw — the three `move_head` takes, in that order.
-    head: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    #: left, right — 90 is down, which is where `move_arms` rests them.
-    arms: Tuple[float, float] = (90.0, 90.0)
+#: What the robot looks like at one moment: the same pose the simulated
+#: adapter holds, derived here from the Journal rather than read from it, so
+#: a replay never depends on a robot object that has since moved on.
+RobotState = RobotPose
 
 
 #: How each Tool that changes the robot's appearance changes it: the argument
@@ -262,7 +253,9 @@ def _after(
         return robot, {into: asked[0] if len(asked) == 1 else asked}
 
     if isinstance(record, Observation):
-        if pending is not None:
+        # A behaviour the robot refused did not happen: the Observation
+        # says so, and the pose stays where it was.
+        if pending is not None and record.result.get("ok") is not False:
             robot = replace(robot, **pending)
         if FOUND_AT_YAW in record.result:
             # A scan stops on whoever it found and stays pointed at them;

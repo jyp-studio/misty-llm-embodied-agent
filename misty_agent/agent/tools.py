@@ -56,6 +56,7 @@ from misty_agent.agent.layering import (
 )
 from misty_agent.control.approach import ApproachStatus, approach as run_approach
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, ActivePerceptionResult
+from misty_agent.robot import Effect
 from misty_agent.agent.skills import EpisodeSkills, SkillRejected
 from misty_agent.agent.target import InteractionTarget, TargetState
 from misty_agent.perception.listening import ListeningEnding, ListeningResult
@@ -738,42 +739,30 @@ def build_registry() -> ToolRegistry:
         """
         estimated_ms = estimate_speech_ms(args.text, ctx.config)
         ctx.ears.mute_for(estimated_ms / 1000.0)
-        ctx.robot.speak(text=args.text)
-        return {"ok": True, "estimated_speech_ms": estimated_ms}
+        return {
+            **_effected(ctx.robot.speak(args.text)),
+            "estimated_speech_ms": estimated_ms,
+        }
 
     @registry.tool("display_image", "Change the face on the screen.")
     def display_image(args: DisplayImageArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        image = EXPRESSION_IMAGES[args.expression]
-        ctx.robot.display_image(fileName=image)
-        return {"ok": True}
+        return _effected(ctx.robot.display_image(EXPRESSION_IMAGES[args.expression]))
 
     @registry.tool("move_arms", "Move both arms to a position.")
     def move_arms(args: MoveArmsArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        ctx.robot.move_arms(
-            leftArmPosition=args.left,
-            rightArmPosition=args.right,
-            units="degrees",
-        )
-        return {"ok": True}
+        return _effected(ctx.robot.move_arms(args.left, args.right))
 
     @registry.tool("move_head", "Point the head somewhere.")
     def move_head(args: MoveHeadArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        ctx.robot.move_head(
-            pitch=args.pitch, roll=args.roll, yaw=args.yaw, units="degrees"
-        )
-        return {"ok": True}
+        return _effected(ctx.robot.move_head(args.pitch, args.roll, args.yaw))
 
     @registry.tool("change_led", "Change the colour of the chest light.")
     def change_led(args: ChangeLedArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        ctx.robot.change_led(red=args.red, green=args.green, blue=args.blue)
-        return {"ok": True}
+        return _effected(ctx.robot.change_led(args.red, args.green, args.blue))
 
     @registry.tool("play_audio", "Play one of the built-in sounds.")
     def play_audio(args: PlayAudioArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        ctx.robot.play_audio(
-            fileName=SOUND_FILES[args.sound], volume=args.volume
-        )
-        return {"ok": True}
+        return _effected(ctx.robot.play_audio(SOUND_FILES[args.sound], args.volume))
 
     @registry.tool(
         "approach",
@@ -858,17 +847,26 @@ def build_registry() -> ToolRegistry:
         """
         settle_s = ctx.config.look_around_settle_s
         for yaw in SCAN_YAWS:
-            ctx.robot.move_head(pitch=0.0, roll=0.0, yaw=yaw, units="degrees")
+            turned = ctx.robot.move_head(0.0, 0.0, yaw)
+            if not turned.ok:
+                return {**_effected(turned), "found_at_yaw": None}
             ctx.clock.sleep(settle_s)
             if ctx.readings is not None and ctx.readings.latest_reading():
                 return {"ok": True, "found_at_yaw": yaw}
         # Nobody anywhere: face forward again, so the next Turn starts from
         # the same place every other Tool assumes.
-        ctx.robot.move_head(pitch=0.0, roll=0.0, yaw=0.0, units="degrees")
+        centred = ctx.robot.move_head(0.0, 0.0, 0.0)
         ctx.clock.sleep(settle_s)
-        return {"ok": True, "found_at_yaw": None}
+        return {**_effected(centred), "found_at_yaw": None}
 
     return registry
+
+
+def _effected(effect: Effect) -> Dict[str, Any]:
+    """An Effect as the Tool result the model reads: `ok`, and why not."""
+    if effect.ok:
+        return {"ok": True}
+    return {"ok": False, "detail": effect.detail}
 
 
 def _about_the_target(

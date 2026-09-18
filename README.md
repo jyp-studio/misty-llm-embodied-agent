@@ -173,10 +173,10 @@ The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py
 
 The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
 gate, plus synthetic-fixture-verified Social Invitation and uncertain Care Cue
-visual gates, progressive Skills, bounded listening, and anonymous
-Interaction Target ownership with Turn-boundary handoff. Planned vertical
-slices add shared robot adapters, ephemeral social state, and target-aware
-movement. See
+visual gates, progressive Skills, bounded listening, anonymous Interaction
+Target ownership with Turn-boundary handoff, and one Robot interface with a
+hardware-unverified real adapter and a stateful simulated one. Planned
+vertical slices add ephemeral social state and target-aware movement. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

@@ -131,17 +131,17 @@ def with_an_out_of_range_call(episode):
 
 
 class DroveOnItsOwn:
-    """A robot that moved without the Episode reporting a Step."""
+    """A robot that moved without the Episode reporting a Step.
 
-    class Request:
-        endpoint = "drive/time"
+    Shaped like the simulated adapter: what it drove is its `directions`.
+    """
 
-    requests = [Request(), Request(), Request()]
+    directions = [1, 1, 1]
 
     @classmethod
     def with_drives(cls, count):
         stub = cls()
-        stub.requests = [cls.Request() for _ in range(count)]
+        stub.directions = [1] * count
         return stub
 
 
@@ -417,8 +417,7 @@ def test_the_live_harness_produces_an_episode_that_passes_its_own_gates():
 
     assert violations(episode) == []
     assert outcome.outcome == "done"
-    drives = [r for r in episode.robot.requests if r.endpoint == "drive/time"]
-    assert drives, "the harness cannot make the robot move, so its drive audit is idle"
+    assert episode.robot.directions, "the harness cannot make the robot move, so its drive audit is idle"
 
 
 def test_the_drive_audit_trusts_the_episodes_own_total():

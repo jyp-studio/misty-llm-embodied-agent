@@ -86,7 +86,7 @@ from misty_agent.drivers.audio_stream import AudioStream
 from misty_agent.drivers.av_stream import AvSession, RtspVideoStream
 from misty_agent.drivers.events import EventStream, event_condition
 from misty_agent.drivers.robot_commands import RobotCommands
-from misty_agent.fakes import MovingWorld, RecordingCommands
+from misty_agent.robot import RealMistyAdapter, SimulatedMistyAdapter
 from misty_agent.perception.asr import OpenAITranscriber
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
 from misty_agent.perception.wake import PocketSphinxWakeDetector
@@ -467,21 +467,20 @@ def look_at(frame: Any) -> Any:
 def room_for(seen: Optional[Any], clock: Any) -> Tuple[Any, Any]:
     """The robot and the readings, as one pair because the world is one thing.
 
-    `MovingWorld` is both: it answers drive commands and it answers
+    `SimulatedMistyAdapter` is both: it answers behaviours and it answers
     `latest_reading`, which is what makes the distance it reports respond to
-    the driving. An empty room needs the two split, because there is a robot
-    but nobody to measure.
+    the driving. An empty room keeps the robot and measures nobody.
 
     `seen` is `None` when nothing was looked at, which is not the same as
     having looked and found nobody: the first gets the default simulated
     world, the second gets a room with nobody in it.
     """
     if seen is None:
-        world = MovingWorld(clock, start_cm=DEFAULT_START_CM, config=settings)
+        world = SimulatedMistyAdapter(clock, start_cm=DEFAULT_START_CM, config=settings)
         return world, world
     if not seen.has_human:
-        return RecordingCommands(), NOBODY_THERE
-    world = MovingWorld(clock, start_cm=seen.distance_cm, config=settings)
+        return SimulatedMistyAdapter(clock, start_cm=None, config=settings), NOBODY_THERE
+    world = SimulatedMistyAdapter(clock, start_cm=seen.distance_cm, config=settings)
     return world, world
 
 
@@ -611,7 +610,7 @@ def attached_to(
         # a subscription that comes back empty raises — at which point four
         # threads and a websocket are already running.
         yield Session(
-            robot=commands,
+            robot=RealMistyAdapter(commands),
             readings=readings,
             model=model,
             memory=Memory(),

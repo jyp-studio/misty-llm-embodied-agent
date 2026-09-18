@@ -41,6 +41,7 @@ from misty_agent.agent.tools import (
 )
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter
 from misty_agent.perception.distance import DistanceReading
 
 
@@ -82,7 +83,7 @@ def clock():
 @pytest.fixture
 def ctx(robot, clock):
     return ToolContext(
-        robot=robot, readings=None, config=Settings(), clock=clock
+        robot=RealMistyAdapter(robot), readings=None, config=Settings(), clock=clock
     )
 
 
@@ -514,7 +515,7 @@ def test_look_around_settles_for_as_long_as_the_config_says(registry, robot):
     """
     clock = FakeClock()
     ctx = ToolContext(
-        robot=robot,
+        robot=RealMistyAdapter(robot),
         readings=None,
         config=Settings(look_around_settle_s=1.25),
         clock=clock,
@@ -637,7 +638,7 @@ def test_volume_defaults_to_something_audible_but_not_full(registry, ctx, robot)
 
 def a_scanning_ctx(robot, clock, *answers):
     return ToolContext(
-        robot=robot, readings=Readings(*answers), config=Settings(), clock=clock
+        robot=RealMistyAdapter(robot), readings=Readings(*answers), config=Settings(), clock=clock
     )
 
 
@@ -750,7 +751,7 @@ def test_the_estimate_never_exceeds_the_configured_cap(registry, robot, clock):
     """An unbounded estimate would hold ticket 10's window shut for as long as
     the model cared to talk."""
     ctx = ToolContext(
-        robot=robot, readings=None,
+        robot=RealMistyAdapter(robot), readings=None,
         config=Settings(speech_estimate_cap_s=2.0), clock=clock,
     )
 
@@ -771,11 +772,11 @@ def test_the_rate_comes_from_config_not_from_this_module(registry, robot, clock)
     """§15.4 asked for the rate to leave the old script and be marked
     UNCALIBRATED. A second copy here would be the thing that drifts."""
     fast = ToolContext(
-        robot=robot, readings=None,
+        robot=RealMistyAdapter(robot), readings=None,
         config=Settings(speech_words_per_second=100.0), clock=clock,
     )
     slow = ToolContext(
-        robot=robot, readings=None,
+        robot=RealMistyAdapter(robot), readings=None,
         config=Settings(speech_words_per_second=0.5), clock=clock,
     )
 

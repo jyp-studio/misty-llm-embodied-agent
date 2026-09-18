@@ -186,8 +186,21 @@ renders target binding, the queued request, the notice, the dequeue and both
 Episodes in order. Speaker attribution there is scripted: the runtime has no
 sound-source direction and no face identity.
 
-This is ticket 08's vertical slice, not the completed social system.
-Shared robot adapters and target-aware movement remain future tickets in
+Tools and the approach controller depend on one `Robot` interface
+(`misty_agent/robot/`): behaviours such as `move_head(pitch, roll, yaw)` or
+`drive(...)` that return a typed `Effect`, never a status code or a vendor
+parameter name. `RealMistyAdapter` turns each behaviour into the documented
+Misty REST request over the existing command transport and is
+hardware-unverified throughout. `SimulatedMistyAdapter` turns the same
+behaviours into state: pose, chest light, last speech and sound, and the
+distance the perception side measures, so driving changes the next Snapshot
+and a refused behaviour reaches the Observation as `ok: false` and leaves
+the storyboard's pose where it was. Neither adapter records what happened;
+the Journal written by the ReAct loop and Tool dispatch is the only
+behaviour record, and the Demo replays from it.
+
+This is ticket 09's vertical slice, not the completed social system.
+Target-aware movement remains a future ticket in
 `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on

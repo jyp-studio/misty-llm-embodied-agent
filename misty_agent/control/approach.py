@@ -21,6 +21,7 @@ from typing import Optional, Protocol
 from misty_agent.config import Settings, settings
 from misty_agent.control.step_policy import ARRIVED, Step, plan_step
 from misty_agent.perception.distance import DistanceReading
+from misty_agent.robot.interface import Effect
 
 
 class ReadingSource(Protocol):
@@ -28,13 +29,16 @@ class ReadingSource(Protocol):
 
 
 class RobotAdapter(Protocol):
-    def drive_time(
+    """The one behaviour this controller needs from `misty_agent.robot.Robot`."""
+
+    def drive(
         self,
-        linearVelocity: float,
-        angularVelocity: float,
-        timeMs: int,
-        timeout: float,
-    ): ...
+        *,
+        linear_percent: float,
+        angular_percent: float,
+        duration_ms: int,
+        timeout_s: float,
+    ) -> Effect: ...
 
 
 class Clock(Protocol):
@@ -144,16 +148,15 @@ def approach(
         if request_timeout_s <= 0:
             return ApproachResult(ApproachStatus.TIMEOUT, steps=completed_steps)
         try:
-            response = robot.drive_time(
-                linearVelocity=outcome.direction * config.drive_percent,
-                angularVelocity=0,
-                timeMs=duration_ms,
-                timeout=request_timeout_s,
+            driven = robot.drive(
+                linear_percent=outcome.direction * config.drive_percent,
+                angular_percent=0,
+                duration_ms=duration_ms,
+                timeout_s=request_timeout_s,
             )
         except Exception:
             return ApproachResult(ApproachStatus.DRIVE_ERROR, steps=completed_steps)
-        status_code = getattr(response, "status_code", None)
-        if not isinstance(status_code, int) or not 200 <= status_code < 300:
+        if not driven.ok:
             return ApproachResult(ApproachStatus.DRIVE_ERROR, steps=completed_steps)
 
         completed_steps += 1

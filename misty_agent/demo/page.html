@@ -412,6 +412,7 @@ async function runScenario() {
       scenario: payload.scenario.name,
       execution: payload.execution,
       runtime: payload.runtime,
+      robot: payload.robot,
       timeline: payload.runtime.timeline,
       episodes: payload.episodes.map((episode) => ({
         actor: episode.actor,

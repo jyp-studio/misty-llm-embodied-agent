@@ -58,12 +58,12 @@ from __future__ import annotations
 import random
 from bisect import bisect_right
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from misty_agent.config import Settings, settings as default_settings
 from misty_agent.control.approach import approach
 from misty_agent.perception.distance import DistanceReading
+from misty_agent.robot.interface import Effect
 
 #: Segment B, as ticket 06 measured it. See
 #: docs/measurements/m4-latency-baseline.md — this one *is* a measurement, and
@@ -343,17 +343,18 @@ class _SimulatedWorld:
             detected_at=frame_arrived_at + self._pipeline_lag_s,
         )
 
-    def drive_time(
+    def drive(
         self,
-        linearVelocity: float,
-        angularVelocity: float,
-        timeMs: int,
-        timeout: float,
-    ):
-        del angularVelocity, timeout
-        duration_s = timeMs / 1000.0
+        *,
+        linear_percent: float,
+        angular_percent: float,
+        duration_ms: int,
+        timeout_s: float,
+    ) -> Effect:
+        del angular_percent, timeout_s
+        duration_s = duration_ms / 1000.0
         commanded_cm = duration_s * self._config.cm_per_sec_at_percent
-        direction = 1 if linearVelocity > 0 else -1
+        direction = 1 if linear_percent > 0 else -1
         # Counted per command issued. This world never refuses one, so issued
         # and completed do not part company here; a world that could refuse
         # would have to count after the refusal check instead.
@@ -367,7 +368,7 @@ class _SimulatedWorld:
             from_cm=self._distance_cm,
             to_cm=self._distance_cm - direction * travelled_cm,
         )
-        return SimpleNamespace(status_code=200)
+        return Effect(ok=True)
 
     def sleep(self, seconds: float) -> None:
         if seconds < 0:

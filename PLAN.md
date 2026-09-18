@@ -2697,3 +2697,23 @@ Demo 第三張卡改為可執行：`A_THEN_B` 與 `B_EXPIRES` 兩個文字腳本
 執行流程改為依 cue lifecycle records 順序呈現所有 Episodes：Episode 進行中收到的 cue records
 放在該 Episode 的 handoff 通知處，其餘接在 Journal 之後。問候卡因此也會顯示它原本就有的四個
 Episodes 與排隊事件，而不再只顯示第一個。
+
+### 16.58 一個 Robot Interface，兩個 Adapter，沒有第二份紀錄（ticket 09）
+
+`misty_agent/robot/` 定義 `Robot` Protocol：`speak`、`display_image`、`move_arms`、`move_head`、
+`change_led`、`play_audio`、`drive`、`halt`，一律回傳 typed `Effect(ok, detail)`。Tools 與
+`control.approach` 只看 `Effect.ok`，不再讀 status code；vendor 參數名（`linearVelocity`、`timeMs`、
+`units`）只存在於 `RealMistyAdapter`，它把行為轉成既有 `RobotCommands` 的 request，request shape 由
+原本的 contract tests 經 `RecordingCommands` transport 釘住，整個 adapter 標示 hardware-unverified。
+
+`SimulatedMistyAdapter` 取代 `MovingWorld`：同一物件既是 Robot 也是 reading source，保存 pose（表情
+asset、LED、頭、手臂）、最後說的話與音效、halted，以及被量測的距離；`failing` 可讓指定行為回傳失敗且不改
+狀態，於是 Observation 出現 `ok: false`，Storyboard 也不再套用該動作（此前 Tool 一律回 `ok: true`，
+失敗路徑從未走過）。Storyboard 的 `RobotState` 即 `RobotPose`，仍從 Journal 推導，不讀 robot 物件。
+不存在 RecordingRobot：`RecordingCommands` 只是測試用 vendor transport，不進 production 組裝。
+
+測試遷移：原本直接把 `RecordingCommands` 當 robot 的測試改為 `RealMistyAdapter(RecordingCommands())`，
+request 斷言改經 `robot.commands`；world 測試改用 `SimulatedMistyAdapter` 的狀態（`directions`、
+`halted`）而不是 request log。同一個 scripted Episode 在兩個 adapter 上跑出相同的 ToolCalled／Observation
+序列，且 real adapter 的 endpoints 與 simulated pose 各自符合預期，這是「同一條 Tool/controller code
+path」的證據。Demo 的 run payload 附上模擬 robot 的最終狀態，並以測試確認它與 Journal 推導的 pose 一致。

@@ -6,6 +6,7 @@ import pytest
 from misty_agent.agent.journal import ToolCalled
 from misty_agent.agent.react import Decision
 from misty_agent.agent.skills import SkillCatalog
+from misty_agent.robot import RobotPose
 from misty_agent.config import Settings
 from misty_agent.scenarios import CALMING_SUPPORT, ScenarioModel, ScenarioSpeech
 from misty_agent.app import simulated_session
@@ -155,7 +156,8 @@ def test_skill_guidance_has_no_robot_authority_and_argument_validation_still_app
     assert len(result.episodes) == 1
     records = result.episodes[0].journal.records
     assert result.episodes[0].outcome.outcome == "done"
-    assert session.robot.requests == []
+    assert session.robot.pose == RobotPose() and session.robot.speech is None
+    assert session.robot.directions == []
     assert sum(isinstance(r, EpisodeStarted) for r in records) == 1
     turns = [r for r in records if isinstance(r, TurnStarted)]
     assert len(turns) == len([r for r in records if isinstance(r, ModelCalled)]) == 4

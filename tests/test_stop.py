@@ -27,6 +27,7 @@ import pytest
 from misty_agent.agent.journal import Journal, StopRequested
 from misty_agent.agent.stop import NEVER_STOPS, EmergencyStop
 from misty_agent.fakes import FakeClock, RecordingCommands
+from misty_agent.robot import RealMistyAdapter
 
 
 class RefusesToHalt(RecordingCommands):
@@ -46,7 +47,7 @@ def test_a_stop_is_recorded_with_the_source_that_asked_for_it():
     journal = a_journal()
     robot = RecordingCommands()
 
-    EmergencyStop(journal, robot).request("foot_bumper")
+    EmergencyStop(journal, RealMistyAdapter(robot)).request("foot_bumper")
 
     recorded = [r for r in journal.records if isinstance(r, StopRequested)]
     assert len(recorded) == 1
@@ -58,7 +59,7 @@ def test_a_stop_halts_every_motor_and_not_just_the_wheels():
     bumper means everything, so it is `POST /halt`."""
     robot = RecordingCommands()
 
-    EmergencyStop(a_journal(), robot).request("foot_bumper")
+    EmergencyStop(a_journal(), RealMistyAdapter(robot)).request("foot_bumper")
 
     assert "halt" in robot.endpoints
     assert "drive/stop" not in robot.endpoints
@@ -91,7 +92,7 @@ def test_the_stop_is_recorded_before_the_halt_is_asked_for():
 
 
 def test_the_stop_is_visible_the_moment_it_is_requested():
-    stop = EmergencyStop(a_journal(), RecordingCommands())
+    stop = EmergencyStop(a_journal(), RealMistyAdapter(RecordingCommands()))
 
     assert not stop.requested()
     stop.request("foot_bumper")
@@ -108,7 +109,7 @@ def test_a_second_press_does_not_add_a_second_record():
     interrupt latency ambiguous — a reader could not tell which one the
     Episode's ending was measured from."""
     journal = a_journal()
-    stop = EmergencyStop(journal, RecordingCommands())
+    stop = EmergencyStop(journal, RealMistyAdapter(RecordingCommands()))
 
     assert stop.request("foot_bumper") is True
     assert stop.request("foot_bumper") is False
@@ -118,7 +119,7 @@ def test_a_second_press_does_not_add_a_second_record():
 
 
 def test_the_first_source_is_the_one_that_is_kept():
-    stop = EmergencyStop(a_journal(), RecordingCommands())
+    stop = EmergencyStop(a_journal(), RealMistyAdapter(RecordingCommands()))
 
     stop.request("foot_bumper")
     stop.request("cap_touch")
@@ -135,7 +136,7 @@ def test_a_halt_that_fails_still_leaves_the_stop_requested():
     took the flag with it would leave the Episode running as well as the
     motors."""
     journal = a_journal()
-    stop = EmergencyStop(journal, RefusesToHalt())
+    stop = EmergencyStop(journal, RealMistyAdapter(RefusesToHalt()))
 
     assert stop.request("foot_bumper") is True
 
@@ -146,7 +147,7 @@ def test_a_halt_that_fails_still_leaves_the_stop_requested():
 
 def test_a_halt_that_works_says_so():
     """The negative control: `halted` would be useless if it were never True."""
-    stop = EmergencyStop(a_journal(), RecordingCommands())
+    stop = EmergencyStop(a_journal(), RealMistyAdapter(RecordingCommands()))
 
     stop.request("foot_bumper")
 
@@ -182,7 +183,7 @@ def test_two_threads_cannot_both_win_the_same_stop():
     """
     for _ in range(200):
         journal = a_journal()
-        stop = EmergencyStop(journal, RecordingCommands())
+        stop = EmergencyStop(journal, RealMistyAdapter(RecordingCommands()))
         ready = threading.Barrier(6)
         won = []
         counting = threading.Lock()

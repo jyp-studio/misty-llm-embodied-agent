@@ -125,7 +125,9 @@ wait defaults to five seconds (`MISTY_LISTEN_TIMEOUT_S`, at most 30), with
 injected clock and stop checks. It reports heard/silence/unavailable/error/
 aborted, source, age, freshness and speaker uncertainty. The live audio
 provider owns the same VAD queue: an explicit listen authorises one bounded
-ASR attempt without another wake; a pending wake remains Attention's. The
+ASR attempt without another wake; a pending wake remains Attention's. Speech
+that finishes between Turns, while the model is deciding, is drained by the
+Attention wake gate and is not replayed to a later `listen`. The
 total listening budget also caps the ASR timeout. Decoded transcript queues
 report dequeue age, explicitly not an observed capture age. This wiring is
 tested with injected sources only, not a Misty microphone.

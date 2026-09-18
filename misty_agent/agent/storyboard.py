@@ -126,6 +126,11 @@ MOVES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
 }
 
 
+def _skill_status(active: Sequence[str]) -> str:
+    """The replay caption for which Skills currently guide the Episode."""
+    return "Active Skills：" + ("、".join(active) or "無（未載入或 Episode 已結束）")
+
+
 @dataclass(frozen=True)
 class Moment:
     """One record, ready to draw, and the robot just after it."""
@@ -139,7 +144,7 @@ class Moment:
     robot: RobotState
     facts: Mapping[str, Any] = field(default_factory=dict)
     active_skills: Tuple[str, ...] = ()
-    skill_status: str = "Active Skills：無（未載入或 Episode 已結束）"
+    skill_status: str = _skill_status(())
 
 
 #: How each ending reads to somebody who has not met this project's
@@ -204,9 +209,7 @@ def storyboard_of(records: Sequence[Record]) -> Storyboard:
                 robot=robot,
                 facts=_facts(record),
                 active_skills=tuple(active_skills),
-                skill_status="Active Skills：" + (
-                    "、".join(active_skills) or "無（未載入或 Episode 已結束）"
-                ),
+                skill_status=_skill_status(active_skills),
             )
         )
 

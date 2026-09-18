@@ -4,6 +4,7 @@ Only locally configured directories are read. Discovery returns metadata;
 activation reads the body on demand. The caller owns the Episode lifetime.
 """
 
+import logging
 from pathlib import Path
 import re
 
@@ -12,6 +13,9 @@ import yaml
 from misty_agent.agent.layering import mentions_control_parameter
 
 MAX_RESOURCE_BYTES = 64 * 1024
+#: Agent Skills names: lowercase words joined by hyphens, matching the directory.
+_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+log = logging.getLogger(__name__)
 
 
 class SkillRejected(ValueError):
@@ -54,7 +58,7 @@ def _document(path: Path) -> tuple[dict, str]:
     if not isinstance(metadata, dict):
         raise SkillRejected("Skill metadata must be a mapping")
     name, description = metadata.get("name"), metadata.get("description")
-    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) or len(name) > 64:
+    if not isinstance(name, str) or not _NAME.fullmatch(name) or len(name) > 64:
         raise SkillRejected("Skill name must be lowercase words separated by hyphens")
     if not isinstance(description, str) or not description.strip() or len(description) > 1024:
         raise SkillRejected("Skill description must contain 1–1024 characters")
@@ -72,7 +76,7 @@ class SkillCatalog:
         self._root = root.resolve()
 
     def _path(self, name: str) -> Path:
-        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
+        if not _NAME.fullmatch(name):
             raise SkillRejected("Unknown Skill name")
         directory = self._root / name
         if directory.is_symlink() or (directory / "SKILL.md").is_symlink():
@@ -87,7 +91,8 @@ class SkillCatalog:
             if directory.is_dir():
                 try:
                     metadata, _ = _document(self._path(directory.name))
-                except SkillRejected:
+                except SkillRejected as why:
+                    log.warning("Skill %r skipped from discovery: %s", directory.name, why)
                     continue
                 result.append(metadata)
         return result
@@ -121,6 +126,9 @@ class EpisodeSkills:
     def __init__(self, catalog: SkillCatalog):
         self._catalog = catalog
         self._active: set[str] = set()
+
+    def available(self) -> list[dict]:
+        return self._catalog.available()
 
     def activate(self, name: str) -> dict:
         loaded = self._catalog.activate(name)

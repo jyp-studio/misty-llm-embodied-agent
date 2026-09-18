@@ -340,7 +340,7 @@ class Session:
                     clock=self.clock,
                     ears=self.ears,
                     active_perception=episode_perception,
-                    skills=self.skills,
+                    skills=self.skills.for_episode(),
                     listener=BoundedListener(listening_source, self.clock, stop),
                 ),
                 journal=journal,

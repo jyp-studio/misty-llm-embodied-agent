@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import logging
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.evidence import TriggerEvidence
@@ -161,10 +161,9 @@ def run_episode(
     # then never wired up.
     if instructions:
         working_context.append({"role": "system", "content": instructions})
-    phase = "tool"
+    phase = "skills"
     try:
         if ctx.skills is not None:
-            ctx = replace(ctx, skill_session=ctx.skills.for_episode())
             available = ctx.skills.available()
             journal.record(SkillsAvailable, skills=available)
             working_context.append({

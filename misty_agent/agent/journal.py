@@ -208,9 +208,14 @@ class ModelCalled(Record):
 
 @dataclass(frozen=True, kw_only=True)
 class SkillsAvailable(Record):
-    """Metadata actually offered at this Episode's discovery boundary."""
+    """Metadata actually offered at this Episode's discovery boundary.
 
-    skills: list
+    Names and descriptions only: the Journal proves what the first Turn could
+    see, and the absence of instructions here is the progressive-disclosure
+    claim made checkable.
+    """
+
+    skills: Sequence[Mapping[str, Any]]
     type: str = "skills_available"
 
 

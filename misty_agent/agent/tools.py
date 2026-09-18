@@ -56,7 +56,8 @@ from misty_agent.agent.layering import (
 )
 from misty_agent.control.approach import approach as run_approach
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
-from misty_agent.agent.skills import EpisodeSkills, SkillCatalog, SkillRejected
+from misty_agent.agent.skills import EpisodeSkills, SkillRejected
+from misty_agent.perception.listening import ListeningEnding, ListeningResult
 
 
 class Ears(Protocol):
@@ -88,7 +89,7 @@ HEARS_NOTHING = HearsNothing()
 class ToolContext:
     """What a Tool is given besides its own arguments.
 
-    The fields are dependencies a registered Tool actually needs. Seven Tools
+    The fields are dependencies a registered Tool actually needs. Most Tools
     drive the robot, `approach` also reads distances,
     and M5's `approach(readings, robot, *, config, clock)` is the signature
     this has to be able to call. `speak` needs the config for its speech
@@ -105,13 +106,14 @@ class ToolContext:
     readings: Any
     config: Any = None
     clock: Any = None
-    #: What must not hear the robot talk to itself. Ten of the eleven Tools
-    #: make no sound, and an Episode with no microphone is still an Episode —
+    #: What must not hear the robot talk to itself. Nearly every Tool
+    #: makes no sound, and an Episode with no microphone is still an Episode —
     #: hence a null object rather than a `None` every caller has to test.
     ears: Ears = HEARS_NOTHING
     active_perception: Any = NO_ACTIVE_PERCEPTION
-    skills: Optional[SkillCatalog] = None
-    skill_session: Optional[EpisodeSkills] = None
+    #: This Episode's Skill permissions. `None` means no catalog is configured;
+    #: the object dies with the Episode, so loaded guidance cannot outlive it.
+    skills: Optional[EpisodeSkills] = None
     listener: Any = None
 
 
@@ -659,26 +661,25 @@ def build_registry() -> ToolRegistry:
 
     @registry.tool("activate_skill", "Load a named Skill's guidance for this Episode only. No effects or scripts run.")
     def activate_skill(args: ActivateSkillArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        if ctx.skill_session is None:
+        if ctx.skills is None:
             return {"refused": "No Skill Catalog is configured"}
         try:
-            return ctx.skill_session.activate(args.name)
+            return ctx.skills.activate(args.name)
         except SkillRejected as error:
             return {"refused": str(error)}
 
     @registry.tool("read_skill_resource", "Read one active Skill reference or text asset. Scripts cannot run.")
     def read_skill_resource(args: SkillResourceArgs, ctx: ToolContext) -> Mapping[str, Any]:
-        if ctx.skill_session is None:
+        if ctx.skills is None:
             return {"refused": "No Skill Catalog is configured"}
         try:
-            return ctx.skill_session.read_resource(args.name, args.resource)
+            return ctx.skills.read_resource(args.name, args.resource)
         except SkillRejected as error:
             return {"refused": str(error)}
 
     @registry.tool("listen", "Wait briefly for the person's next utterance. Silence is not consent.")
     def listen(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         if ctx.listener is None:
-            from misty_agent.perception.listening import ListeningEnding, ListeningResult
             return ListeningResult(ListeningEnding.UNAVAILABLE).as_tool_result()
         return ctx.listener.listen(timeout_s=ctx.config.listen_timeout_s).as_tool_result()
 

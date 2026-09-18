@@ -28,6 +28,7 @@ from misty_agent.drivers.audio_stream import (
     UtteranceDetector,
     is_silent,
 )
+from misty_agent.perception.listening import ListeningEnding, ListeningResult
 from misty_agent.perception.asr import (
     Transcription,
     TranscriptionEnding,
@@ -172,8 +173,6 @@ class LiveInputAdapter:
         Called by the single Episode owner, never in parallel with Attention.
         An already pending wake remains Attention's; listen cannot steal it.
         """
-        from misty_agent.perception.listening import ListeningEnding, ListeningResult
-
         self._require_running()
         if self._pending_wake is not None:
             return ListeningResult(ListeningEnding.UNAVAILABLE, source="pending_wake")

@@ -69,7 +69,8 @@ class EmergencyStop:
         self._robot = robot
         self._lock = threading.Lock()
         self._source: Optional[str] = None
-        #: Whether the halt request came back without raising. Read by tests
+        #: Whether the halt was accepted: it neither raised nor answered with
+        #: a failed Effect. Read by tests
         #: and by anyone deciding whether to trust that the robot is still.
         self.halted = False
 

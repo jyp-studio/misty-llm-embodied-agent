@@ -1,12 +1,10 @@
 """A Misty that records requests instead of sending them.
 
-One implementation, two jobs:
-
-* the contract tests assert on what :class:`RecordingCommands` recorded, which
-  is how this project checks its request formats against
-  docs.mistyrobotics.com without a robot to send them to;
-* running the agent with no hardware uses the same class, so "mock mode" and
-  "what the tests exercise" cannot drift apart.
+One job: the contract tests assert on what :class:`RecordingCommands`
+recorded, which is how this project checks its request formats against
+docs.mistyrobotics.com without a robot to send them to. It is the transport
+under `RealMistyAdapter` in tests only; running the agent with no hardware
+uses `SimulatedMistyAdapter`, which holds state rather than a request log.
 
 ``fail_endpoints`` exists because the previous stand-in answered every call
 with a success no-op, which meant the error paths in the code above it — the

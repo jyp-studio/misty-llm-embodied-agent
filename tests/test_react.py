@@ -1146,7 +1146,7 @@ def test_the_journal_itself_refuses_a_second_ending():
 class StopsAfterOneDrive(SimulatedMistyAdapter):
     """A bumper pressed while the base is moving.
 
-    The stop fires from inside `drive_time`, which is the honest shape: the
+    The stop fires from inside `drive`, which is the honest shape: the
     interruption arrives *during* a Tool call, not between two of them, and
     Python cannot interrupt a call that has not returned. After the halt no
     fresh reading comes back, so `approach` spends the rest of its deadline

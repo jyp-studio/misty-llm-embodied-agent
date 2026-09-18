@@ -87,9 +87,9 @@ def test_the_simulated_adapter_holds_pose_speech_and_the_world_it_drives_through
 
 def test_a_simulated_failure_leaves_state_unchanged_and_an_empty_room_reads_nothing():
     clock = FakeClock()
-    robot = SimulatedMistyAdapter(clock, start_cm=120.0, config=Settings(), failing=("head", "drive"))
+    robot = SimulatedMistyAdapter(clock, start_cm=120.0, config=Settings(), failing=("move_head", "drive"))
 
-    assert robot.move_head(0.0, 0.0, 45.0) == Effect(ok=False, detail="simulated head failure")
+    assert robot.move_head(0.0, 0.0, 45.0) == Effect(ok=False, detail="simulated move_head failure")
     assert robot.pose.head == (0.0, 0.0, 0.0)
     assert robot.drive(linear_percent=20, angular_percent=0, duration_ms=1000, timeout_s=1.0).ok is False
     assert robot.latest_reading().distance_cm == 120
@@ -165,12 +165,12 @@ def test_the_same_scripted_episode_runs_on_both_adapters_through_one_tool_path()
 
 def test_a_failed_simulated_effect_reaches_the_observation_and_the_storyboard_does_not_move():
     clock = FakeClock()
-    robot = SimulatedMistyAdapter(clock, start_cm=150.0, config=Settings(), failing=("head",))
+    robot = SimulatedMistyAdapter(clock, start_cm=150.0, config=Settings(), failing=("move_head",))
 
     outcome, journal = one_episode(robot, robot, clock)
 
     head = next(r for r in journal.records if isinstance(r, Observation) and r.turn == 4)
-    assert head.result == {"ok": False, "detail": "simulated head failure"}
+    assert head.result == {"ok": False, "detail": "simulated move_head failure"}
     assert outcome.outcome == "done"
     board = storyboard_of(journal.records)
     assert board.moments[-1].robot.head == (0.0, 0.0, 0.0)
@@ -192,3 +192,43 @@ def test_the_demo_runs_on_the_simulated_adapter_and_its_end_state_matches_the_jo
     assert robot["pose"]["head"] == final["head"] == [0.0, 8.0, 0.0]
     assert robot["pose"]["arms"] == final["arms"]
     assert robot["pose"]["led"] == final["led"]
+
+
+def test_a_refused_scan_leaves_the_storyboard_head_where_it_was():
+    """A `look_around` whose first turn is refused reports `ok: False` and
+    `found_at_yaw: None`; the pose must not be recentred as if it had scanned."""
+    clock = FakeClock()
+    journal = Journal(episode_id="ep-scan", clock=clock)
+    script = (
+        Decision("move_head", {"pitch": 0, "roll": 0, "yaw": 20}, 1, 1),
+        Decision("look_around", {}, 1, 1),
+        Decision("done", {}, 1, 1),
+    )
+
+    class RefusesAfterOne(SimulatedMistyAdapter):
+        def move_head(self, pitch_deg, roll_deg, yaw_deg):
+            if self.pose.head != (0.0, 0.0, 0.0):
+                return Effect(ok=False, detail="simulated move_head failure")
+            return super().move_head(pitch_deg, roll_deg, yaw_deg)
+
+    robot = RefusesAfterOne(clock, start_cm=None, config=Settings())
+    run_episode(
+        TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="Hi"),
+        model=ScenarioModel(script), registry=build_registry(),
+        ctx=ToolContext(robot=robot, readings=None, config=Settings(), clock=clock),
+        journal=journal, perception=LivePerception(robot),
+    )
+    scan = next(r for r in journal.records if isinstance(r, Observation) and r.turn == 2)
+    assert scan.result["ok"] is False and scan.result["found_at_yaw"] is None
+    assert storyboard_of(journal.records).moments[-1].robot.head == (0.0, 0.0, 20.0)
+    assert robot.pose.head == (0.0, 0.0, 20.0)
+
+
+def test_a_halt_the_robot_refuses_is_not_reported_as_halted():
+    from misty_agent.agent.stop import EmergencyStop
+
+    stop = EmergencyStop(Journal(episode_id="ep-halt"), RealMistyAdapter(
+        RecordingCommands(fail_endpoints=["halt"], failure_status=500)
+    ))
+    assert stop.request("foot_bumper") is True
+    assert stop.halted is False

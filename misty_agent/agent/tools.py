@@ -99,9 +99,10 @@ class ToolContext:
     and a convention that could not call the Tools already specified would
     have to be changed by every one of them in the next ticket.
 
-    Held as `Any` on purpose: importing the robot and config types here would
-    make the vocabulary of action depend on one particular robot, and the
-    simulator and the real Misty are both meant to fit.
+    `robot` is any `misty_agent.robot.Robot`: the simulated and the real
+    adapter both fit, and neither leaks a vendor request into a Tool. It is
+    typed `Any` alongside `readings`, `config` and `clock` so that tests can
+    hand in narrower doubles without satisfying the whole Protocol.
     """
 
     robot: Any

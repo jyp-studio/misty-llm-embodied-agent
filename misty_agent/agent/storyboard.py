@@ -255,9 +255,10 @@ def _after(
     if isinstance(record, Observation):
         # A behaviour the robot refused did not happen: the Observation
         # says so, and the pose stays where it was.
-        if pending is not None and record.result.get("ok") is not False:
+        refused = record.result.get("ok") is False
+        if pending is not None and not refused:
             robot = replace(robot, **pending)
-        if FOUND_AT_YAW in record.result:
+        if FOUND_AT_YAW in record.result and not refused:
             # A scan stops on whoever it found and stays pointed at them;
             # finding nobody puts the head back to centre, which is where
             # every other Tool assumes it starts. Both are `move_head` calls

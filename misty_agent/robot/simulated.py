@@ -19,14 +19,17 @@ really travels. `PLAN.md` §12 measured the band this has to tolerate; the
 default is 1.0 because a simulation is not the place to invent an error the
 hardware would have supplied.
 
-`failing` names behaviours that answer with a failed Effect and change no
-state, so the error paths above this — the Observation that says `ok:
-false`, the controller's `drive_error` — actually execute.
+`failing` names behaviours, by their method names, that answer with a failed
+Effect and change no state, so the error paths above this — the Observation
+that says `ok: false`, the controller's `drive_error` — actually execute.
+
+`drive` ignores `angular_percent` and models no hazard, target loss or
+obstacle: those consequences belong to the target-aware controller tickets.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Iterable, Optional, Tuple
 
 from misty_agent.config import Settings
@@ -74,6 +77,16 @@ class SimulatedMistyAdapter:
         self.sound: Optional[Tuple[str, int]] = None
         self.halted = False
 
+    def as_facts(self) -> dict:
+        """The simulation's current state as JSON data: not a log."""
+        return {
+            "pose": asdict(self.pose),
+            "speech": self.speech,
+            "sound": list(self.sound) if self.sound is not None else None,
+            "halted": self.halted,
+            "distance_cm": self._distance_cm,
+        }
+
     # ---------- what perception sees ----------
 
     @property
@@ -108,14 +121,14 @@ class SimulatedMistyAdapter:
         return Effect(ok=True)
 
     def move_arms(self, left_deg: float, right_deg: float) -> Effect:
-        refused = self._attempt("arms")
+        refused = self._attempt("move_arms")
         if refused:
             return refused
         self.pose = replace(self.pose, arms=(float(left_deg), float(right_deg)))
         return Effect(ok=True)
 
     def move_head(self, pitch_deg: float, roll_deg: float, yaw_deg: float) -> Effect:
-        refused = self._attempt("head")
+        refused = self._attempt("move_head")
         if refused:
             return refused
         self.pose = replace(
@@ -124,14 +137,14 @@ class SimulatedMistyAdapter:
         return Effect(ok=True)
 
     def change_led(self, red: int, green: int, blue: int) -> Effect:
-        refused = self._attempt("led")
+        refused = self._attempt("change_led")
         if refused:
             return refused
         self.pose = replace(self.pose, led=(int(red), int(green), int(blue)))
         return Effect(ok=True)
 
     def play_audio(self, sound: str, volume: int) -> Effect:
-        refused = self._attempt("audio")
+        refused = self._attempt("play_audio")
         if refused:
             return refused
         self.sound = (sound, int(volume))

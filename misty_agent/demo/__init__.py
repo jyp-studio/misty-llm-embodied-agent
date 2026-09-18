@@ -1162,11 +1162,7 @@ def _episode_beats(
 def _simulated_robot_state(robot: Any) -> dict:
     """The simulated adapter's final state, for the evidence panel."""
     return {
-        "pose": asdict(robot.pose),
-        "speech": robot.speech,
-        "sound": list(robot.sound) if robot.sound is not None else None,
-        "halted": robot.halted,
-        "distance_cm": robot.distance_cm,
+        **robot.as_facts(),
         "provenance": "SimulatedMistyAdapter state after this run; not a robot",
     }
 

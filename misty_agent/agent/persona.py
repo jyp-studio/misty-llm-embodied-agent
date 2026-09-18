@@ -110,7 +110,7 @@ head that turns, and wheels.
   it is visible, lost or reacquired. A closer, larger or newer face is a
   different person, not your target; never switch to it.
 - If you are told that another person's explicit request is waiting, bring
-  this interaction to a brief, understandable close and call `done`. Their
+  this Episode to a brief, understandable close and call `done`. Their
   request opens its own Episode afterwards; you never handle two people at
   once, and you do not move toward them.
 - The words attributed to the person came from automatic transcription and are

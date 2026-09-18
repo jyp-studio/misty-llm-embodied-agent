@@ -545,6 +545,11 @@ class _PendingCue:
     arrival_sequence: int
 
 
+def _by_urgency(item: "_PendingCue") -> Tuple[int, float, int]:
+    """Explicit requests first, then oldest, then earliest arrival."""
+    return (-item.priority, item.observed_at_s, item.arrival_sequence)
+
+
 @dataclass(frozen=True)
 class RuntimeEpisode:
     """One selected cue and the bounded Episode it opened."""
@@ -614,13 +619,7 @@ class SocialAgentRuntime:
                 phase = RuntimePhase.INPUT
                 self._discard_expired(pending, records)
                 if pending:
-                    pending.sort(
-                        key=lambda item: (
-                            -item.priority,
-                            item.observed_at_s,
-                            item.arrival_sequence,
-                        )
-                    )
+                    pending.sort(key=_by_urgency)
                     cue = pending.pop(0)
                     records.append(
                         CueDequeued(
@@ -705,19 +704,19 @@ class SocialAgentRuntime:
                             pass
                         return None
                     self._discard_expired(pending, records)
+                    # Someone *else* means a different anonymous track. An
+                    # untracked request is assumed to be the current speaker
+                    # (the spec's first-version assumption) and is not
+                    # announced; it still opens its own Episode afterwards.
+                    active_track = cue.input.facts.get("track_reference")
                     waiting = next(
                         (
                             item
-                            for item in sorted(
-                                pending,
-                                key=lambda item: (
-                                    -item.priority,
-                                    item.observed_at_s,
-                                    item.arrival_sequence,
-                                ),
-                            )
+                            for item in sorted(pending, key=_by_urgency)
                             if item.cue_kind is CueKind.EXPLICIT_REQUEST
                             and item.cue_id not in announced
+                            and item.input.facts.get("track_reference")
+                            not in (None, active_track)
                         ),
                         None,
                     )

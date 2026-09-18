@@ -71,7 +71,7 @@ class InteractionTarget:
     def state(self) -> TargetState:
         return self._state
 
-    def noted(self, result: ActivePerceptionResult) -> TargetState:
+    def update_from(self, result: ActivePerceptionResult) -> TargetState:
         """Update lost/visible/reacquired from one active observation.
 
         An observation carrying another track's reference is a programming

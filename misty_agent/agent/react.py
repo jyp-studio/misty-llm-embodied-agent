@@ -58,6 +58,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from misty_agent.agent.evidence import TriggerEvidence
+from misty_agent.agent.handoff import HandoffNotice
 from misty_agent.agent.journal import (
     DecisionNoted,
     ExecutionFailed,
@@ -71,6 +72,7 @@ from misty_agent.agent.journal import (
     SkillsAvailable,
     TargetBound,
     TurnStarted,
+    snapshot_facts,
 )
 from misty_agent.agent.layering import mentions_control_parameter
 from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
@@ -139,7 +141,7 @@ def run_episode(
     stop: Stop = NEVER_STOPS,
     memory: Remembers = NO_MEMORY,
     instructions: str = PERSONA,
-    at_turn_boundary: Optional[Callable[[], Any]] = None,
+    at_turn_boundary: Optional[Callable[[], Optional[HandoffNotice]]] = None,
 ) -> EpisodeOutcome:
     """Run one Episode to completion and return how it ended.
 
@@ -379,16 +381,7 @@ def _observed(
         "tool_call_id": tool_call_id,
         "content": {
             "result": dict(observation.result),
-            "snapshot": {
-                "distance_cm": observation.snapshot.distance_cm,
-                "face_present": observation.snapshot.face_present,
-                "new_speech": observation.snapshot.new_speech,
-                **(
-                    {"target": dict(observation.snapshot.target)}
-                    if observation.snapshot.target is not None
-                    else {}
-                ),
-            },
+            "snapshot": snapshot_facts(observation.snapshot),
         },
     }
 

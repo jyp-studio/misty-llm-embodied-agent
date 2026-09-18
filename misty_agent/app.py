@@ -77,6 +77,7 @@ from misty_agent.agent.react import EpisodeOutcome, run_episode
 from misty_agent.agent.stop import EmergencyStop
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
 from misty_agent.agent.skills import SkillCatalog, bundled_skills
+from misty_agent.agent.handoff import HandoffNotice
 from misty_agent.agent.target import InteractionTarget
 from misty_agent.perception.listening import BoundedListener, TranscriptSource
 from misty_agent.audio_input import LiveInputAdapter
@@ -295,7 +296,7 @@ class Session:
         *,
         render: bool = True,
         journal_path: Optional[pathlib.Path] = None,
-        at_turn_boundary: Optional[Callable[[], Any]] = None,
+        at_turn_boundary: Optional[Callable[[], Optional[HandoffNotice]]] = None,
     ) -> Tuple[EpisodeOutcome, Journal]:
         """Run one Episode from typed Trigger Evidence and return its result.
 

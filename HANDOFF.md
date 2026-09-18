@@ -123,8 +123,8 @@ Handoff is target-aware only in the sense of anonymous track tokens; there is
 no face identity and no sound-source direction, and the A→B card's speaker
 attribution is scripted. The care path is supported only by synthetic
 temporal frames and scripted model decisions; it is not validated emotion
-recognition. The A-to-B card remains a roadmap preview and cannot run until
-its target/handoff vertical ticket implements that capability.
+recognition. The A-to-B card runs only scripted text actors; distance
+readings used by `approach` are still not target-specific until ticket 10.
 
 ## Next ticket
 

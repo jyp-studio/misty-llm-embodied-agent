@@ -105,6 +105,7 @@ from misty_agent.runtime import (
     VisualAttentionRecorded,
 )
 from misty_agent.scenarios import (
+    DEFAULT_ACTOR,
     ScenarioSpeech,
     DEMO_SCENARIOS,
     EXPLICIT_TEXT_REQUEST,
@@ -548,7 +549,7 @@ def _scenario_execution(
     queue_capacity: int,
     fixture_label: str,
     input_kind: str,
-    actors: Sequence[str] = ("person",),
+    actors: Sequence[str] = (DEFAULT_ACTOR,),
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview.
 
@@ -557,21 +558,8 @@ def _scenario_execution(
     Episode all appear where they happened rather than as one flattened
     Journal.
     """
-    cue = next(
-        (
-            record
-            for record in result.records
-            if isinstance(record, CueDetected)
-        ),
-        None,
-    )
     evidence = episode.evidence if episode is not None else None
     journal_records = episode.journal.records if episode is not None else ()
-    observations = {
-        record.turn: record
-        for record in journal_records
-        if isinstance(record, Observation)
-    }
     notes = {
         record.turn: record
         for record in journal_records
@@ -584,11 +572,6 @@ def _scenario_execution(
             record,
             (CueQueued, CueDequeued, CueDeduplicated, CueReplaced, CueDropped),
         )
-    )
-    uncertainty = (
-        "、".join(evidence.uncertainty)
-        if evidence is not None and evidence.uncertainty
-        else "沒有額外不確定性註記"
     )
     audio_records = tuple(
         record
@@ -970,7 +953,7 @@ def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[Pres
         actor = actor_of(record.cue_id)
         return PresentationBeat(
             "input",
-            "人說" if actor == "person" else f"{actor} 說",
+            "人說" if actor == DEFAULT_ACTOR else f"{actor} 說",
             f"「{record.text}」",
             "這段輸入由案例預先定義。",
         )
@@ -1007,8 +990,8 @@ def _episode_beats(
     cue: CueDetected,
     input_kind: str,
     *,
-    during: Sequence[RuntimeRecord] = (),
-    actor_of=lambda cue_id: "person",
+    during: Sequence[RuntimeRecord],
+    actor_of,
 ) -> list:
     """One Episode's evidence, target, notices and Tool results, in order.
 

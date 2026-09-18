@@ -165,14 +165,18 @@ the Episode's active-perception view is fixed to that one reference, so a
 closer, larger or newer face is reported as unavailable rather than as the
 target. `observe_target` and `inspect_scene` update the target's
 bound/visible/lost/reacquired state and return it; every Snapshot carries it
-as a fourth fact; `approach` refuses a lost target with `target_lost`. A new
+as a fourth fact; `approach` refuses a lost target with the controller's own
+`lost_user` status and zero Steps. A new
 Episode never inherits a target, and reacquisition requires the same
 anonymous track within the tracker's TTL.
 
 While an Episode runs, another person's Explicit Request is queued rather
 than dropped or run in parallel. At the next Turn boundary the runtime hands
 the loop a `HandoffNotice`, recorded as `handoff_requested` and shown to the
-model once, asking it to close the current interaction and call `done`. The
+model once, asking it to close the Episode and call `done`. "Another person"
+means a queued request on a different anonymous track than the active
+target; an untracked request is assumed to be the current speaker and is not
+announced, though it still opens its own Episode afterwards. The
 runtime never ends an Episode for a handoff; bumper, e-stop and shutdown
 still abort immediately. Queued requests keep their freshness bound and are
 dropped as expired if the active Episode outlasts them.

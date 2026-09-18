@@ -527,6 +527,9 @@ CRYING_CARE = AcceptanceScenario(
 )
 
 
+#: The actor name single-person cards use; the Demo reads it as "someone".
+DEFAULT_ACTOR = "person"
+
 SCRIPTED_ATTRIBUTION = (
     "speaker attribution is scripted: the runtime has no sound-source "
     "direction and no face identity, only anonymous track references"
@@ -635,6 +638,7 @@ __all__ = [
     "A_THEN_B",
     "B_EXPIRES",
     "SCRIPTED_ATTRIBUTION",
+    "DEFAULT_ACTOR",
     "ScenarioCard",
     "ScenarioAvailability",
     "ScenarioModel",

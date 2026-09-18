@@ -40,7 +40,7 @@ def face(x: float, *, width: float = 0.2, confidence: float = 0.9) -> LocalVisua
     )
 
 
-def observed(result: ActivePerceptionResult | None = None, *, visible: bool, reference="anon-1"):
+def observed(*, visible: bool, reference="anon-1"):
     if visible:
         return ActivePerceptionResult(
             kind=ActivePerceptionKind.TARGET_OBSERVATION,
@@ -69,19 +69,19 @@ def test_a_target_is_bound_from_evidence_and_moves_between_lost_and_reacquired()
     assert visual.state is TargetState.BOUND
     assert visual.as_facts() == {"track_reference": "anon-1", "state": "bound", "bound_at_s": 1.5}
 
-    assert visual.noted(observed(visible=True)) is TargetState.VISIBLE
-    assert visual.noted(observed(visible=False)) is TargetState.LOST
-    assert visual.noted(observed(visible=True)) is TargetState.REACQUIRED
-    assert visual.noted(observed(visible=True)) is TargetState.VISIBLE
+    assert visual.update_from(observed(visible=True)) is TargetState.VISIBLE
+    assert visual.update_from(observed(visible=False)) is TargetState.LOST
+    assert visual.update_from(observed(visible=True)) is TargetState.REACQUIRED
+    assert visual.update_from(observed(visible=True)) is TargetState.VISIBLE
     with pytest.raises(ValueError, match="another anonymous track"):
-        visual.noted(observed(visible=True, reference="anon-2"))
+        visual.update_from(observed(visible=True, reference="anon-2"))
 
     speech_only = InteractionTarget.from_evidence(TriggerEvidence(
         source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="Hi Misty",
     ))
     assert speech_only.reference is None
     assert speech_only.state is TargetState.UNOBSERVABLE
-    assert speech_only.noted(observed(visible=False)) is TargetState.UNOBSERVABLE
+    assert speech_only.update_from(observed(visible=False)) is TargetState.UNOBSERVABLE
 
 
 def test_a_closer_larger_or_newer_face_never_replaces_the_bound_track():
@@ -146,11 +146,11 @@ def test_active_perception_tools_report_and_update_the_episode_target():
 def test_approach_refuses_to_move_toward_a_lost_target_but_not_an_unobservable_one():
     robot = RecordingCommands()
     lost = InteractionTarget("anon-1", EvidenceKind.VISUAL, 0.0)
-    lost.noted(observed(visible=False))
+    lost.update_from(observed(visible=False))
     ctx = ToolContext(robot=robot, readings=None, config=Settings(), clock=FakeClock(), target=lost)
 
     refused = dispatch(build_registry(), "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1)
-    assert refused.result["result"] == "target_lost"
+    assert refused.result["result"] == "lost_user"
     assert refused.result["steps"] == 0
     assert refused.result["target"]["state"] == "lost"
     assert "drive/time" not in robot.endpoints

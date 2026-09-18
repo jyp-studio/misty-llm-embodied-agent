@@ -150,3 +150,18 @@ def test_the_demo_runs_the_handoff_card_with_two_anonymous_actors():
     assert [episode["actor"] for episode in stale["episodes"]] == ["A"]
     assert "cue_dropped" in [beat["kind"] for beat in stale["execution"]["flow"]]
     assert SPEAKER_HANDOFF.ticket == "08"
+
+
+def test_an_untracked_repeat_request_is_not_announced_as_another_person():
+    """Negative control for the notice: "someone else" is a different
+    anonymous track, never an assumption about an untracked voice."""
+    clock = FakeClock()
+    repeat = ScheduledInput(0.5, TimedText(text="Hey Misty，再說一次"))
+    model = CaptureModel(A_TURNS[:2] + (Decision("done", {}, 1, 1),) + B_TURNS)
+    result = run(model, clock, (A_GREETS, repeat))
+
+    a, again = result.episodes
+    assert not any(isinstance(record, HandoffRequested) for record in a.journal.records)
+    assert "waiting (cue-2)" not in model.contexts[2]
+    assert again.cue_id == "cue-2" and again.outcome.outcome == "done"
+    assert next(r for r in again.journal.records if isinstance(r, TargetBound)).track_reference is None

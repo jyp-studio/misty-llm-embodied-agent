@@ -466,13 +466,20 @@ RECORD_TYPES: Dict[str, Type[Record]] = {
 # Serialisation — pure: records in, text out
 # ---------------------------------------------------------------------------
 
+def snapshot_facts(snapshot: Snapshot) -> Dict[str, Any]:
+    """A Snapshot as JSON data: the three perception facts, plus the target
+    only when there is one. The same shape reaches the model and the wire,
+    and Journals written before ticket 08 round-trip unchanged."""
+    facts = asdict(snapshot)
+    if facts.get("target") is None:
+        facts.pop("target", None)
+    return facts
+
+
 def _on_the_wire(record: Record) -> Dict[str, Any]:
-    """A record as JSON data, without the optional Snapshot target when
-    there is none: Journals written before ticket 08 round-trip unchanged."""
     raw = asdict(record)
-    snapshot = raw.get("snapshot")
-    if isinstance(snapshot, dict) and snapshot.get("target") is None:
-        snapshot.pop("target", None)
+    if isinstance(record, Observation):
+        raw["snapshot"] = snapshot_facts(record.snapshot)
     return raw
 
 

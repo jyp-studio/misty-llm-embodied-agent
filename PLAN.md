@@ -2686,6 +2686,9 @@ Journal 新增 `target_bound`（Episode 起點）與 `handoff_requested`（Turn 
 
 交接：Episode 進行中 B 的 Explicit Request 由既有 cue queue 保存；`collect_available` 在 Turn
 boundary 回傳一次 `HandoffNotice`，loop 記錄並以 system message 告知 model 收尾後 `done`。
+「另一個人」只由匿名 track 判定：排隊 cue 的 `track_reference` 存在且不同於 active target 才通知；
+沒有 track 的 explicit request 依規格第一版假設視為目前對話者，不通知，但之後仍各自開 Episode。
+`approach` 對 lost target 回傳既有的 `lost_user`（§15.4 的四個 status 不增），以 target 區塊區分。
 Runtime 不會為了交接結束 Episode；bumper／e-stop／shutdown 仍立即中止。B 的 cue 沿用 freshness，
 A 太久就 `expired`，不強行互動。B 的 Episode 從新 Evidence 綁新 target，不繼承 A。
 

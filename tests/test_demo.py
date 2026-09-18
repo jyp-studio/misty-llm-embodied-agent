@@ -365,9 +365,10 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
     ]
     assert evidence["selected_image"] is False
     kinds = [beat["kind"] for beat in execution["flow"]]
-    # The first Episode, then the queued requests it was told about; ticket
-    # 08 shows every Episode of the run rather than only the first one.
-    assert kinds[:12] == [
+    # The first Episode; ticket 08 shows every Episode of the run rather
+    # than only the first one. The queued texts carry no anonymous track, so
+    # they are not announced as another person.
+    assert kinds[:10] == [
         "wake",
         "capture",
         "asr",
@@ -378,9 +379,8 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "skills_available",
         "decision_note",
         "tool_call",
-        "input",
-        "handoff_requested",
     ]
+    assert "handoff_requested" not in kinds
     assert kinds.count("target_bound") == len(payload["episodes"]) == 4
     assert kinds.count("cue_dequeued") == 3
     assert kinds[-1] == "ending"

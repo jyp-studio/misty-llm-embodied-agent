@@ -54,7 +54,7 @@ from misty_agent.agent.layering import (
     control_parameter,
     refuse_control_parameters,
 )
-from misty_agent.control.approach import approach as run_approach
+from misty_agent.control.approach import ApproachStatus, approach as run_approach
 from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, ActivePerceptionResult
 from misty_agent.agent.skills import EpisodeSkills, SkillRejected
 from misty_agent.agent.target import InteractionTarget, TargetState
@@ -812,7 +812,14 @@ def build_registry() -> ToolRegistry:
         # the model re-observes first. A speech-only Episode has no track to
         # lose and keeps the distance-reading behaviour.
         if ctx.target is not None and ctx.target.state is TargetState.LOST:
-            return {"result": "target_lost", "steps": 0, "target": ctx.target.as_facts()}
+            # The same status the controller reports when the person is gone
+            # (`PLAN.md` §15.4 keeps failures on its four statuses); the
+            # target block beside it says the loss was already known.
+            return {
+                "result": ApproachStatus.LOST_USER.value,
+                "steps": 0,
+                "target": ctx.target.as_facts(),
+            }
         outcome = run_approach(
             ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock
         )
@@ -870,6 +877,6 @@ def _about_the_target(
     """One perception result, plus the Episode target it updated."""
     answer = dict(result.as_tool_result())
     if ctx.target is not None:
-        ctx.target.noted(result)
+        ctx.target.update_from(result)
         answer["target"] = ctx.target.as_facts()
     return answer

@@ -132,6 +132,7 @@ ANY_FREE_PORT = 0
 
 _HERE = pathlib.Path(__file__).resolve().parent
 _PAGE = _HERE / "page.html"
+NO_STORE = {"Cache-Control": "no-store"}
 _GOLDENS = _HERE.parent.parent / "tests" / "goldens"
 _WAKE_FIXTURES = _HERE.parent.parent / "tests" / "fixtures" / "wake"
 
@@ -270,7 +271,11 @@ def answer(
     if path == "/options":
         return _json(200, {"audio": audio})
     if path == "/":
-        return Reply(200, {"Content-Type": "text/html; charset=utf-8"}, _PAGE.read_bytes())
+        return Reply(
+            200,
+            {"Content-Type": "text/html; charset=utf-8", **NO_STORE},
+            _PAGE.read_bytes(),
+        )
     if path == "/scenarios":
         return _json(200, [_scenario_payload(case) for case in DEMO_SCENARIOS])
     if path == "/examples":
@@ -682,6 +687,7 @@ def _scenario_execution(
         if id(record) in inside:
             continue
         if isinstance(record, EpisodeOpened) and record.cue_id in runs_by_cue:
+            cue_index = cue_order.index(record.cue_id)
             flow.extend(_episode_beats(
                 runs_by_cue[record.cue_id],
                 actor_of(record.cue_id),
@@ -690,6 +696,11 @@ def _scenario_execution(
                 during=during.get(record.cue_id, ()),
                 actor_of=actor_of,
                 robot_state=robot_state,
+                previous_actor=(
+                    actor_of(cue_order[cue_index - 1])
+                    if cue_index > 0
+                    else None
+                ),
             ))
         else:
             beat = _cue_beat(record, actor_of, input_kind)
@@ -1056,6 +1067,7 @@ def _episode_beats(
     during: Sequence[RuntimeRecord],
     actor_of,
     robot_state: Optional[Mapping[str, Any]] = None,
+    previous_actor: Optional[str] = None,
 ) -> list:
     """One Episode's evidence, target, notices and Tool results, in order.
 
@@ -1115,6 +1127,14 @@ def _episode_beats(
             cue.cue_kind.value,
         ),
     ]
+    if previous_actor is not None:
+        flow.append(PresentationBeat(
+            "context_reset",
+            "Episode 間清除",
+            f"{actor} 從新的 Trigger Evidence 開始",
+            f"{actor} 的 model context 只包含這次 Episode；不繼承 "
+            f"{previous_actor} 的名字、話語、Skill instructions 或 model summary。",
+        ))
     journal_records = run.journal.records
     for record in journal_records:
         if isinstance(record, TargetBound):
@@ -1221,6 +1241,20 @@ def _episode_beats(
             if observation is not None:
                 flow.extend(_approach_beats(observation.result, robot_state))
     flow.extend(collected(None))
+    utterances = [evidence.transcript] if evidence.transcript else []
+    utterances.extend(
+        record.result["transcript"]
+        for record in observations.values()
+        if isinstance(record.result.get("transcript"), str)
+        and record.result["transcript"].strip()
+    )
+    flow.append(PresentationBeat(
+        "context_retained",
+        "Episode 內保留",
+        f"{actor} 的 {len(utterances)} 段話語與執行結果供後續 Turn 使用",
+        f"這些話語、Tool calls 與 Observations 只在同一個 Episode 的後續 "
+        "Turns 可用；Episode 結束即清除，不形成個人記憶。",
+    ))
     return flow
 
 
@@ -1556,7 +1590,7 @@ def _decoded(asked: Mapping[str, Any], field: str) -> Optional[bytes]:
 def _json(status: int, payload) -> Reply:
     return Reply(
         status,
-        {"Content-Type": "application/json; charset=utf-8"},
+        {"Content-Type": "application/json; charset=utf-8", **NO_STORE},
         json.dumps(payload, ensure_ascii=False).encode("utf-8"),
     )
 

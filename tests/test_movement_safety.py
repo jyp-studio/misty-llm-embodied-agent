@@ -139,7 +139,6 @@ def test_a_hazard_that_appears_while_settling_is_caught_before_the_next_motion()
 def test_a_real_session_without_a_hazard_signal_refuses_to_move():
     """The Session seam, not just the Tool: a real Session has no hazard
     source, so its approach ends at the first checkpoint with no drive."""
-    from misty_agent.agent.memory import Memory
     from misty_agent.app import Session
     from misty_agent.fakes import RecordingCommands, a_reading
     from misty_agent.robot import RealMistyAdapter
@@ -155,7 +154,7 @@ def test_a_real_session_without_a_hazard_signal_refuses_to_move():
     session = Session(
         robot=RealMistyAdapter(commands), readings=Aligned(),
         model=ScenarioModel((Decision("approach", {}, 1, 1), Decision("done", {}, 1, 1))),
-        memory=Memory(), config=CONFIG, clock=clock,
+        config=CONFIG, clock=clock,
     )
     outcome, journal = session.episode(
         TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="過來"), render=False,

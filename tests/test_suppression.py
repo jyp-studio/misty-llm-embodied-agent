@@ -460,7 +460,7 @@ def test_a_tool_that_makes_no_sound_leaves_the_microphone_open():
 
 
 def test_an_episode_with_no_microphone_needs_no_none_check():
-    """`HEARS_NOTHING` matches `NEVER_STOPS` and `NO_MEMORY`: the caller reads
+    """`HEARS_NOTHING` matches `NEVER_STOPS`: the caller reads
     one shape rather than testing for `None`."""
     from misty_agent.agent.tools import HEARS_NOTHING
 

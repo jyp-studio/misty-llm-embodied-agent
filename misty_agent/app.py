@@ -59,7 +59,6 @@ from misty_agent.agent.journal import (
     TerminalRenderer,
     in_view,
 )
-from misty_agent.agent.memory import Memory
 # The two channels a key may arrive by, in order: the environment first
 # because that is what the OpenAI SDK reads on its own, the JSON file second
 # because `.env.example` and the README have promised it since before this
@@ -179,7 +178,6 @@ class Session:
     robot: Any
     readings: Any
     model: Any
-    memory: Memory
     #: `HEARS_NOTHING` rather than `None`: `speak` mutes unconditionally, and
     #: a session with no microphone is still a session.
     ears: Any = HEARS_NOTHING
@@ -358,7 +356,6 @@ class Session:
                 journal=journal,
                 perception=self._perception(),
                 stop=stop,
-                memory=self.memory,
                 instructions=self.instructions,
                 at_turn_boundary=at_turn_boundary,
             )
@@ -515,7 +512,6 @@ def simulated_session(
         readings=readings,
         hazards=robot,
         model=model,
-        memory=Memory(),
         ears=ears,
         active_perception=active_perception,
         config=settings,
@@ -631,7 +627,6 @@ def attached_to(
             robot=RealMistyAdapter(commands),
             readings=readings,
             model=model,
-            memory=Memory(),
             ears=ears,
             attention_source=attention_source,
             events=events,

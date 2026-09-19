@@ -606,7 +606,7 @@ DEFAULT_ACTOR = "person"
 
 A_THEN_B = TextScenarioScript(
     key="a-then-b",
-    label="A 互動中 B 呼叫 · 排隊、收尾、交接",
+    label="A 互動中記住前文，切換 B 後清除",
     inputs=(
         _said_by(0.0, "Hi Misty，我是 A", "person-a"),
         _said_by(0.5, "Hey Misty，換我", "person-b"),
@@ -650,9 +650,9 @@ B_EXPIRES = TextScenarioScript(
 SPEAKER_HANDOFF = AcceptanceScenario(
     name="speaker-handoff",
     title="A 聊完後，切換成 B",
-    subtitle="A 互動中 B 明確呼叫：B 先排隊，A 在 Turn boundary 收尾後，B 才取得新 Episode。",
+    subtitle="A 的前文只留在 A 的 Episode；B 排隊交接後，以新的 Trigger Evidence 開始。",
     availability=ScenarioAvailability.READY,
-    ticket="08",
+    ticket="12",
     limitation=(
         "兩位 actors 的發言歸屬由腳本指定；系統沒有聲源方向或人臉身分，只用"
         "匿名 track reference。model 決策與後續話語為腳本，robot 為模擬。"
@@ -674,8 +674,8 @@ SPEAKER_HANDOFF = AcceptanceScenario(
         PresentationBeat(
             "effect",
             "動作",
-            "B 取得新 Episode 與新 target",
-            "上一個 Interaction Target 不被繼承；過期的 B 不會被強行處理。",
+            "B 取得新 Episode、新 target 與乾淨脈絡",
+            "A 的名字、話語與 Skill instructions 不被繼承；過期的 B 不會被強行處理。",
         ),
     ),
     inputs=(),

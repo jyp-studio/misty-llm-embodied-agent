@@ -229,9 +229,25 @@ keeps the intent, the completed motions, the reason and the Snapshot. These
 are simulated checks of the control law's shape, not a hardware safety
 certification.
 
-This is ticket 11's vertical slice, not the completed social system.
-Ephemeral Episode memory and the remaining acceptance scenarios are future
-tickets in `.scratch/social-react-runtime/`.
+Model context is Episode-scoped. The current Trigger Evidence, native Tool
+calls/results, Snapshots, later utterances and activated Skill instructions
+remain available to later Turns in that Episode. `run_episode` then releases
+that local list; `Session` owns no summary, extracted facts, exchanges or other
+personal context that a later Episode could inherit. Interaction Target and
+Skill permissions are also rebuilt per Episode. Cue lifecycle records retain
+only run-local anonymous ids, priority, timing and queue size.
+
+The in-memory Journal may feed the current Demo run, but its optional
+`JsonlFile` subscriber redacts personal prose before writing. Lossless JSONL is
+reserved for synthetic/provenance-labelled fixtures. Demo responses set
+`Cache-Control: no-store`, retain no server-side run session, and never return
+raw image/audio bytes. This persistent-storage policy is separate from hosted
+processing: configured ASR/VLM/LLM providers may receive the bounded selected
+Evidence needed for the current Episode.
+
+This is ticket 12's vertical slice, not the completed social system. Refusal
+suppression and the remaining acceptance scenarios are future tickets in
+`.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

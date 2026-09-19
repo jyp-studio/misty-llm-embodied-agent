@@ -56,7 +56,7 @@ class EmptyRoom:
 
     `None` is already what this seam says for "no reading" — `LivePerception`
     turns it into `face_present=False` with no distance — so this is a null
-    object in the sense `NEVER_STOPS`, `NO_MEMORY` and `HEARS_NOTHING` are,
+    object in the sense `NEVER_STOPS` and `HEARS_NOTHING` are,
     and it lives here for the same reason they live beside their own
     protocols: next to `DistancePipeline`, the real thing it stands in for.
 

@@ -39,7 +39,6 @@ import pytest
 from episode_invariants import Episode, violations
 from misty_agent.agent.evidence import EvidenceKind, TriggerEvidence
 from misty_agent.agent.journal import Journal, Snapshot, ToolCalled
-from misty_agent.agent.memory import Memory
 from misty_agent.agent.model import MissingApiKey, OpenAIModel, api_key_available
 from misty_agent.agent.react import run_episode
 from misty_agent.agent.tools import HEARS_NOTHING, ToolContext, build_registry
@@ -146,7 +145,6 @@ def a_live_episode(model, trigger, said, distance_cm, *, config=None):
         ctx=ctx,
         journal=journal,
         perception=Perception(snapshot),
-        memory=Memory(summariser=None, extractor=None, window=6),
     )
     episode = Episode(
         records=list(journal.records),

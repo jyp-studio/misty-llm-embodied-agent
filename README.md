@@ -24,15 +24,17 @@ calibration, latency, and safety remain hardware-unverified.
   base64, capped at 8 MiB decoded, and removed from completed runtime results.
 - Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
   Episode cap all close with observable bounded endings.
-- The local Demo leads with three social-robot stories. Greeting and care are
-  runnable through the current runtime and Journal seam; A-to-B handoff
-  remains a visibly locked ticket 08 preview rather than a scripted stand-in.
+- The local Demo leads with three runnable social-robot stories. The A-to-B
+  case visibly contrasts working context retained inside A's Episode with a
+  clean model context when B's new Episode begins.
 - A temporal local visual gate can form an uncertain Care Cue from sustained
   observable eye, mouth and head geometry. The model may choose cheap target
   observation, expensive scene inspection, a question, or no intervention;
   the gate never diagnoses emotion or fixes the response sequence.
 - Cross-Episode personal memory is not a current product capability. Social
-  state is ephemeral unless a future consent-based policy explicitly changes it.
+  state is ephemeral unless a future consent-based policy explicitly changes
+  it. The optional persistent Journal redacts personal prose; this is separate
+  from sending bounded current-Episode Evidence to configured hosted providers.
 
 The concise source of truth is [docs/architecture.md](docs/architecture.md).
 `PLAN.md` preserves the longer decision history.
@@ -78,7 +80,9 @@ A's Episode binds one Interaction Target, B's explicit request is queued and
 announced to the model at a Turn boundary, A is brought to a close, and only
 then does B get a separate Episode and target. A second variant lets B's
 request expire before A finishes. Which actor said what is scripted; the
-runtime has no sound-source direction and no face identity.
+runtime has no sound-source direction and no face identity. The actual run
+shows A's Trigger Evidence and later utterance in A's subsequent Turns, then
+shows that B inherits none of A's name, words, Skill instructions, or summary.
 
 Add local Skills as `misty_agent/skills/<name>/SKILL.md` with YAML `name` and
 `description` frontmatter. Only metadata reaches the first Turn; instructions
@@ -150,7 +154,7 @@ guidance.
 │   ├── scenarios.py          # Acceptance Scenario source shared by Demo and tests
 │   ├── app.py                # Composition root and one-Episode runtime dependency
 │   ├── config.py             # Every tunable, with UNCALIBRATED ones marked as such
-│   ├── agent/                # journal, react, tools, memory, stop, layering, model
+│   ├── agent/                # journal, react, tools, stop, layering, model
 │   ├── control/              # approach() and the step policy — the closed loop
 │   ├── drivers/              # Misty REST, RTSP audio/video, websocket events
 │   ├── perception/           # face, distance, speech
@@ -178,8 +182,9 @@ Target ownership with Turn-boundary handoff, one Robot interface with a
 hardware-unverified real adapter and a stateful simulated one, and a
 target-aware approach that aligns the chassis before closing and stops at
 the first checkpoint that reports a stop, a hazard or a missing hazard
-signal, all verified only in simulation. Planned vertical slices add
-ephemeral social state and the remaining acceptance scenarios. See
+signal, plus Episode-scoped social context and redacted persistence, all
+verified only in simulation. Planned vertical slices add refusal suppression
+and the remaining acceptance scenarios. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

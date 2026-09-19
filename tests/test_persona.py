@@ -24,10 +24,8 @@ that says so here too.
 `FLAT` exists because the constant is hard-wrapped — "you cannot\\n  do it"
 is not the substring anyone would write in an assertion.
 
-The old prompt went with the script in M7 #12 — while `HANDOFF.md`'s condition
-for deleting that script was "once prompt *and* memory are out". Memory moved
-in #09; this did not, and for four commits the model was told nothing about
-what it was.
+The old prompt went with the script in M7 #12; this typed persona is the
+current model-facing contract.
 """
 
 from __future__ import annotations
@@ -220,15 +218,6 @@ def test_the_persona_does_not_promise_a_snapshot_after_a_refused_call():
     """
     assert "a tool call comes back one of two ways" in FLAT
     assert "refused: you are given a reason, and nothing else" in FLAT
-
-
-def test_the_persona_tells_the_model_what_to_do_with_what_it_remembers():
-    """The memory block is prepended by `run_episode`; without this the model
-    is handed facts and no instruction. `PLAN.md` §15.26 moved the
-    already-greeted derivation to `close_episode()`, which is why this says
-    "already met them" rather than the old prompt's "last turn".
-    """
-    assert "do not greet someone you have already greeted" in FLAT
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,6 @@ import pytest
 
 from misty_agent.agent.evidence import EvidenceKind, TriggerEvidence
 from misty_agent.agent.journal import EpisodeFinished, Snapshot, StopRequested
-from misty_agent.agent.memory import Memory
 from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.react import Decision
 from misty_agent.app import (
@@ -110,7 +109,6 @@ def a_session(
         robot=RealMistyAdapter(robot or RecordingCommands()),
         readings=readings or Readings(150),
         model=model or Says(),
-        memory=Memory(summariser=None, extractor=None, window=6),
         ears=ears,
         events=events,
         config=Settings(),
@@ -207,18 +205,17 @@ def test_every_episode_gets_its_own_journal():
     assert first.records[0].episode_id != second.records[0].episode_id
 
 
-def test_memory_carries_across_episodes():
-    """The one thing that is *not* rebuilt per Episode — that is what makes it
-    memory rather than working context (`CONTEXT.md`)."""
-    session = a_session(model=Says("speak", "done"))
+def test_a_session_does_not_carry_personal_context_across_episodes():
+    """Even a directly assembled Session gives each Episode a new context."""
+    model = Says("done")
+    session = a_session(model=model)
 
     session.episode(speech("I am Ana"), render=False)
-    session.episode(speech("who am I?"), render=False)
+    session.episode(speech("Hello Misty"), render=False)
 
-    assert [exchange.said for exchange in session.memory.exchanges] == [
-        "I am Ana",
-        "who am I?",
-    ]
+    second_context = json.dumps(model.contexts[1], ensure_ascii=False)
+    assert "Hello Misty" in second_context
+    assert "I am Ana" not in second_context
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +250,6 @@ def test_the_default_clock_is_a_real_one():
     every latency in production zero."""
     session = Session(
         robot=RealMistyAdapter(RecordingCommands()), readings=Readings(), model=Says(),
-        memory=Memory(summariser=None, extractor=None, window=6),
     )
 
     assert isinstance(session.clock, SystemClock)
@@ -398,45 +394,6 @@ def test_pressing_the_bumper_between_episodes_still_halts_the_robot():
     assert "halt" in robot.endpoints
 
 
-def test_a_press_while_memory_is_consolidating_still_stops_the_robot():
-    """The window that made the emergency stop do nothing at all.
-
-    `run_episode` records `EpisodeFinished` and *then* consolidates memory —
-    `close_episode` may call a model, so this is a network round trip, not a
-    microsecond. Through all of it `Session._running` still points at the
-    Episode that just closed, and its Journal refuses anything after its
-    ending. The first version of `bumper_pressed` called `request()` outside
-    its `try`, so the `ValueError` escaped before the halt: **no record and no
-    halt, for as long as consolidation took** (`PLAN.md` §15.35).
-
-    Driven through the real ordering rather than by setting `_running` by
-    hand, because the ordering is the bug.
-    """
-    robot = RecordingCommands()
-    events = Events()
-    session = a_session(events=events, robot=robot)
-    press = events.subscriptions[0][1]["on_event"]
-    pressed = []
-
-    class PressesWhileConsolidating:
-        def extract(self, known, exchanges):
-            pressed.append(True)
-            press({})
-            return {}
-
-    session.memory = Memory(
-        summariser=None, extractor=PressesWhileConsolidating(), window=6
-    )
-
-    _, journal = session.episode(speech("hello"), render=False)
-
-    assert pressed, "the press never happened, so this tested nothing"
-    assert "halt" in robot.endpoints, (
-        "the bumper was pressed and the robot was never told to stop"
-    )
-    assert journal.records[-1].type == "episode_finished"
-
-
 def test_a_live_episode_is_halted_once_not_twice():
     """`EmergencyStop.request` halts on its way to recording.
 
@@ -487,35 +444,6 @@ def test_a_press_in_a_later_episode_aborts_that_episode():
 
     assert outcome.outcome == "aborted"
     assert any(r.type == "stop_requested" for r in journal.records)
-
-
-def test_a_press_after_the_episode_closed_does_not_forge_a_record():
-    """Halting is the right thing to do; rewriting a closed Journal is not.
-
-    "An Episode ends exactly once" is a property a reader checks by counting
-    (`journal.py`), and a `stop_requested` appearing after the ending would
-    make it something they had to reason about instead.
-    """
-    robot = RecordingCommands()
-    events = Events()
-    session = a_session(events=events, robot=robot)
-    press = events.subscriptions[0][1]["on_event"]
-    journals = []
-
-    class PressesWhileConsolidating:
-        def extract(self, known, exchanges):
-            press({})
-            return {}
-
-    session.memory = Memory(
-        summariser=None, extractor=PressesWhileConsolidating(), window=6
-    )
-    _, journal = session.episode(speech("hello"), render=False)
-
-    kinds = [record.type for record in journal.records]
-    assert kinds.count("episode_finished") == 1
-    assert kinds[-1] == "episode_finished"
-    assert "stop_requested" not in kinds
 
 
 def test_a_session_with_no_event_stream_still_runs():

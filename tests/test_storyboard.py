@@ -44,6 +44,7 @@ from misty_agent.agent.journal import (
     EpisodeStarted,
     ExecutionFailed,
     Journal,
+    JsonlFile,
     ModelCalled,
     Observation,
     RECORD_TYPES,
@@ -53,6 +54,7 @@ from misty_agent.agent.journal import (
     ToolCalled,
     ToolRejected,
     TurnStarted,
+    from_jsonl,
 )
 from misty_agent.agent.tools import build_registry
 from misty_agent.agent.storyboard import (
@@ -396,6 +398,36 @@ def test_the_head_and_the_arms_move_when_they_are_told_to():
     assert poses[3].head == (-20.0, 0.0, 45.0)
     assert poses[-1].head == (-20.0, 0.0, 45.0)
     assert poses[-1].arms == (-29.0, 0.0)
+
+
+def test_persistent_journal_keeps_validated_pose_arguments_replayable(tmp_path):
+    path = tmp_path / "episode.jsonl"
+    journal = Journal(
+        "ep-1",
+        clock=FakeClock(),
+        wall_clock=lambda: WALL_CLOCK,
+        subscribers=[JsonlFile(path)],
+    )
+    journal.record(EpisodeStarted, trigger="speech")
+    for turn, tool, args in (
+        (1, "display_image", {"expression": "happy"}),
+        (2, "change_led", {"red": 20, "green": 40, "blue": 60}),
+        (3, "move_head", {"pitch": -20.0, "roll": 0.0, "yaw": 45.0}),
+        (4, "move_arms", {"left": -29.0, "right": 0.0}),
+    ):
+        journal.record(ToolCalled, turn=turn, tool=tool, args=args)
+        journal.record(
+            Observation,
+            turn=turn,
+            result={"ok": True},
+            snapshot=a_snapshot(),
+        )
+
+    robot = storyboard_of(from_jsonl(path.read_text(encoding="utf-8"))).moments[-1].robot
+    assert robot.expression == "happy"
+    assert robot.led == (20, 40, 60)
+    assert robot.head == (-20.0, 0.0, 45.0)
+    assert robot.arms == (-29.0, 0.0)
 
 
 def test_the_face_changes_when_the_screen_does():

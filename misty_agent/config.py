@@ -175,34 +175,9 @@ class Settings(BaseSettings):
         default="gpt-4o",
         description="Decision and vision model driving the ReAct loop.",
     )
-    memory_model: str = Field(
-        default="gpt-4o-mini",
-        description="Cheaper model used for summarization and fact extraction.",
-    )
     llm_temperature: float = Field(
         default=0.5, ge=0.0, le=2.0,
         description="Sampling temperature for the decision call.",
-    )
-    memory_summary_temperature: float = Field(
-        default=0.2, ge=0.0, le=2.0,
-        description="Summarization tolerates a little variation.",
-    )
-    memory_fact_temperature: float = Field(
-        default=0.0, ge=0.0, le=2.0,
-        description="Fact extraction must not invent; keep it deterministic.",
-    )
-
-    # ------------------------------------------------------------------
-    # Memory
-    # ------------------------------------------------------------------
-    memory_file: str = Field(default="misty_memory.json")
-    memory_window: int = Field(
-        default=10, gt=0,
-        description="Turns kept verbatim before folding into the summary.",
-    )
-    memory_fold_size: int = Field(
-        default=4, gt=0,
-        description="Oldest turns folded into the rolling summary at once.",
     )
 
     # ------------------------------------------------------------------
@@ -521,12 +496,6 @@ class Settings(BaseSettings):
                 f"silence_duration_s={self.silence_duration_s} must be < "
                 f"silence_timeout_s={self.silence_timeout_s}; an utterance has "
                 f"to end before the turn containing it does."
-            )
-
-        if self.memory_fold_size > self.memory_window:
-            raise ValueError(
-                f"memory_fold_size={self.memory_fold_size} cannot exceed "
-                f"memory_window={self.memory_window}."
             )
 
         return self

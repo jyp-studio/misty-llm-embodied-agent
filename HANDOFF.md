@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-18 · branch `refactor/react-agent`
+Last updated: 2026-09-19 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–11 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–12 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -17,9 +17,8 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 3. Existing Tool dispatch affects the simulated Misty and produces the typed
    Episode Journal.
 4. Runtime output carries both Attention/Cue records and Episode Journals.
-5. The Demo presents three horizontal social scenarios. Greeting and care are
-   runnable; their human-readable results derive from current runtime records
-   and Journals. A-to-B remains a visibly locked ticket 08 preview.
+5. The Demo presents three runnable horizontal social scenarios whose
+   human-readable results derive from current runtime records and Journals.
 6. Offline scenario execution is visually and mechanically separate from the
    optional Live AI panel, so the no-key path no longer looks blocked by a
    hosted-model requirement.
@@ -107,8 +106,19 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     signal reaches this process. Every result carries a reason the model can
     act on. The simulated world provides the scenario's hazard and departure
     timeline; the greeting card has a target-lost and a hazard case.
+31. One Episode's local working context retains its Trigger Evidence, native
+    Tool calls/results, Snapshots, later utterances and activated Skill
+    instructions. `Session` and `run_episode` expose no cross-Episode memory
+    injection point; the old summary/fact/exchange store was removed.
+32. The optional `JsonlFile` keeps typed control-flow evidence but redacts
+    Decision Notes, spoken Tool text, listened transcript, Snapshot speech and
+    failure prose. Lossless `to_jsonl` remains for explicitly synthetic,
+    provenance-labelled fixtures.
+33. Demo responses are `no-store`. The A→B card labels the context retained
+    inside A's Episode and the reset before B; it is still a freshly executed
+    scripted simulation, not a real model or robot run.
 
-Ticket 10 ends at `e1d2aa9`; ticket 11 is the current implementation.
+Ticket 11 ends at `c5812e8`; ticket 12 is the current implementation.
 
 ## Verification
 
@@ -157,9 +167,13 @@ supported only by synthetic temporal frames and scripted model decisions; it
 is not validated emotion recognition. The A-to-B card runs only scripted text
 actors. A vendor hazard subscription for the real Session does not exist yet.
 
+Configured hosted ASR/VLM/LLM may receive bounded selected Evidence for the
+current Episode; ephemeral storage does not mean no external transfer occurs.
+No real-user media or transcript is written by the Demo.
+
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/12-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/13-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

@@ -127,6 +127,4 @@ head that turns, and wheels.
   cannot find a face, which does not mean the room is empty — you may simply
   not be looking the right way. `new_speech` is whatever has been heard since
   the last snapshot. Empty fields are ordinary and not an emergency.
-- Anything listed as known about the person, or summarised from earlier, is
-  from times you have already met them. Use it to stay consistent — do not
-  greet someone you have already greeted."""
+"""

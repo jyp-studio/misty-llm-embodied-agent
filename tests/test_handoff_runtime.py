@@ -76,6 +76,8 @@ def test_b_waits_in_the_queue_and_a_is_told_at_a_turn_boundary_before_b_starts()
     assert handoff.turn == 2
     assert "waiting (cue-2)" not in model.contexts[1]
     assert "waiting (cue-2)" in model.contexts[2]
+    assert "Hi Misty，我是 A" in model.contexts[2]
+    assert "今天天氣不錯" in model.contexts[2]
     assert [r.tool for r in a.journal.records if isinstance(r, ToolCalled)][2:] == ["speak", "done"]
     assert not any(isinstance(record, HandoffRequested) for record in b.journal.records)
 
@@ -83,6 +85,8 @@ def test_b_waits_in_the_queue_and_a_is_told_at_a_turn_boundary_before_b_starts()
     bound_b = next(record for record in b.journal.records if isinstance(record, TargetBound))
     assert (bound_a.track_reference, bound_b.track_reference) == ("person-a", "person-b")
     assert "person-a" not in model.contexts[4]
+    assert "Hi Misty，我是 A" not in model.contexts[4]
+    assert "今天天氣不錯" not in model.contexts[4]
 
 
 def test_a_stale_b_request_expires_behind_a_and_opens_no_episode():
@@ -138,18 +142,35 @@ def test_the_demo_runs_the_handoff_card_with_two_anonymous_actors():
     run_payload = json.loads(response.body)
     assert [episode["actor"] for episode in run_payload["episodes"]] == ["A", "B"]
     kinds = [beat["kind"] for beat in run_payload["execution"]["flow"]]
-    for expected in ("target_bound", "cue_queued", "handoff_requested", "cue_dequeued"):
+    for expected in (
+        "target_bound",
+        "cue_queued",
+        "handoff_requested",
+        "cue_dequeued",
+        "context_retained",
+        "context_reset",
+    ):
         assert expected in kinds
     assert kinds.index("cue_queued") < kinds.index("handoff_requested") < kinds.index("cue_dequeued")
     assert kinds.count("target_bound") == 2
     assert kinds[-1] == "ending"
     assert run_payload["execution"]["flow"][-1]["headline"] == "情境執行完成"
     assert "聲源" in run_payload["execution"]["provenance"]["detail"]
+    retained = next(
+        beat for beat in run_payload["execution"]["flow"]
+        if beat["kind"] == "context_retained"
+    )
+    reset = next(
+        beat for beat in run_payload["execution"]["flow"]
+        if beat["kind"] == "context_reset"
+    )
+    assert "同一個 Episode" in retained["detail"]
+    assert "不繼承 A" in reset["detail"]
 
     stale = json.loads(answer("POST", "/scenarios/speaker-handoff/run", b'{"fixture":"b-expires"}').body)
     assert [episode["actor"] for episode in stale["episodes"]] == ["A"]
     assert "cue_dropped" in [beat["kind"] for beat in stale["execution"]["flow"]]
-    assert SPEAKER_HANDOFF.ticket == "08"
+    assert SPEAKER_HANDOFF.ticket == "12"
 
 
 def test_an_untracked_repeat_request_is_not_announced_as_another_person():

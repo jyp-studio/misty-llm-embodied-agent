@@ -93,6 +93,12 @@ OUTCOMES = ("done", "turn_limit", "aborted", "error")
 #: a provider response from turning the Journal into an unbounded text channel.
 MAX_DECISION_NOTE_CHARS = 240
 
+#: Persistent Journals keep control-flow evidence, not personal prose.  The
+#: in-memory Journal is unchanged so the current run can still feed the model
+#: and Demo.  A conspicuous marker is preferable to an empty string: a reader
+#: can tell that data was deliberately removed rather than never produced.
+PERSISTED_PERSONAL_TEXT = "[redacted: ephemeral personal text]"
+
 #: What a mapping field may contain. Anything else does not survive JSON: a
 #: tuple comes back as a list and quietly breaks equality against a golden.
 JSON_TYPES = (str, int, float, bool, type(None), list, dict)
@@ -491,6 +497,117 @@ def to_jsonl(records: Sequence[Record]) -> str:
     )
 
 
+#: Values, not key names, are the persistence schema.  Observation results are
+#: intentionally open mappings, so trusting a key such as ``status`` or
+#: ``source`` lets arbitrary prose masquerade as structure.  New enum values
+#: therefore redact until somebody deliberately adds them here.
+_PERSISTED_STRUCTURAL_TEXT_VALUES = frozenset(
+    {
+        # Episode and bounded-listening endings.
+        "done", "turn_limit", "aborted", "error", "heard", "silence",
+        "unavailable",
+        # Active-perception shape.
+        "target_observation", "scene_inspection", "cheap", "expensive",
+        "observed",
+        # Interaction target and selected Evidence.
+        "unobservable", "bound", "visible", "lost", "reacquired",
+        "speech", "visual",
+        # Known listening providers.
+        "transcript_queue", "pending_wake", "hosted_asr", "listening",
+        # Skill result kinds.
+        "skill_activation", "skill_resource",
+        # Controller outcomes and motion kinds.
+        "arrived", "lost_user", "stale_reading", "bearing_unavailable",
+        "alignment_failed", "step_limit", "blocked", "hazard_unavailable",
+        "timeout", "drive_error", "rotate", "forward", "back",
+        # Closed display-image values used by Storyboard replay.
+        "happy", "sad", "angry", "surprised", "love", "afraid", "neutral",
+    }
+)
+
+_PERSISTED_STRUCTURAL_KEYS = frozenset(
+    {
+        "age_s", "bearing_deg", "bound_at_s", "cost", "description",
+        "blue", "detail", "distance_cm", "ending", "estimated_speech_ms",
+        "expression", "facts",
+        "found_at_yaw", "fresh", "fresh_for_s", "instructions",
+        "interrupted", "kind", "motions", "move_cm", "name", "ok",
+        "outcome", "pitch", "reason", "red", "refused", "resource",
+        "result", "right", "roll", "rotations", "rotate_deg", "source",
+        "state", "status", "steps", "target",
+        "target_track_reference", "text", "track_reference", "transcript",
+        "uncertainty", "yaw", "green", "left",
+    }
+)
+
+
+def _redact_mapping(mapping: Mapping[Any, Any]) -> Dict[str, Any]:
+    """Keep known field names and replace every open key with an ordinal."""
+    redacted: Dict[str, Any] = {}
+    next_ordinal = 1
+    for key, value in mapping.items():
+        if isinstance(key, str) and key in _PERSISTED_STRUCTURAL_KEYS:
+            persisted_key = key
+        else:
+            persisted_key = f"redacted_field_{next_ordinal}"
+            next_ordinal += 1
+            while persisted_key in redacted:
+                persisted_key = f"redacted_field_{next_ordinal}"
+                next_ordinal += 1
+        redacted[persisted_key] = _redact_free_text(value)
+    return redacted
+
+
+def _redact_free_text(value: Any) -> Any:
+    """Copy open JSON data, retaining only closed structural string values."""
+    if isinstance(value, str):
+        return (
+            value
+            if value in _PERSISTED_STRUCTURAL_TEXT_VALUES
+            else PERSISTED_PERSONAL_TEXT
+        )
+    if isinstance(value, dict):
+        return _redact_mapping(value)
+    if isinstance(value, list):
+        return [_redact_free_text(child) for child in value]
+    return value
+
+
+def to_persistent_jsonl(records: Sequence[Record]) -> str:
+    """Serialise records for disk without persistent personal text.
+
+    ``to_jsonl`` remains the lossless format for explicitly synthetic,
+    provenance-labelled fixtures.  This function is the default at the real
+    persistence boundary used by :class:`JsonlFile`.
+    """
+    lines = []
+    for record in records:
+        raw = _on_the_wire(record)
+        if isinstance(record, DecisionNoted):
+            raw["note"] = PERSISTED_PERSONAL_TEXT
+        elif isinstance(record, ToolCalled):
+            raw["args"] = _redact_free_text(raw["args"])
+        elif isinstance(record, ToolRejected):
+            # A rejected name never passed the Tool registry, so unlike a
+            # ToolCalled name it is untrusted model output.
+            raw["tool"] = PERSISTED_PERSONAL_TEXT
+            raw["reason"] = PERSISTED_PERSONAL_TEXT
+        elif isinstance(record, ExecutionFailed):
+            raw["message"] = PERSISTED_PERSONAL_TEXT
+        elif isinstance(record, SubscriberFailed):
+            # Subscriber class names and exception text may come from an
+            # application integration.  The failed record kind remains.
+            raw["subscriber"] = PERSISTED_PERSONAL_TEXT
+            raw["error"] = PERSISTED_PERSONAL_TEXT
+        if isinstance(record, Observation):
+            raw["result"] = _redact_free_text(raw["result"])
+            raw["snapshot"]["new_speech"] = None
+        lines.append(
+            json.dumps(raw, ensure_ascii=False, sort_keys=True) + "\n"
+        )
+    return "".join(lines)
+
+
 def from_jsonl(text: str) -> Tuple[Record, ...]:
     """Read records back. Refuses what it does not recognise."""
     records = []
@@ -740,7 +857,7 @@ class JsonlFile:
 
     def receive(self, record: Record) -> None:
         with open(self._path, "a", encoding="utf-8") as handle:
-            handle.write(to_jsonl([record]))
+            handle.write(to_persistent_jsonl([record]))
 
 
 class TerminalRenderer:

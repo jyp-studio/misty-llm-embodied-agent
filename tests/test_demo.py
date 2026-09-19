@@ -156,7 +156,7 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "care-expression-words-conflict",
     ]
     assert listed[2]["availability"] == "ready"
-    assert listed[2]["ticket"] == "08"
+    assert listed[2]["ticket"] == "12"
 
 
 def run_scenario(name: str) -> dict:
@@ -1130,6 +1130,13 @@ def test_the_server_is_offered_to_nobody_but_this_machine():
 def test_answering_is_pure():
     """Same question, same answer, no accumulated state."""
     assert answer("GET", "/examples") == answer("GET", "/examples")
+
+
+def test_demo_payloads_are_not_restored_from_a_browser_or_http_cache():
+    """Current-run personal details may be displayed, but a refresh must ask
+    the process for fresh state rather than restoring an earlier payload."""
+    assert answer("GET", "/").headers["Cache-Control"] == "no-store"
+    assert answer("GET", "/scenarios").headers["Cache-Control"] == "no-store"
 
 
 @pytest.mark.parametrize(

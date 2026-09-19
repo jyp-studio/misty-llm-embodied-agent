@@ -77,11 +77,6 @@ def test_min_step_must_be_below_max_step():
         Settings(min_step_cm=40.0, max_step_cm=35.0)
 
 
-def test_fold_size_cannot_exceed_window():
-    with pytest.raises(ValidationError, match="memory_fold_size"):
-        Settings(memory_window=4, memory_fold_size=10)
-
-
 @pytest.mark.parametrize(
     "field, value",
     [

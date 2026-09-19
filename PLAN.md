@@ -2768,3 +2768,35 @@ reason 改說「during motion N」。`RobotAdapter` Protocol 明列 `halt`。abo
 以前 `is_aborted()` 沒把 stop 交給 ToolContext，controller 只能等到 deadline 回 `timeout`；現在測試
 與 production 一樣把 stop 接進去，golden 讓步。`HazardReading` 改名 `HazardState`，避免與 CONTEXT.md
 的 Reading 混用。
+
+### 16.61 Episode 內保留、Episode 間清除；持久化邊界另行去識別（ticket 12）
+
+本票以已核准的 social-runtime spec 反轉 §15.5／§15.26 的舊 M7 memory 設計。`run_episode` 的
+`working_context` 本來就保留本次 Trigger Evidence、native Tool call、matching Tool result、Snapshot、
+後續 transcript 與按需載入的 Skill instructions；它現在是唯一的社交脈絡。函式返回後整份 local list
+釋放。`Session` 與 `run_episode` 不再接受 Memory dependency，舊的 exchange／summary／facts store、
+相關設定與 `speaks` bookkeeping 一併移除，因此另一個 Episode 沒有可誤接回 A 個人資料的 injection
+point。Interaction Target 與 `EpisodeSkills` 仍每 Episode 新建。A→B acceptance 由 hosted-model seam
+的實際 request 證明：A 的後續 Turn 看得到 A 的名字與 listen transcript，B 的第一個 request 只含 B
+自己的 Trigger Evidence，不含 A 的名字、話語、Skill instructions 或 summary。
+
+「不保存」只限制 persistent storage，不禁止當次 in-memory processing，也不等於完全離線。
+configured hosted ASR／VLM／LLM 仍可收到完成當次決策所需的 bounded selected Evidence；raw periodic
+frames、完整媒體與前一個 Episode 的個人脈絡不跨過該 boundary。Runtime result／in-memory Journal 可供
+當次 Demo 顯示；圖片 bytes 仍在 completion summary 移除，Demo 不建立 server-side run session，所有
+HTML／JSON 回應加 `Cache-Control: no-store`，refresh 必須重新執行而不從 HTTP cache 恢復舊 payload。
+
+`JsonlFile` 是唯一 production persistent Journal subscriber，現在預設把 Decision Note、Tool 文字、
+listen transcript、Snapshot `new_speech`、拒絕與 failure prose 換成明確 redaction marker（Snapshot speech
+則為 `None`），同時保留 typed control-flow、已通過 registry 的 Tool 名、封閉集合內的
+structural enum value、timing、target token 與數值 Observation。未通過 registry 的 rejected Tool 名、
+subscriber 名與例外文字也遮蔽；開放 mapping 不能只因 key 叫做 `status`、`source` 或
+`result` 就繞過去識別，未列入持久 schema 的 mapping key 也會改為無意義的序號欄位。
+純 `to_jsonl` 仍是 lossless serialization，只供有 provenance 的 synthetic／licensed fixtures 與
+goldens；兩個介面刻意分開，避免測試資產需求放寬 real-user policy。
+
+A→B Demo 卡升到 ticket 12，當次 flow 由實際 Evidence／Journal 推導「Episode 內保留」與「Episode
+間清除」兩個 Moment。它仍是 scripted text actors、scripted model 與 simulated robot；沒有聲源方向、
+face identity、真實 LLM 輸出或 Misty II 證據。Cue queue 的可觀察 records 只有 run-local cue id、匿名
+track／priority／timing／queue size；ticket 13 的 refusal suppression 也只能沿用匿名短期狀態，不能
+重新引入 personal memory。ADR 0003 記錄這個預設；未來若要長期 profile，必須另做 consent policy。

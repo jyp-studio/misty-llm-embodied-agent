@@ -46,13 +46,12 @@ copies of one thing.
 `Model` is the only new seam this milestone adds. Messages and Tool schemas
 in, one Tool choice out — which is what lets a test script the model's answers
 without mocking anybody's SDK. The list of messages is **one Episode's working
-context** and is discarded with it; `CONTEXT.md` reserves *Exchange* for the
-durable unit memory is made of, and this is deliberately not that.
+context** and is discarded with it. It is deliberately not a cross-Episode
+memory or profile.
 """
 
 from __future__ import annotations
 
-import logging
 import json
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
@@ -75,7 +74,6 @@ from misty_agent.agent.journal import (
     snapshot_facts,
 )
 from misty_agent.agent.layering import mentions_control_parameter
-from misty_agent.agent.memory import NO_MEMORY, Exchange, Remembers
 from misty_agent.agent.persona import PERSONA
 from misty_agent.agent.stop import NEVER_STOPS, Stop
 from misty_agent.agent.tools import (
@@ -84,9 +82,6 @@ from misty_agent.agent.tools import (
     ToolRegistry,
     dispatch,
 )
-
-log = logging.getLogger(__name__)
-
 
 @dataclass(frozen=True)
 class Decision:
@@ -139,7 +134,6 @@ def run_episode(
     journal: Journal,
     perception: Perception,
     stop: Stop = NEVER_STOPS,
-    memory: Remembers = NO_MEMORY,
     instructions: str = PERSONA,
     at_turn_boundary: Optional[Callable[[], Optional[HandoffNotice]]] = None,
 ) -> EpisodeOutcome:
@@ -165,9 +159,8 @@ def run_episode(
             state=ctx.target.state.value,
         )
 
-    # What the model is shown, and only this. The persona and memory go in at
-    # the top as blocks of prose; everything after them is this Episode's own
-    # working context and dies with the Episode.
+    # What the model is shown, and only this. Everything in the list belongs
+    # to this Episode and dies with it.
     working_context: List[Dict[str, Any]] = []
     # Who it is, then what it knows, then what just happened. On by default:
     # an Episode whose model has not been told what it is is not a
@@ -176,7 +169,6 @@ def run_episode(
     # then never wired up.
     if instructions:
         working_context.append({"role": "system", "content": instructions})
-    phase = "skills"
     try:
         if ctx.skills is not None:
             available = ctx.skills.available()
@@ -186,20 +178,11 @@ def run_episode(
                 "content": "Available Skills (name and description only): "
                 + json.dumps(available, ensure_ascii=False),
             })
-        phase = "memory"
-        remembered = memory.as_prompt_block()
     except Exception as error:
-        _record_failure_and_halt(journal, ctx.robot, phase, error)
+        _record_failure_and_halt(journal, ctx.robot, "skills", error)
         journal.record(EpisodeFinished, outcome="error", turns=0, steps=0)
         return EpisodeOutcome(outcome="error", turns=0, steps=0)
-    if remembered:
-        working_context.append({"role": "system", "content": remembered})
     working_context.append(dict(evidence.model_message()))
-
-    # What the robot says aloud this Episode, for the other half of the
-    # Exchange. Collected from what each Tool declares it speaks, so the loop
-    # never has to know that the Tool is called `speak` or its argument `text`.
-    spoken: List[str] = []
 
     turns = 0
     steps = 0
@@ -270,9 +253,6 @@ def run_episode(
             outcome = "error"
             break
         steps += dispatched.steps
-        if dispatched.spoken:
-            spoken.append(dispatched.spoken)
-
         if dispatched.ends_episode:
             boundary()
             outcome = "done"
@@ -321,24 +301,6 @@ def run_episode(
             break
 
     journal.record(EpisodeFinished, outcome=outcome, turns=turns, steps=steps)
-
-    # After the ending, deliberately. `close_episode` may call a model, and
-    # folding that into the Episode's recorded duration would make every
-    # latency measurement include work the robot does once nobody is waiting.
-    # It is also once per Episode rather than once per Turn: under ReAct the
-    # subject spoke once, and re-extracting each Turn asks about a record that
-    # has not changed (`PLAN.md` §15.5).
-    try:
-        memory.remember(
-            Exchange(said=evidence.transcript, replied=" ".join(spoken))
-        )
-        memory.close_episode()
-    except Exception:
-        # The Episode is already closed and its timing intentionally excludes
-        # memory derivation. A post-Episode failure must not make the caller
-        # lose the completed outcome and Journal it already produced.
-        log.exception("post-Episode memory update failed")
-
     return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
 
 

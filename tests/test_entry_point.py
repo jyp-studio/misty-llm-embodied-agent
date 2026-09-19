@@ -476,13 +476,12 @@ def test_a_journal_will_not_be_written_on_top_of_another_one(
     assert kept.read_text() == already_there
 
 
-def test_what_was_said_out_loud_is_in_the_file(tmp_path):
-    """The premise the whole default-off decision rests on.
+def test_what_was_said_out_loud_is_redacted_in_the_persistent_file(tmp_path):
+    """The CLI's explicit Journal path still crosses the privacy boundary.
 
-    `PLAN.md` §16.22 justifies the flag by what a Journal carries: the words
-    `speak` was given, and every Snapshot's `new_speech`. Nothing was reading
-    a character of it — the round-trip test passes on a file with every word
-    blanked, because a blank string round-trips too.
+    The current in-memory Journal carries the words supplied to ``speak`` so
+    the model and Demo can describe this run.  Ticket 12 changes only the
+    persistent subscriber: personal prose must not survive in its JSONL.
     """
     kept = tmp_path / "run.jsonl"
 
@@ -494,7 +493,8 @@ def test_what_was_said_out_loud_is_in_the_file(tmp_path):
         for record in from_jsonl(kept.read_text())
         if record.type == "tool_called" and record.tool == "speak"
     ]
-    assert said_out_loud == ["hello"]  # what `Says` scripts for `speak`
+    assert said_out_loud == ["[redacted: ephemeral personal text]"]
+    assert "hello" not in kept.read_text(encoding="utf-8")
 
 
 def test_a_journal_that_cannot_be_written_is_refused_before_anything_moves(

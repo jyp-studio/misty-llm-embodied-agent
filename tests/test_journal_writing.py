@@ -732,13 +732,111 @@ def test_the_renderer_shows_the_time_to_a_useful_precision():
 # ---------------------------------------------------------------------------
 
 def test_the_file_is_written_as_utf8_whatever_the_platform_prefers(tmp_path):
-    """Goldens carry Chinese speech; a platform default would mangle them."""
+    """The persistent subscriber is UTF-8 even after personal text is removed."""
     path = tmp_path / "episode.jsonl"
     journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])
 
     journal.record(ToolCalled, turn=1, tool="speak", args={"text": "你好"})
 
-    assert "你好" in path.read_bytes().decode("utf-8")
+    saved = path.read_bytes().decode("utf-8")
+    assert "你好" not in saved
+    assert "ephemeral personal text" in saved
+
+
+def test_a_persistent_journal_redacts_personal_transcript_at_its_boundary(tmp_path):
+    """The in-memory Journal may power the current UI, but the optional file
+    must not retain a person's name, utterance, or a model note echoing it."""
+    path = tmp_path / "episode.jsonl"
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])
+
+    journal.record(
+        DecisionNoted,
+        turn=1,
+        tool_call_id="call-1",
+        note="Reply to Ana by name",
+    )
+    journal.record(
+        ToolCalled,
+        turn=1,
+        tool="speak",
+        args={"text": "Hello Ana"},
+    )
+    journal.record(
+        Observation,
+        turn=1,
+        result={
+            "transcript": "My name is Ana",
+            "answer": "My private nickname is Nini",
+            "ending": "heard",
+        },
+        snapshot=Snapshot(
+            distance_cm=80,
+            face_present=True,
+            new_speech="My dog is Pip",
+        ),
+    )
+
+    saved = path.read_text(encoding="utf-8")
+
+    assert "Ana" not in saved
+    assert "Nini" not in saved
+    assert "My dog is Pip" not in saved
+    assert "heard" in saved
+    assert [record.type for record in from_jsonl(saved)] == [
+        "decision_noted",
+        "tool_called",
+        "observation",
+    ]
+
+
+def test_persistent_redaction_does_not_trust_structural_looking_keys(tmp_path):
+    path = tmp_path / "episode.jsonl"
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])
+
+    journal.record(
+        Observation,
+        turn=1,
+        result={
+            "result": "Ana asked me to remember this",
+            "nested": {"source": "Ana"},
+            "people": {"Ana_private_name": True},
+            "ending": "heard",
+        },
+        snapshot=Snapshot(distance_cm=None, face_present=False, new_speech=None),
+    )
+
+    saved = path.read_text(encoding="utf-8")
+    assert "Ana" not in saved
+    assert "remember this" not in saved
+    assert "private_name" not in saved
+    assert "heard" in saved
+
+
+def test_persistent_redaction_covers_rejected_identifiers_and_subscriber_errors(tmp_path):
+    path = tmp_path / "episode.jsonl"
+    journal = Journal("ep-1", clock=FakeClock(), subscribers=[JsonlFile(path)])
+
+    journal.record(
+        ToolRejected,
+        turn=1,
+        tool="Ana_private_tool",
+        reason="unknown tool",
+    )
+    journal.record(
+        SubscriberFailed,
+        subscriber="AnaPrivateSink",
+        failed_on="observation",
+        error="Ana's private path failed",
+    )
+
+    saved = path.read_text(encoding="utf-8")
+    assert "Ana" not in saved
+    assert "private" not in saved.lower()
+    restored = from_jsonl(saved)
+    assert [record.type for record in restored] == [
+        "tool_rejected",
+        "subscriber_failed",
+    ]
 
 
 # ---------------------------------------------------------------------------

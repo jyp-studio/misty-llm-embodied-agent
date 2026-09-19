@@ -20,7 +20,6 @@ from misty_agent.agent.journal import (
     ExecutionFailed,
     StopRequested,
 )
-from misty_agent.agent.memory import Memory
 from misty_agent.agent.react import Decision
 from misty_agent.app import SystemClock, simulated_session
 from misty_agent.config import Settings
@@ -578,38 +577,6 @@ def test_shutdown_interrupts_scenario_adapter_before_a_future_input_is_due():
     assert result[0].episodes == ()
 
 
-def test_shutdown_during_episode_close_falls_back_to_a_robot_halt():
-    """A closed Journal race must not turn shutdown into an exception."""
-
-    class StopsWhileConsolidating:
-        runtime = None
-
-        def extract(self, known, exchanges):
-            self.runtime.stop()
-            return {}
-
-    clock = FakeClock()
-    session = simulated_session(
-        None,
-        model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions),
-        clock=clock,
-    )
-    extractor = StopsWhileConsolidating()
-    session.memory = Memory(summariser=None, extractor=extractor, window=6)
-    runtime = SocialAgentRuntime(
-        source=ScenarioInputAdapter(clock, EXPLICIT_TEXT_REQUEST.inputs),
-        session=session,
-        clock=clock,
-    )
-    extractor.runtime = runtime
-
-    result = runtime.run()
-
-    assert result.ending == "shutdown"
-    assert result.episodes[0].outcome.outcome == "done"
-    assert session.robot.halted is True
-
-
 def test_the_existing_turn_cap_remains_the_runtime_episode_bound():
     """The autonomous shell does not weaken the inner ReAct bound."""
 
@@ -703,6 +670,60 @@ def test_two_requests_never_own_the_robot_at_the_same_time():
         "episode_completed",
     ]
     assert len(result.episodes) == 2
+
+
+def test_skill_instructions_and_personal_context_end_with_their_episode():
+    """The hosted-model boundary may see active guidance and utterances only
+    while the Episode that activated and heard them is still running."""
+
+    class CapturesEveryTurn(ScenarioModel):
+        def __init__(self):
+            super().__init__((
+                Decision(
+                    "activate_skill",
+                    {"name": "supportive-interaction"},
+                    8,
+                    2,
+                ),
+                Decision("done", {}, 8, 1),
+                Decision("done", {}, 8, 1),
+            ))
+            self.contexts = []
+
+        def decide(self, working_context, tools):
+            self.contexts.append(
+                json.dumps(working_context, ensure_ascii=False)
+            )
+            return super().decide(working_context, tools)
+
+    clock = FakeClock()
+    model = CapturesEveryTurn()
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(
+                    0.0,
+                    "Hi Misty，我是 Ana",
+                    facts={"track_reference": "person-a"},
+                ),
+                text_at(
+                    0.0,
+                    "Hi Misty，我是 Bo",
+                    facts={"track_reference": "person-b"},
+                ),
+            ],
+        ),
+        session=simulated_session(None, model=model, clock=clock),
+        clock=clock,
+    ).run()
+
+    assert len(result.episodes) == 2
+    assert "Stay where you are" in model.contexts[1]
+    assert "Hi Misty，我是 Ana" in model.contexts[1]
+    assert "Stay where you are" not in model.contexts[2]
+    assert "Hi Misty，我是 Ana" not in model.contexts[2]
+    assert "Hi Misty，我是 Bo" in model.contexts[2]
 
 
 def test_an_active_episode_collects_a_due_cue_at_a_safe_turn_boundary():

@@ -1,6 +1,6 @@
 # HANDOFF — current state
 
-Last updated: 2026-09-19 · branch `refactor/react-agent`
+Last updated: 2026-09-20 · branch `refactor/react-agent`
 
 Read `PLAN.md` first for the full decision history. The concise current system
 view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–12 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–13 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -117,8 +117,20 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 33. Demo responses are `no-store`. The A→B card labels the context retained
     inside A's Episode and the reset before B; it is still a freshly executed
     scripted simulation, not a real model or robot run.
+34. `respect_boundary` is a typed model Tool: it halts the Robot and ends the
+    Episode with `boundary_respected=True`. The persona tells the model to stop
+    questions and avoid further approach after an explicit request for space;
+    no transcript keyword matcher chooses the response.
+35. `SocialAgentRuntime` then keeps only an anonymous track token and expiry.
+    Same-track Care/Social cues receive typed `cue_suppressed` records;
+    another track remains eligible, and a new Explicit Request records a
+    bypass and opens immediately. TTL expiry, an empty visual scene, shutdown
+    and run completion clear the state.
+36. The care card's `respect-boundary` fixture shows the acknowledgement,
+    controller halt, suppression countdown, suppressed cue and explicit
+    bypass. Every decision and utterance is scripted and the robot is simulated.
 
-Ticket 11 ends at `c5812e8`; ticket 12 is the current implementation.
+Ticket 12 ends at `e163e30`; ticket 13 is the current implementation.
 
 ## Verification
 
@@ -173,7 +185,7 @@ No real-user media or transcript is written by the Demo.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/13-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/14-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

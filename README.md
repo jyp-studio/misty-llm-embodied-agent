@@ -183,8 +183,11 @@ hardware-unverified real adapter and a stateful simulated one, and a
 target-aware approach that aligns the chassis before closing and stops at
 the first checkpoint that reports a stop, a hazard or a missing hazard
 signal, plus Episode-scoped social context and redacted persistence, all
-verified only in simulation. Planned vertical slices add refusal suppression
-and the remaining acceptance scenarios. See
+verified only in simulation. Explicit requests for space now end through a
+typed halt-and-finish Tool; Runtime applies a short anonymous-track Cue
+Suppression to repeated non-explicit cues while allowing a new direct request
+to bypass it. Planned vertical slices add bilingual emergency boundaries and
+the remaining acceptance scenarios. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

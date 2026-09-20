@@ -85,11 +85,16 @@ from misty_agent.runtime import (
     AttentionStarted,
     AttentionStopped,
     CueDetected,
+    CueKind,
     CueDequeued,
     CueDeduplicated,
     CueDropped,
     CueQueued,
     CueReplaced,
+    CueSuppressed,
+    CueSuppressionBypassed,
+    CueSuppressionCleared,
+    CueSuppressionStarted,
     EvidenceKind,
     EpisodeCompleted,
     EpisodeOpened,
@@ -435,6 +440,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
     scenario_config = Settings(
         cue_queue_capacity=3,
         cue_freshness_s=5.0,
+        cue_suppression_s=30.0,
     )
     selected_audio = None
     selected_visual = None
@@ -582,7 +588,17 @@ def _scenario_execution(
         for record in result.records
         if isinstance(
             record,
-            (CueQueued, CueDequeued, CueDeduplicated, CueReplaced, CueDropped),
+            (
+                CueQueued,
+                CueDequeued,
+                CueDeduplicated,
+                CueReplaced,
+                CueDropped,
+                CueSuppressionStarted,
+                CueSuppressed,
+                CueSuppressionBypassed,
+                CueSuppressionCleared,
+            ),
         )
     )
     audio_records = tuple(
@@ -678,7 +694,15 @@ def _scenario_execution(
         elif isinstance(record, EpisodeCompleted):
             active_cue = None
         elif active_cue is not None and isinstance(
-            record, (CueDetected, CueQueued, CueDeduplicated, CueReplaced, CueDropped)
+            record,
+            (
+                CueDetected,
+                CueQueued,
+                CueDeduplicated,
+                CueReplaced,
+                CueDropped,
+                CueSuppressed,
+            ),
         ):
             during[active_cue].append(record)
     inside = {id(record) for group in during.values() for record in group}
@@ -1019,12 +1043,37 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
     return beats
 
 
+#: What each Cue kind is called on the page. One mapping, because three
+#: places used to spell the same switch and one of them got it wrong: a
+#: queued Care Cue was announced as an explicit request.
+_CUE_WORDING = {
+    "explicit_request": "明確互動請求",
+    "care_cue": "Care Cue",
+    "social_invitation": "Social Invitation",
+}
+
+
+def _cue_wording(kind: CueKind) -> str:
+    return _CUE_WORDING.get(kind.value, kind.value)
+
+
 def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[PresentationBeat]:
     """One cue lifecycle record as display copy, or nothing to show."""
     if isinstance(record, CueDetected):
         if input_kind not in {"audio", "text"}:
             return None
         actor = actor_of(record.cue_id)
+        if record.cue_kind is not CueKind.EXPLICIT_REQUEST:
+            # Only an Explicit Request is words the person said. A Care Cue or
+            # a Social Invitation is an observable signal, and quoting it as
+            # speech would put words in the person's mouth (ticket 06).
+            return PresentationBeat(
+                "observed_cue",
+                _cue_wording(record.cue_kind),
+                f"{actor}：{record.text}",
+                "本機 gate 觀察到的線索，不是對方說出口的話；"
+                "這段輸入由案例預先定義。",
+            )
         return PresentationBeat(
             "input",
             "人說" if actor == DEFAULT_ACTOR else f"{actor} 說",
@@ -1035,7 +1084,7 @@ def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[Pres
         return PresentationBeat(
             "cue_queued",
             "Cue queue",
-            f"{actor_of(record.cue_id)} 的明確請求排隊等待",
+            f"{_cue_wording(record.cue_kind)} 排隊等待（{actor_of(record.cue_id)}）",
             f"{actor_of(record.active_cue_id)} 的 Episode 進行中；queue 內有 "
             f"{record.queue_size} 個 cue。不平行開啟 Episode，也不丟棄。",
         )
@@ -1054,6 +1103,36 @@ def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[Pres
             f"輪到 {actor_of(record.cue_id)}",
             "前一個 Episode 已在 Turn boundary 結束；從 queue 取出下一個 cue，"
             "開啟新 Episode 與新的 Interaction Target。",
+        )
+    if isinstance(record, CueSuppressionStarted):
+        duration = max(0.0, record.expires_at_s - record.t)
+        return PresentationBeat(
+            "cue_suppression_started",
+            "Cue Suppression",
+            f"對這個匿名 track 短期靜音 {duration:g} 秒",
+            f"只保留匿名 token 與截止時間 {record.expires_at_s:g} 秒；"
+            "不是人物身分或跨 session 記憶。",
+        )
+    if isinstance(record, CueSuppressed):
+        return PresentationBeat(
+            "cue_suppressed",
+            "不再打擾",
+            f"{_cue_wording(record.cue_kind)} 未開啟 Episode",
+            f"同一匿名 track 尚剩 {round(record.remaining_s, 1):g} 秒 suppression。",
+        )
+    if isinstance(record, CueSuppressionBypassed):
+        return PresentationBeat(
+            "cue_suppression_bypassed",
+            "明確請求優先",
+            "使用者再次主動叫 Misty，立即開啟新 Episode",
+            "Explicit Request 可繞過並結束本次 suppression。",
+        )
+    if isinstance(record, CueSuppressionCleared):
+        return PresentationBeat(
+            "cue_suppression_cleared",
+            "Suppression 已清除",
+            record.reason.value.replace("_", " "),
+            "到期、track 消失或 Runtime 結束都不保留狀態。",
         )
     return None
 
@@ -1115,15 +1194,7 @@ def _episode_beats(
         PresentationBeat(
             "cue",
             "系統判定",
-            (
-                "明確互動請求"
-                if cue.cue_kind.value == "explicit_request"
-                else (
-                    "Care Cue"
-                    if cue.cue_kind.value == "care_cue"
-                    else "Social Invitation"
-                )
-            ),
+            _cue_wording(cue.cue_kind),
             cue.cue_kind.value,
         ),
     ]
@@ -1240,6 +1311,39 @@ def _episode_beats(
             observation = observations.get(record.turn)
             if observation is not None:
                 flow.extend(_approach_beats(observation.result, robot_state))
+        elif record.tool == "respect_boundary":
+            observation = observations.get(record.turn)
+            halted = observation is not None and observation.result.get("ok") is True
+            flow.extend(
+                (
+                    PresentationBeat(
+                        "boundary_respected",
+                        "尊重界線",
+                        "停止追問並完成 Episode",
+                        "這是 model 透過 typed Tool 做出的決定，不是關鍵字硬編回應。",
+                    ),
+                    PresentationBeat(
+                        "movement_stopped",
+                        "Controller",
+                        (
+                            "底盤已發出 halt，不再 approach"
+                            if halted
+                            else "halt 未成功，不再 approach"
+                        ),
+                        (
+                            "模擬 adapter 回報已停止；本專案沒有 Misty II 真機驗證。"
+                            if halted
+                            else "模擬 adapter 回報 halt 失敗："
+                            + str(
+                                (observation.result if observation else {}).get(
+                                    "detail", "沒有細節"
+                                )
+                            )
+                            + "。Episode 仍然結束，但不宣稱底盤已停止。"
+                        ),
+                    ),
+                )
+            )
     flow.extend(collected(None))
     utterances = [evidence.transcript] if evidence.transcript else []
     utterances.extend(
@@ -1354,6 +1458,23 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
     elif isinstance(record, CueDequeued):
         headline = f"取出 {record.cue_id} · 優先級 {record.priority}"
         detail = f"queue 中剩 {record.queue_size} 個"
+    elif isinstance(record, CueSuppressionStarted):
+        headline = "Cue Suppression started"
+        detail = (
+            f"anonymous track {record.track_reference} · until "
+            f"{record.expires_at_s:g}s"
+        )
+    elif isinstance(record, CueSuppressed):
+        headline = f"Suppressed {record.cue_id}"
+        detail = (
+            f"{record.cue_kind.value} · {record.remaining_s:g}s remaining"
+        )
+    elif isinstance(record, CueSuppressionBypassed):
+        headline = f"Explicit request bypassed suppression: {record.cue_id}"
+        detail = f"anonymous track {record.track_reference}"
+    elif isinstance(record, CueSuppressionCleared):
+        headline = "Cue Suppression cleared"
+        detail = record.reason.value
     elif isinstance(record, EpisodeOpened):
         headline = "Episode opened"
         detail = f"selected {record.cue_id}"

@@ -447,6 +447,25 @@ class Settings(BaseSettings):
             "Episode; an input may declare a shorter evidence-specific bound."
         ),
     )
+    track_lost_after_s: float = Field(
+        default=1.0,
+        gt=0.0,
+        description=(
+            "How long the visual gate must keep reporting an empty scene "
+            "before a suppressed visual track counts as gone. One blank "
+            "frame is a blink, not a departure. SIMULATED design value, "
+            "mirroring the local gate's own track TTL."
+        ),
+    )
+    cue_suppression_s: float = Field(
+        default=30.0,
+        gt=0.0,
+        description=(
+            "Short run-local throttle for non-explicit cues from the same "
+            "anonymous track after a person asks to be left alone. Explicit "
+            "requests bypass it. This is not identity or personal memory."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # ReAct loop

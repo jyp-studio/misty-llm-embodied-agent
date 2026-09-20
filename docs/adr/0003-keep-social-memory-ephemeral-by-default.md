@@ -22,3 +22,7 @@ consent policy.
   separate policies; this ADR restricts the latter, not the former.
 - Checked-in synthetic or licensed fixtures remain allowed when their
   provenance labels make clear that they are not real-user payloads.
+- A boundary-respected Episode may create one run-local suppression entry with
+  only an anonymous track token and expiry. Care/Social cues on that track are
+  throttled; a new Explicit Request bypasses it. Expiry, track disappearance,
+  shutdown and run completion clear the entry.

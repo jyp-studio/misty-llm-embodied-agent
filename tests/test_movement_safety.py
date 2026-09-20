@@ -238,3 +238,57 @@ def test_the_demo_stops_the_chassis_at_the_right_moment_for_both_built_in_cases(
     assert f"{halted_at:g}" in approach_beat["detail"]
     assert all("certification" not in b["detail"] for b in beats)
     assert hazard["episodes"][0]["outcome"]["outcome"] == "done"
+
+
+def test_a_refused_halt_is_journaled_and_still_respects_the_boundary():
+    """`respect_boundary` ends the Episode, and an ending Tool used to leave
+    no Observation at all — so a halt the robot refused was invisible. The
+    person asked for space either way, so the boundary still counts as
+    respected; what must not happen is the record claiming the base stopped
+    when it did not.
+    """
+    clock = FakeClock()
+    world = SimulatedMistyAdapter(
+        clock, start_cm=150.0, config=CONFIG, failing=("halt",)
+    )
+    journal = Journal(episode_id="ep-refused-halt", clock=clock)
+
+    outcome = run_episode(
+        TriggerEvidence(
+            source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="請不要靠近"
+        ),
+        model=ScenarioModel((Decision("respect_boundary", {}, 1, 1),)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=world, readings=world, config=CONFIG, clock=clock, hazards=world
+        ),
+        journal=journal,
+        perception=LivePerception(world),
+    )
+
+    observed = next(r for r in journal.records if isinstance(r, Observation))
+    assert observed.result == {"ok": False, "detail": "simulated halt failure"}
+    assert world.halted is False
+    assert outcome.outcome == "done"
+    assert outcome.boundary_respected is True
+
+
+def test_an_ending_tool_with_nothing_to_report_adds_no_observation():
+    """The other half of the rule, and what keeps every golden unchanged:
+    `done` returns nothing, so it records nothing."""
+    clock = FakeClock()
+    world = SimulatedMistyAdapter(clock, start_cm=150.0, config=CONFIG)
+    journal = Journal(episode_id="ep-plain-done", clock=clock)
+
+    run_episode(
+        TriggerEvidence(source=EvidenceKind.SPEECH, observed_at_s=0.0, transcript="hi"),
+        model=ScenarioModel((Decision("done", {}, 1, 1),)),
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=world, readings=world, config=CONFIG, clock=clock, hazards=world
+        ),
+        journal=journal,
+        perception=LivePerception(world),
+    )
+
+    assert not any(isinstance(r, Observation) for r in journal.records)

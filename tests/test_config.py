@@ -34,6 +34,7 @@ def test_defaults_load():
     assert s.approach_timeout_s == 30.0
     assert s.cue_queue_capacity == 3
     assert s.cue_freshness_s == 5.0
+    assert s.cue_suppression_s == 30.0
     assert s.max_utterance_s == 8.0
     assert s.audio_block_queue_capacity == 64
     assert s.audio_segment_queue_capacity == 3
@@ -93,6 +94,7 @@ def test_min_step_must_be_below_max_step():
         ("sensor_transport_lag_s", -0.1),
         ("cue_queue_capacity", 0),
         ("cue_freshness_s", 0.0),
+        ("cue_suppression_s", 0.0),
         ("max_utterance_s", 0.0),
         ("audio_block_queue_capacity", 0),
         ("audio_segment_queue_capacity", 0),

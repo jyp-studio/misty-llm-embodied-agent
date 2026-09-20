@@ -1139,6 +1139,43 @@ def test_demo_payloads_are_not_restored_from_a_browser_or_http_cache():
     assert answer("GET", "/scenarios").headers["Cache-Control"] == "no-store"
 
 
+def test_refusal_demo_explains_halt_suppression_countdown_and_explicit_bypass():
+    response = answer(
+        "POST",
+        "/scenarios/crying-care/run",
+        b'{"fixture":"respect-boundary"}',
+    )
+    assert response.status == 200
+    payload = json.loads(response.body)
+
+    kinds = [beat["kind"] for beat in payload["execution"]["flow"]]
+    for expected in (
+        "boundary_respected",
+        "movement_stopped",
+        "cue_suppression_started",
+        "cue_suppressed",
+        "cue_suppression_bypassed",
+    ):
+        assert expected in kinds
+    suppression = next(
+        beat for beat in payload["execution"]["flow"]
+        if beat["kind"] == "cue_suppression_started"
+    )
+    assert "30" in suppression["headline"] or "30" in suppression["detail"]
+    assert payload["robot"]["halted"] is True
+    # The refusal opens the first Episode; the two throttled Care Cues open
+    # none; the later explicit request bypasses and opens the last.
+    assert [episode["cue_id"] for episode in payload["episodes"]] == [
+        "cue-1",
+        "cue-4",
+    ]
+    runtime_types = [
+        record["type"] for record in payload["runtime"]["records"]
+    ]
+    assert "cue_suppressed" in runtime_types
+    assert "cue_suppression_bypassed" in runtime_types
+
+
 @pytest.mark.parametrize(
     "method,path,kind",
     [
@@ -1213,3 +1250,43 @@ def test_the_port_is_the_operating_systems_to_choose():
     """Zero, so two demos cannot collide and nobody types a number. A fixed
     one is the second machine on a desk failing to start."""
     assert ANY_FREE_PORT == 0
+
+
+def test_a_non_explicit_cue_is_never_presented_as_something_the_person_said():
+    """Ticket 06 forbids inventing speech for a Care Cue, and ticket 08's
+    queue beat announced every queued cue as an explicit request. The refusal
+    fixture is the first scenario that queues a non-explicit cue, so it is
+    where both would show."""
+    payload = json.loads(
+        answer(
+            "POST",
+            "/scenarios/crying-care/run",
+            json.dumps({"fixture": "respect-boundary"}).encode(),
+        ).body
+    )
+    beats = payload["execution"]["flow"]
+
+    observed = next(beat for beat in beats if beat["kind"] == "observed_cue")
+    assert observed["label"] == "Care Cue"
+    assert "「" not in observed["headline"], "an observed cue was quoted as speech"
+    assert "不是對方說出口的話" in observed["detail"]
+
+    spoken = [beat["headline"] for beat in beats if beat["kind"] == "input"]
+    assert observed["headline"] not in spoken
+    assert spoken == ["「請不要靠近，我想一個人靜一靜」", "「Misty，我現在需要你」"]
+
+    # A queued non-explicit cue used to be announced as an explicit request.
+    queued = [beat["headline"] for beat in beats if beat["kind"] == "cue_queued"]
+    assert queued == ["Care Cue 排隊等待（person）"]
+
+    suppressed = [beat for beat in beats if beat["kind"] == "cue_suppressed"]
+    assert [beat["headline"] for beat in suppressed] == [
+        "Care Cue 未開啟 Episode",
+        "Care Cue 未開啟 Episode",
+    ]
+    # The countdown counts down: a second cue later in the same throttle has
+    # visibly less time left, rather than repeating the opening number.
+    remaining = [
+        float(beat["detail"].split("尚剩 ")[1].split(" 秒")[0]) for beat in suppressed
+    ]
+    assert remaining[0] == 30 and 0 < remaining[1] < 30

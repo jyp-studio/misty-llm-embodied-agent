@@ -26,6 +26,8 @@ from misty_agent.config import Settings
 from misty_agent.demo import answer
 from misty_agent.fakes import FakeClock
 from misty_agent.runtime import (
+    AnonymousTrackReference,
+    CueSuppressionClearReason,
     CueDequeued,
     CueDeduplicated,
     CueDropped,
@@ -43,6 +45,8 @@ from misty_agent.runtime import (
     SelectedImageEvidence,
     SocialAgentRuntime,
     TimedText,
+    VisualAttentionNotice,
+    VisualAttentionOutcome,
     VisualCue,
 )
 from misty_agent.scenarios import EXPLICIT_TEXT_REQUEST, ScenarioModel
@@ -670,6 +674,394 @@ def test_two_requests_never_own_the_robot_at_the_same_time():
         "episode_completed",
     ]
     assert len(result.episodes) == 2
+
+
+def test_explicit_refusal_stops_movement_and_suppresses_only_non_explicit_reentry():
+    """Ticket 13's highest seam: the model acknowledges a boundary, the
+    controller halts, and Runtime throttles the anonymous track without
+    blocking a later direct request."""
+    clock = FakeClock()
+    decisions = (
+        Decision(
+            tool="speak",
+            args={"text": "好的，我會留在這裡。"},
+            tokens_in=8,
+            tokens_out=4,
+        ),
+        Decision(
+            tool="respect_boundary", args={}, tokens_in=8, tokens_out=1
+        ),
+        Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+    )
+    session = simulated_session(
+        None, model=ScenarioModel(decisions), clock=clock
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(
+                    0.0,
+                    "請不要靠近，我想一個人靜一靜",
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    0.0,
+                    "same-track care cue",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    0.0,
+                    "Misty，我現在需要你",
+                    facts={"track_reference": "anon-1"},
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1", "cue-3"]
+    assert result.episodes[0].outcome.boundary_respected is True
+    assert session.robot.halted is True
+    assert session.robot.speech == "好的，我會留在這裡。"
+    assert not any(
+        isinstance(record, ToolCalled) and record.tool == "approach"
+        for episode in result.episodes
+        for record in episode.journal.records
+    )
+    suppression = [
+        record
+        for record in result.records
+        if record.type
+        in {
+            "cue_suppression_started",
+            "cue_suppressed",
+            "cue_suppression_bypassed",
+        }
+    ]
+    assert [record.type for record in suppression] == [
+        "cue_suppression_started",
+        "cue_suppressed",
+        "cue_suppression_bypassed",
+    ]
+    assert suppression[0].track_reference == "anon-1"
+    assert suppression[1].cue_id == "cue-2"
+    assert suppression[2].cue_id == "cue-3"
+    # A check that can fail: the whole field set, not one guessed name, and
+    # nothing the person said anywhere in the values. A record that grew a
+    # `name`, an embedding or a copy of the transcript would trip this.
+    assert [set(vars(record)) for record in suppression] == [
+        {"t", "type", "track_reference", "expires_at_s"},
+        {"t", "type", "track_reference", "cue_id", "cue_kind", "remaining_s"},
+        {"t", "type", "track_reference", "cue_id"},
+    ]
+    spoken = "please leave me alone"
+    assert not any(
+        spoken in str(value)
+        for record in suppression
+        for value in vars(record).values()
+    )
+
+
+def test_cue_suppression_repeats_until_but_not_at_the_ttl_boundary():
+    """The rule is `now >= expires_at`, read off the records rather than
+    from a literal instant: the Episode that starts the throttle costs a
+    little clock of its own, so a hardcoded boundary would be measuring the
+    Episode's cost instead of the rule."""
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(
+            (
+                Decision(
+                    tool="respect_boundary", args={}, tokens_in=8, tokens_out=1
+                ),
+                Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+            )
+        ),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(
+                    0.0,
+                    "leave me alone",
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    0.2,
+                    "care again",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    0.4,
+                    "wave again",
+                    cue_kind=CueKind.SOCIAL_INVITATION,
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    1.2,
+                    "care past the boundary",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+        config=Settings(cue_suppression_s=1.0),
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1", "cue-4"]
+    assert [
+        record.cue_id for record in result.records
+        if record.type == "cue_suppressed"
+    ] == ["cue-2", "cue-3"]
+    started = next(
+        record for record in result.records
+        if record.type == "cue_suppression_started"
+    )
+    expired = next(
+        record for record in result.records
+        if record.type == "cue_suppression_cleared"
+    )
+    assert expired.reason.value == "expired"
+    assert expired.t >= started.expires_at_s
+    # Every cue that was throttled arrived strictly before the expiry, and
+    # the one that reopened arrived at or after it. That is the `>=`.
+    detected = {
+        record.cue_id: record.t
+        for record in result.records
+        if record.type == "cue_detected"
+    }
+    assert all(
+        detected[cue_id] < started.expires_at_s for cue_id in ("cue-2", "cue-3")
+    )
+    assert detected["cue-4"] >= started.expires_at_s
+
+
+def test_cue_suppression_is_scoped_to_one_anonymous_track():
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(
+            (
+                Decision(
+                    tool="respect_boundary", args={}, tokens_in=8, tokens_out=1
+                ),
+                Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+            )
+        ),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(
+                    0.0,
+                    "not now",
+                    facts={"track_reference": "anon-1"},
+                ),
+                text_at(
+                    0.1,
+                    "different person care cue",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-2"},
+                ),
+                text_at(
+                    0.2,
+                    "same person care cue",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    # The control: anon-2 gets its Episode while anon-1's identical cue is
+    # suppressed in the same run. Without it this test would still pass with
+    # suppression switched off entirely.
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1", "cue-2"]
+    suppressed = [
+        record for record in result.records if record.type == "cue_suppressed"
+    ]
+    assert [record.track_reference for record in suppressed] == ["anon-1"]
+    assert suppressed[0].cue_id == "cue-3"
+
+
+def test_one_empty_frame_is_a_blink_and_does_not_release_the_throttle():
+    """A person who looks away for a frame has not withdrawn their request.
+    Releasing on the gate's first EMPTY notice is how they get pestered
+    again, so emptiness has to last before a track counts as gone."""
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(
+            (
+                Decision(tool="respect_boundary", args={}, tokens_in=8, tokens_out=1),
+            )
+        ),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(0.0, "please leave", facts={"track_reference": "anon-1"}),
+                ScheduledInput(
+                    at_s=0.1,
+                    input=VisualAttentionNotice(
+                        frame_index=4, outcome=VisualAttentionOutcome.EMPTY
+                    ),
+                ),
+                ScheduledInput(
+                    at_s=0.2,
+                    input=VisualAttentionNotice(
+                        frame_index=5,
+                        outcome=VisualAttentionOutcome.TRACKING,
+                        track_reference=AnonymousTrackReference("anon-1"),
+                    ),
+                ),
+                text_at(
+                    0.3,
+                    "a later care cue",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1"]
+    assert not any(
+        record.type == "cue_suppression_cleared"
+        and record.reason is CueSuppressionClearReason.TRACK_LOST
+        for record in result.records
+    )
+    assert [record.cue_id for record in result.records if record.type == "cue_suppressed"] == ["cue-2"]
+
+
+def test_track_disappearance_clears_suppression_before_a_new_cue():
+    clock = FakeClock()
+    session = simulated_session(
+        None,
+        model=ScenarioModel(
+            (
+                Decision(
+                    tool="respect_boundary", args={}, tokens_in=8, tokens_out=1
+                ),
+                Decision(tool="done", args={}, tokens_in=8, tokens_out=1),
+            )
+        ),
+        clock=clock,
+    )
+    result = SocialAgentRuntime(
+        source=ScenarioInputAdapter(
+            clock,
+            [
+                text_at(
+                    0.0,
+                    "please leave",
+                    facts={"track_reference": "anon-1"},
+                ),
+                *[
+                    ScheduledInput(
+                        at_s=0.1 + index * 0.6,
+                        input=VisualAttentionNotice(
+                            frame_index=4 + index,
+                            outcome=VisualAttentionOutcome.EMPTY,
+                        ),
+                    )
+                    for index in range(3)
+                ],
+                text_at(
+                    2.0,
+                    "a later care cue",
+                    cue_kind=CueKind.CARE_CUE,
+                    facts={"track_reference": "anon-1"},
+                ),
+            ],
+        ),
+        session=session,
+        clock=clock,
+    ).run()
+
+    assert [episode.cue_id for episode in result.episodes] == ["cue-1", "cue-2"]
+    cleared = next(
+        record for record in result.records
+        if record.type == "cue_suppression_cleared"
+    )
+    assert cleared.reason.value == "track_lost"
+
+
+def test_runtime_shutdown_clears_anonymous_suppression_state():
+    clock = FakeClock()
+
+    class StopsAfterFirstEpisode:
+        runtime = None
+        delivered = False
+
+        def start(self):
+            pass
+
+        def read(self):
+            if not self.delivered:
+                self.delivered = True
+                return InputArrival(
+                    age_s=0.0,
+                    input=TimedText(
+                        text="leave me alone",
+                        facts={"track_reference": "anon-1"},
+                    ),
+                )
+            self.runtime.stop()
+            return None
+
+        def read_available(self):
+            return ()
+
+        def stop(self):
+            pass
+
+    source = StopsAfterFirstEpisode()
+    runtime = SocialAgentRuntime(
+        source=source,
+        session=simulated_session(
+            None,
+            model=ScenarioModel(
+                (
+                    Decision(
+                        tool="respect_boundary",
+                        args={},
+                        tokens_in=8,
+                        tokens_out=1,
+                    ),
+                )
+            ),
+            clock=clock,
+        ),
+        clock=clock,
+    )
+    source.runtime = runtime
+
+    result = runtime.run()
+
+    assert result.ending is RuntimeEnding.SHUTDOWN
+    cleared = next(
+        record for record in result.records
+        if record.type == "cue_suppression_cleared"
+    )
+    assert cleared.reason.value == "shutdown"
 
 
 def test_skill_instructions_and_personal_context_end_with_their_episode():

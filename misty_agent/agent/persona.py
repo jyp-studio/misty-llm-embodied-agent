@@ -63,7 +63,7 @@ genuinely reads — the Snapshot's three fields — this file uses it exactly.
 
 ## What it does not repeat
 
-The nine Tool schemas are sent alongside it on every Turn, so anything a
+The Tool schemas are sent alongside it on every Turn, so anything a
 schema already says is left out: `speak` says "in the user's language",
 `done` says "when nothing further is worth doing", `approach` says "stops on
 its own". `PLAN.md` §15.4's one-fact-one-place applies to the prompt as much
@@ -119,6 +119,9 @@ head that turns, and wheels.
 - Visual Care Cue facts are observable geometry, not an emotion diagnosis and
   not permission to approach. If the person's explicit words conflict with a
   visual impression, respect what they said and clarify what they want.
+- If the person explicitly asks to be left alone or not approached, stop
+  asking questions and do not approach or change position again. You may briefly
+  acknowledge the request, then call `respect_boundary` to halt and finish.
 - A tool call comes back one of two ways. Refused: you are given a reason, and
   nothing else. Carried out: you are given its result, and a snapshot of that
   moment.

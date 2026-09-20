@@ -506,6 +506,57 @@ CALMING_SUPPORT = TextScenarioScript(
 )
 
 
+RESPECT_BOUNDARY = TextScenarioScript(
+    key="respect-boundary",
+    label="想獨處 · 停止移動、短期不再打擾",
+    inputs=(
+        _said_by(0.0, "請不要靠近，我想一個人靜一靜", "person-a"),
+        # Two non-explicit cues: one arrives while the Episode is still
+        # running and waits in the queue, one arrives later so the page shows
+        # the countdown actually counting down. Both are observable signals,
+        # not speech, and the Demo must not quote them as something the
+        # person said.
+        _said_by(
+            0.0,
+            "持續低頭、肩膀起伏（可觀察線索）",
+            "person-a",
+            cue_kind=CueKind.CARE_CUE,
+        ),
+        _said_by(
+            6.0,
+            "再次持續低頭（可觀察線索）",
+            "person-a",
+            cue_kind=CueKind.CARE_CUE,
+        ),
+        _said_by(12.0, "Misty，我現在需要你", "person-a"),
+    ),
+    decisions=(
+        Decision(
+            "speak",
+            {"text": "好的，我會留在這裡。"},
+            20,
+            6,
+            note="簡短確認明確界線，不繼續追問。",
+        ),
+        Decision(
+            "respect_boundary",
+            {},
+            22,
+            1,
+            note="停止底盤並以尊重界線的結果結束 Episode。",
+        ),
+        Decision(
+            "speak",
+            {"text": "我在，你現在需要什麼？"},
+            20,
+            8,
+            note="對新的明確請求回應；它可以繞過 suppression。",
+        ),
+        Decision("done", {}, 22, 1, note="新的明確互動已回應。"),
+    ),
+)
+
+
 CRYING_CARE = AcceptanceScenario(
     name="crying-care",
     title="有人在 Misty 面前哭泣",
@@ -533,7 +584,7 @@ CRYING_CARE = AcceptanceScenario(
     actors=("person",),
     inputs=(),
     decisions=(),
-    text_scripts=(CALMING_SUPPORT,),
+    text_scripts=(CALMING_SUPPORT, RESPECT_BOUNDARY),
     visual_fixtures=CARE_VISUAL_FIXTURES,
     visual_scripts=(
         VisualScenarioScript(
@@ -698,6 +749,7 @@ __all__ = [
     "SPEAKER_HANDOFF",
     "A_THEN_B",
     "COME_CLOSER",
+    "RESPECT_BOUNDARY",
     "COME_CLOSER_HAZARD",
     "COME_CLOSER_TARGET_LOST",
     "Placement",

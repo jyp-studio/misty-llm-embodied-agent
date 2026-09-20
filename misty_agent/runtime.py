@@ -98,6 +98,15 @@ class CueDropReason(str, Enum):
     EPISODE_ERROR = "episode_error"
 
 
+class CueSuppressionClearReason(str, Enum):
+    """Why a short-lived anonymous throttle no longer applies."""
+
+    EXPIRED = "expired"
+    TRACK_LOST = "track_lost"
+    SHUTDOWN = "shutdown"
+    RUNTIME_STOPPED = "runtime_stopped"
+
+
 class AudioAttentionStage(str, Enum):
     """The local audio gate stage that produced an observable fact."""
 
@@ -489,6 +498,36 @@ class CueDropped(AttentionRecord):
 
 
 @dataclass(frozen=True, kw_only=True)
+class CueSuppressionStarted(AttentionRecord):
+    track_reference: AnonymousTrackReference
+    expires_at_s: float
+    type: str = "cue_suppression_started"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueSuppressed(AttentionRecord):
+    cue_id: str
+    cue_kind: CueKind
+    track_reference: AnonymousTrackReference
+    remaining_s: float
+    type: str = "cue_suppressed"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueSuppressionBypassed(AttentionRecord):
+    cue_id: str
+    track_reference: AnonymousTrackReference
+    type: str = "cue_suppression_bypassed"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CueSuppressionCleared(AttentionRecord):
+    track_reference: AnonymousTrackReference
+    reason: CueSuppressionClearReason
+    type: str = "cue_suppression_cleared"
+
+
+@dataclass(frozen=True, kw_only=True)
 class EpisodeOpened(AttentionRecord):
     cue_id: str
     type: str = "episode_opened"
@@ -526,6 +565,10 @@ RuntimeRecord = Union[
     CueDeduplicated,
     CueReplaced,
     CueDropped,
+    CueSuppressionStarted,
+    CueSuppressed,
+    CueSuppressionBypassed,
+    CueSuppressionCleared,
     EpisodeOpened,
     EpisodeCompleted,
     RuntimeFailed,
@@ -548,6 +591,143 @@ class _PendingCue:
 def _by_urgency(item: "_PendingCue") -> Tuple[int, float, int]:
     """Explicit requests first, then oldest, then earliest arrival."""
     return (-item.priority, item.observed_at_s, item.arrival_sequence)
+
+
+class _CueSuppressions:
+    """Short anonymous throttles, owned by one run and dying with it.
+
+    Holds a track token, an expiry and whether the track was seen — no name,
+    no embedding, nothing that outlives `run()`. Keeping the dict, the
+    empty-scene timer and the records that describe them in one place is
+    what stops the loop from spelling the same rule several ways.
+    """
+
+    def __init__(self, config: Settings, now: Callable[[], float]) -> None:
+        self._config = config
+        self._now = now
+        #: Anonymous track token to the time its throttle lapses.
+        self._by_track: dict[AnonymousTrackReference, float] = {}
+        #: When the visual gate first reported nobody in frame, or `None`
+        #: while somebody is there.
+        self._empty_since: Optional[float] = None
+
+    @staticmethod
+    def track_of(item: RuntimeInput) -> Optional[AnonymousTrackReference]:
+        """The anonymous token an input carries, read in exactly one place."""
+        reference = getattr(item, "facts", {}).get("track_reference")
+        return (
+            AnonymousTrackReference(str(reference))
+            if reference is not None
+            else None
+        )
+
+    def start(self, cue: "_PendingCue", records: list) -> None:
+        track = self.track_of(cue.input)
+        if track is None:
+            return
+        expires_at_s = round(self._now() + self._config.cue_suppression_s, 3)
+        self._by_track[track] = expires_at_s
+        records.append(
+            CueSuppressionStarted(
+                t=self._now(),
+                track_reference=track,
+                expires_at_s=expires_at_s,
+            )
+        )
+
+    def applies_to(self, cue: "_PendingCue", records: list) -> bool:
+        """Whether this cue is throttled. An Explicit Request never is, and
+        asking clears the throttle: the person came back of their own accord."""
+        track = self.track_of(cue.input)
+        if track is None or track not in self._by_track:
+            return False
+        if cue.cue_kind is CueKind.EXPLICIT_REQUEST:
+            self.bypass(cue, records)
+            return False
+        records.append(
+            CueSuppressed(
+                t=self._now(),
+                cue_id=cue.cue_id,
+                cue_kind=cue.cue_kind,
+                track_reference=track,
+                remaining_s=round(
+                    max(0.0, self._by_track[track] - self._now()), 3
+                ),
+            )
+        )
+        return True
+
+    def drop_suppressed(self, pending: list, records: list) -> None:
+        """Throttle cues already queued. Explicit Requests are left alone
+        rather than bypassed: one that is still waiting has not been chosen
+        yet, and clearing the throttle here would do it too early."""
+        for cue in tuple(pending):
+            if cue.cue_kind is CueKind.EXPLICIT_REQUEST:
+                continue
+            if self.applies_to(cue, records):
+                pending.remove(cue)
+
+    def bypass(self, cue: "_PendingCue", records: list) -> None:
+        track = self.track_of(cue.input)
+        if (
+            cue.cue_kind is not CueKind.EXPLICIT_REQUEST
+            or track is None
+            or track not in self._by_track
+        ):
+            return
+        self._by_track.pop(track)
+        records.append(
+            CueSuppressionBypassed(
+                t=self._now(),
+                cue_id=cue.cue_id,
+                track_reference=track,
+            )
+        )
+
+    def expire(self, records: list) -> None:
+        now = self._now()
+        for track, expires_at_s in tuple(self._by_track.items()):
+            if now >= expires_at_s:
+                self._by_track.pop(track)
+                records.append(
+                    CueSuppressionCleared(
+                        t=now,
+                        track_reference=track,
+                        reason=CueSuppressionClearReason.EXPIRED,
+                    )
+                )
+
+    def noticed(self, notice: RuntimeInput, records: list) -> None:
+        """Watch the visual gate for a track that has actually left.
+
+        Every anonymous token is minted by that gate, so an empty scene is
+        what "the track disappeared" means. But the gate reports empty on
+        every frame with no detection, so one of them is somebody turning
+        away, not somebody leaving. Only sustained emptiness releases a
+        throttle: releasing early is how a person who asked for space gets
+        pestered again, which is the thing this exists to stop.
+        """
+        if not isinstance(notice, VisualAttentionNotice):
+            return
+        if notice.outcome is not VisualAttentionOutcome.EMPTY:
+            self._empty_since = None
+            return
+        if self._empty_since is None:
+            self._empty_since = self._now()
+        if self._now() - self._empty_since < self._config.track_lost_after_s:
+            return
+        self.clear_all(CueSuppressionClearReason.TRACK_LOST, records)
+
+    def clear_all(self, reason: CueSuppressionClearReason, records: list) -> None:
+        for track in tuple(self._by_track):
+            self._by_track.pop(track)
+            records.append(
+                CueSuppressionCleared(
+                    t=self._now(),
+                    track_reference=track,
+                    reason=reason,
+                )
+            )
 
 
 @dataclass(frozen=True)
@@ -610,6 +790,7 @@ class SocialAgentRuntime:
         records: list[RuntimeRecord] = [AttentionStarted(t=0.0)]
         episodes: list[RuntimeEpisode] = []
         pending: list[_PendingCue] = []
+        suppressions = _CueSuppressions(self._config, self._elapsed)
         cue_count = 0
         ending = RuntimeEnding.INPUT_EXHAUSTED
         phase = RuntimePhase.INPUT_START
@@ -617,10 +798,13 @@ class SocialAgentRuntime:
             self._source.start()
             while not self._stop_requested.is_set():
                 phase = RuntimePhase.INPUT
+                suppressions.expire(records)
                 self._discard_expired(pending, records)
+                suppressions.drop_suppressed(pending, records)
                 if pending:
                     pending.sort(key=_by_urgency)
                     cue = pending.pop(0)
+                    suppressions.bypass(cue, records)
                     records.append(
                         CueDequeued(
                             t=self._elapsed(),
@@ -635,6 +819,7 @@ class SocialAgentRuntime:
                     if arrival is None or self._stop_requested.is_set():
                         break
                     if self._record_notice(arrival, records):
+                        suppressions.noticed(arrival.input, records)
                         continue
                     cue_count += 1
                     cue = self._cue(cue_count, arrival)
@@ -646,6 +831,9 @@ class SocialAgentRuntime:
                             pending,
                             records,
                         )
+                        continue
+                    suppressions.expire(records)
+                    if suppressions.applies_to(cue, records):
                         continue
 
                 phase = RuntimePhase.CUE_SELECTION
@@ -682,10 +870,14 @@ class SocialAgentRuntime:
                         waiting_inputs = self._source.read_available()
                         for waiting in waiting_inputs:
                             if self._record_notice(waiting, records):
+                                suppressions.noticed(waiting.input, records)
                                 continue
                             cue_count += 1
                             queued = self._cue(cue_count, waiting)
                             records.append(self._detected(queued))
+                            suppressions.expire(records)
+                            if suppressions.applies_to(queued, records):
+                                continue
                             self._enqueue(
                                 queued,
                                 active_cue_id=cue.cue_id,
@@ -708,14 +900,14 @@ class SocialAgentRuntime:
                     # untracked request is assumed to be the current speaker
                     # (the spec's first-version assumption) and is not
                     # announced; it still opens its own Episode afterwards.
-                    active_track = cue.input.facts.get("track_reference")
+                    active_track = _CueSuppressions.track_of(cue.input)
                     waiting = next(
                         (
                             item
                             for item in sorted(pending, key=_by_urgency)
                             if item.cue_kind is CueKind.EXPLICIT_REQUEST
                             and item.cue_id not in announced
-                            and item.input.facts.get("track_reference")
+                            and _CueSuppressions.track_of(item.input)
                             not in (None, active_track)
                         ),
                         None,
@@ -752,6 +944,9 @@ class SocialAgentRuntime:
                         outcome=outcome.outcome,
                     )
                 )
+                if outcome.boundary_respected:
+                    suppressions.start(cue, records)
+                    suppressions.drop_suppressed(pending, records)
                 if active_input_failure is not None:
                     ending = RuntimeEnding.RUNTIME_ERROR
                     self._drop_all(
@@ -800,6 +995,14 @@ class SocialAgentRuntime:
                         message=str(stop_error),
                     )
                 )
+            suppressions.clear_all(
+                (
+                    CueSuppressionClearReason.SHUTDOWN
+                    if ending is RuntimeEnding.SHUTDOWN
+                    else CueSuppressionClearReason.RUNTIME_STOPPED
+                ),
+                records,
+            )
             self.state = RuntimeState.STOPPED
             records.append(AttentionStopped(t=self._elapsed(), ending=ending))
 
@@ -1049,6 +1252,11 @@ __all__ = [
     "CueDetected",
     "CueQueued",
     "CueReplaced",
+    "CueSuppressed",
+    "CueSuppressionBypassed",
+    "CueSuppressionCleared",
+    "CueSuppressionClearReason",
+    "CueSuppressionStarted",
     "EvidenceKind",
     "MAX_SELECTED_IMAGE_BYTES",
     "EpisodeCompleted",

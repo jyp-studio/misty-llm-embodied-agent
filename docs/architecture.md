@@ -245,9 +245,27 @@ raw image/audio bytes. This persistent-storage policy is separate from hosted
 processing: configured ASR/VLM/LLM providers may receive the bounded selected
 Evidence needed for the current Episode.
 
-This is ticket 12's vertical slice, not the completed social system. Refusal
-suppression and the remaining acceptance scenarios are future tickets in
-`.scratch/social-react-runtime/`.
+An explicit request for space is not classified by Runtime text matching. The
+model selects the typed `respect_boundary` Tool, which calls `Robot.halt()` and
+ends the Episode with a boundary-respected outcome. Runtime may then retain one
+anonymous track token plus an expiry: same-track Care/Social cues are observable
+as suppressed, another anonymous track remains eligible, and an Explicit
+Request removes the throttle and opens immediately. Expiry, shutdown and run
+completion clear the state, and so does the visual gate reporting an empty
+scene for `track_lost_after_s` — sustained, because the gate reports empty on
+every frame with no detection and one of those is somebody turning away, not
+leaving. Releasing early is how a person who asked for space gets pestered
+again. No name, face embedding or cross-session identity is part of Cue
+Suppression.
+
+An Episode-ending Tool that did something physical records an Observation
+before the Episode closes, so `respect_boundary`'s halt result is in the
+Journal rather than lost with the Turn. `done` returns nothing and records
+nothing, which is why the golden Journals are untouched.
+
+This is ticket 13's vertical slice, not the completed social system. Bilingual
+emergency boundaries and the remaining acceptance scenarios are future tickets
+in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

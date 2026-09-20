@@ -123,6 +123,7 @@ class EpisodeOutcome:
     outcome: str
     turns: int
     steps: int
+    boundary_respected: bool = False
 
 
 def run_episode(
@@ -190,6 +191,7 @@ def run_episode(
     # therefore what happens when the `for` runs out, which is why it needs no
     # branch of its own and cannot be forgotten.
     outcome = "turn_limit"
+    boundary_respected = False
 
     def handoff(turn: int) -> None:
         notice = boundary()
@@ -254,7 +256,28 @@ def run_episode(
             break
         steps += dispatched.steps
         if dispatched.ends_episode:
+            # An ending Tool that did something physical still owes the
+            # Journal an account of it: `respect_boundary` halts the base,
+            # and whether that halt was accepted is behaviour, which the
+            # Journal is the only record of. `done` returns nothing, so its
+            # Journal — and every golden built on it — is unchanged.
+            if dispatched.result:
+                try:
+                    snapshot = perception.snapshot()
+                    if ctx.target is not None:
+                        snapshot = replace(snapshot, target=ctx.target.as_facts())
+                    journal.record(
+                        Observation,
+                        turn=turn,
+                        result=dispatched.result,
+                        snapshot=snapshot,
+                    )
+                except Exception as error:
+                    _record_failure_and_halt(journal, ctx.robot, "perception", error)
+                    outcome = "error"
+                    break
             boundary()
+            boundary_respected = dispatched.boundary_respected
             outcome = "done"
             break
 
@@ -301,7 +324,12 @@ def run_episode(
             break
 
     journal.record(EpisodeFinished, outcome=outcome, turns=turns, steps=steps)
-    return EpisodeOutcome(outcome=outcome, turns=turns, steps=steps)
+    return EpisodeOutcome(
+        outcome=outcome,
+        turns=turns,
+        steps=steps,
+        boundary_respected=boundary_respected,
+    )
 
 
 def _asked_for(decision: Decision, tool_call_id: str) -> Dict[str, Any]:

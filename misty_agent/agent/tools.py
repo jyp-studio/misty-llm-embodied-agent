@@ -145,6 +145,7 @@ class Tool:
     args_model: Type[BaseModel]
     handler: Callable[[BaseModel, ToolContext], Mapping[str, Any]]
     ends_episode: bool
+    boundary_respected: bool
 
     def schema(self) -> Dict[str, Any]:
         """What the model is told, generated from the argument type.
@@ -187,10 +188,11 @@ class Dispatched:
 
     accepted: bool
     ends_episode: bool = False
+    boundary_respected: bool = False
     result: Optional[Mapping[str, Any]] = None
     reason: Optional[str] = None
     #: Drive commands this call issued, for `episode_finished.steps`. Zero for
-    #: every Tool that does not move the base, which is ten of the eleven.
+    #: every Tool that does not move the base.
     steps: int = 0
 
 
@@ -206,6 +208,7 @@ class ToolRegistry:
         description: str,
         *,
         ends_episode: bool = False,
+        boundary_respected: bool = False,
     ) -> Callable[[Callable[..., Mapping[str, Any]]], Callable[..., Mapping[str, Any]]]:
         def register(handler):
             if not TOOL_NAME.fullmatch(name):
@@ -215,6 +218,13 @@ class ToolRegistry:
                 )
             if name in self._tools:
                 raise ValueError(f"a Tool named {name!r} is already registered")
+            if boundary_respected and not ends_episode:
+                raise ValueError(
+                    f"{name!r} declares boundary_respected without "
+                    f"ends_episode: respecting a boundary means finishing, "
+                    f"and a Tool that claimed only the first would open a "
+                    f"Cue Suppression while its Episode carried on"
+                )
             args_model = _argument_type(handler)
             refuse_control_parameters(
                     f"Tool {name!r}", _declared_names(args_model), commanded=True
@@ -225,6 +235,7 @@ class ToolRegistry:
                 args_model=args_model,
                 handler=handler,
                 ends_episode=ends_episode,
+                boundary_respected=boundary_respected,
             )
             return handler
 
@@ -345,6 +356,7 @@ def dispatch(
     return Dispatched(
         accepted=True,
         ends_episode=tool.ends_episode,
+        boundary_respected=tool.boundary_respected,
         result=result,
         steps=_steps_in(result),
     )
@@ -684,6 +696,18 @@ def build_registry() -> ToolRegistry:
     )
     def done(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
         return {}
+
+    @registry.tool(
+        "respect_boundary",
+        "Immediately stop movement and finish after the person explicitly "
+        "asks to be left alone or not approached.",
+        ends_episode=True,
+        boundary_respected=True,
+    )
+    def respect_boundary(
+        args: NoArguments, ctx: ToolContext
+    ) -> Mapping[str, Any]:
+        return _effected(ctx.robot.halt())
 
     @registry.tool(
         "observe_target",

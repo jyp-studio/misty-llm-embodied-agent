@@ -2800,3 +2800,38 @@ A→B Demo 卡升到 ticket 12，當次 flow 由實際 Evidence／Journal 推導
 face identity、真實 LLM 輸出或 Misty II 證據。Cue queue 的可觀察 records 只有 run-local cue id、匿名
 track／priority／timing／queue size；ticket 13 的 refusal suppression 也只能沿用匿名短期狀態，不能
 重新引入 personal memory。ADR 0003 記錄這個預設；未來若要長期 profile，必須另做 consent policy。
+
+### 16.62 尊重明確拒絕，並以短期匿名 Cue Suppression 避免重複打擾（ticket 13）
+
+Runtime 不以關鍵字解讀「不要靠近」。Persona 要求 model 在對方明確要求空間時
+停止追問與後續接近；model 可先用任意簡短、合宜的話回應，再選擇 typed
+`respect_boundary` Tool。該 Tool 呼叫共用 `Robot.halt()`、結束 Episode，並在
+`EpisodeOutcome` 留下 `boundary_respected` typed fact；沒有固定台詞或另一條回應 pipeline。
+
+`SocialAgentRuntime` 只在該 outcome 之後建立 suppression，狀態只含 run-local anonymous
+track token 與 `cue_suppression_s` 截止時間。同 track 的 Care Cue 或 Social Invitation
+在到期前留下 `cue_suppressed`、不開 Episode；不同 track 不受影響。新 Explicit
+Request 留下 bypass record、移除 suppression 並立即進入排程。TTL 以 fake clock 的
+`now >= expires_at` 為清除邊界；視覺 gate 回報空場景、Runtime shutdown 或 run 結束也都
+留下 typed clear record 並釋放狀態。
+
+Care Demo 的 `respect-boundary` 文字 fixture 在同一次當前程式執行中顯示：model 的
+簡短回應、`respect_boundary`、controller halt、30 秒倒數、被抑制的非明確 cue、以及
+後續 Explicit Request 繞過。話語與 model decisions 是明確標示的 scripted fixtures，robot
+是模擬；專案仍無 Misty II，halt 行為沒有真機驗證。
+
+補記（ticket 13 review）：suppression 狀態改由 `_CueSuppressions` 持有，anonymous token 的讀取只有
+一個出處（handoff 通知也改用它）。Track 消失的判定原本是視覺 gate 任何一個 EMPTY notice 就清掉全部
+suppression；但 gate 對每個沒有偵測到人的 frame 都會發 EMPTY，所以那等於「對方轉頭一下」就解除節流，
+正是這張票要防止的重複打擾。改為必須持續空景達 `track_lost_after_s`（預設 1.0 秒，SIMULATED，對齊
+本機 gate 自己的 track TTL）才算離開。曾短暫加入「只清視覺 track」的區分，後來拿掉：production 的
+anonymous token 一律由視覺 gate 產生，audio-only track 根本不會有 token，那個區分無法成立。
+
+`respect_boundary` 會 halt，但 ends_episode 的 Tool 原本不寫 Observation，於是 halt 成敗完全不進
+Journal，Demo 也就無從誠實呈現。改為：ends_episode 且有 result 的 Tool 在收尾前記一筆 Observation
+（含 Snapshot）。`done` 回傳空 result，因此不記、goldens 逐字不變。Demo 依實際結果顯示「已發出 halt」
+或「halt 未成功」。`boundary_respected` 仍由 Tool 註冊宣告而非 halt 結果決定：對方要求空間這件事不因
+馬達沒回應而改變，suppression 照樣成立。註冊時驗證 `boundary_respected` 必須同時 `ends_episode`。
+
+Demo 的 `respect-boundary` fixture 改為兩個非明確 cue（一個在 Episode 進行中排隊、一個稍後抵達），
+倒數因此真的在倒數；`_CUE_WORDING` 讓排隊與判定共用一份措辭，非明確 cue 不再被引號包成「人說」。

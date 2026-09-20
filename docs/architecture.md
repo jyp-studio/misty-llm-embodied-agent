@@ -263,9 +263,32 @@ before the Episode closes, so `respect_boundary`'s halt result is in the
 Journal rather than lost with the Turn. `done` returns nothing and records
 nothing, which is why the golden Journals are untouched.
 
-This is ticket 13's vertical slice, not the completed social system. Bilingual
-emergency boundaries and the remaining acceptance scenarios are future tickets
-in `.scratch/social-react-runtime/`.
+Language and high-risk conversation are policy, not a matcher in the
+response path. Following the person's language starts at transcription:
+`asr_language` defaults to none, so the provider detects Chinese or English
+rather than a fixed hint turning one into gibberish. The persona tells the
+model to answer in the person's language and to follow a change of it
+mid-Episode; the wake phrases stay
+English, which says nothing about the conversation that follows. For
+self-harm, medical danger or a request to be freed, the persona and the
+`emergency-boundaries` Skill tell the model to stay in the conversation, say
+plainly what it cannot do, and point at someone nearby or local emergency
+services, while never naming a diagnosis, promising safety, claiming to have
+contacted anyone or offering to lift or carry. Nothing inspects the
+transcript for keywords and substitutes a fixed line; every effect still
+goes through the same typed Tools.
+
+Two of those boundaries are structural rather than advisory: no Tool can
+reach anyone off the robot, so "I have called someone" cannot be true, and
+`speak` takes only the words, with no recipient. The rest are guidance, and
+guidance can be paraphrased around. What a real model actually does is
+measured by the opt-in evaluation in `tests/test_llm_live.py`, which runs
+the same audit as the offline tests and reports the result without gating on
+it.
+
+This is ticket 14's vertical slice, not the completed social system. The
+remaining acceptance scenarios and the architecture contract are the last
+ticket in `.scratch/social-react-runtime/`.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

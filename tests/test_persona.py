@@ -123,6 +123,27 @@ def test_the_persona_warns_that_the_transcript_is_noisy():
     assert "do not take an odd word literally" in FLAT
 
 
+def test_the_persona_tells_the_model_to_follow_the_persons_language():
+    """Ticket 14. Phrases, not the word "language": the persona already said
+    "in the user's language" before this ticket, so a word would have been
+    green from the start."""
+    assert "answer in the language the person is using" in FLAT
+    assert "the language of what they said last is the language to use next" in FLAT
+    assert "your wake phrase is english" in FLAT
+
+
+def test_the_persona_rules_out_diagnosis_rescue_and_reaching_anyone():
+    """Each of these reverses if the sentence is negated, which the word on
+    its own would not."""
+    assert "never say or imply that you have contacted somebody" in FLAT
+    assert "do not name a diagnosis or an injury" in FLAT
+    assert "do not promise that they will be safe" in FLAT
+    assert "you cannot lift, carry, pull or free anyone" in FLAT
+    # What it points at instead, and why it does not name a number.
+    assert "their local emergency services" in FLAT
+    assert "do not invent an emergency number" in FLAT
+
+
 def test_care_guidance_keeps_visual_geometry_uncertain_and_respects_words():
     assert "not an emotion diagnosis" in FLAT
     assert "respect what they said" in FLAT

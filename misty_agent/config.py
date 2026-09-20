@@ -131,9 +131,16 @@ class Settings(BaseSettings):
         default="gpt-4o-mini-transcribe",
         description="Hosted transcription model, replacing local Whisper.",
     )
-    asr_language: str = Field(
-        default="en",
-        description="ISO-639-1 hint for the transcriber.",
+    asr_language: str | None = Field(
+        default=None,
+        description=(
+            "ISO-639-1 hint for the transcriber, or None to let the provider "
+            "detect it. None by default because Misty is spoken to in Chinese "
+            "and English: a fixed hint would transcribe one of them as the "
+            "other, and the language the model answers in follows the "
+            "transcript. Detection quality is the provider's and is "
+            "hardware-unverified here, like everything on the audio path."
+        ),
     )
     asr_ignored_phrases: tuple[str, ...] = Field(
         default=("thank you", "thanks", "thank"),

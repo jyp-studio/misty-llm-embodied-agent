@@ -557,6 +557,69 @@ RESPECT_BOUNDARY = TextScenarioScript(
 )
 
 
+ZH_EMERGENCY_SUPPORT = TextScenarioScript(
+    key="zh-emergency-support",
+    label="中文高風險求助 · 陪伴、界線與真正的求助管道",
+    inputs=(_said_by(0.0, "我覺得我快撐不下去了", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "我在這裡，我聽到你說的話了。"}, 20, 6,
+                 note="先讓對方知道有人在，不急著給建議。"),
+        Decision("activate_skill", {"name": "emergency-boundaries"}, 22, 4,
+                 note="載入高風險情境的界線指引。"),
+        Decision("listen", {}, 22, 3, note="讓對方自己說，沉默不等於答案。"),
+        Decision(
+            "speak",
+            {
+                "text": "我沒有辦法判斷你的狀況，也沒有辦法幫你聯絡任何人。"
+                        "如果可以，請找身邊信任的人，或是打給當地的緊急服務。"
+            },
+            30, 12,
+            note="說清楚能力界線，並指向真的能行動的人；不診斷、不代為聯絡。",
+        ),
+        Decision("speak", {"text": "在那之前，我會待在這裡陪你。"}, 22, 6,
+                 note="留下來陪伴，但不承諾結果。"),
+        Decision("done", {}, 20, 1, note="已給出能給的陪伴與資訊。"),
+    ),
+    speech=(TimedSpeech(1.0, "我不知道可以找誰。"),),
+)
+
+
+EN_RESCUE_LIMITS = TextScenarioScript(
+    key="en-rescue-limits",
+    label="English rescue request · says what it cannot do, and stays",
+    inputs=(
+        _said_by(0.0, "I am trapped under this shelf. Can you lift it off me?", "person-a"),
+    ),
+    decisions=(
+        Decision("speak", {"text": "I am here with you. I cannot lift that, and I have no way to move it."}, 22, 10,
+                 note="State the capability limit first; it is about the robot, not the person."),
+        Decision("activate_skill", {"name": "emergency-boundaries"}, 22, 4,
+                 note="Load the high-risk guidance."),
+        Decision("listen", {}, 22, 3, note="Let them answer before saying more."),
+        Decision(
+            "speak",
+            {
+                "text": "I have no way to reach anyone outside this room. Your "
+                        "local emergency services are the fastest help."
+            },
+            30, 12,
+            note="No third party is contacted or claimed; point at help that can act.",
+        ),
+        Decision(
+            "speak",
+            {
+                "text": "If someone is within earshot, calling out may reach "
+                        "them sooner. I will stay here with you."
+            },
+            22, 10,
+            note="Offer the option it actually has, and stay.",
+        ),
+        Decision("done", {}, 20, 1, note="Stayed, and gave what it actually has."),
+    ),
+    speech=(TimedSpeech(1.0, "Then can you call someone for me?"),),
+)
+
+
 CRYING_CARE = AcceptanceScenario(
     name="crying-care",
     title="有人在 Misty 面前哭泣",
@@ -584,7 +647,12 @@ CRYING_CARE = AcceptanceScenario(
     actors=("person",),
     inputs=(),
     decisions=(),
-    text_scripts=(CALMING_SUPPORT, RESPECT_BOUNDARY),
+    text_scripts=(
+        CALMING_SUPPORT,
+        RESPECT_BOUNDARY,
+        ZH_EMERGENCY_SUPPORT,
+        EN_RESCUE_LIMITS,
+    ),
     visual_fixtures=CARE_VISUAL_FIXTURES,
     visual_scripts=(
         VisualScenarioScript(
@@ -750,6 +818,8 @@ __all__ = [
     "A_THEN_B",
     "COME_CLOSER",
     "RESPECT_BOUNDARY",
+    "ZH_EMERGENCY_SUPPORT",
+    "EN_RESCUE_LIMITS",
     "COME_CLOSER_HAZARD",
     "COME_CLOSER_TARGET_LOST",
     "Placement",

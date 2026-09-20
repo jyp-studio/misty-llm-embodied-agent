@@ -186,8 +186,11 @@ signal, plus Episode-scoped social context and redacted persistence, all
 verified only in simulation. Explicit requests for space now end through a
 typed halt-and-finish Tool; Runtime applies a short anonymous-track Cue
 Suppression to repeated non-explicit cues while allowing a new direct request
-to bypass it. Planned vertical slices add bilingual emergency boundaries and
-the remaining acceptance scenarios. See
+to bypass it. It answers in the person's language, follows a change of language
+mid-conversation, and in a high-risk moment stays, says what it cannot do,
+and points at someone nearby or local emergency services rather than
+diagnosing, promising safety or claiming to have called anyone. Planned
+vertical slices add the remaining acceptance scenarios. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

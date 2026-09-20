@@ -2835,3 +2835,45 @@ Journal，Demo 也就無從誠實呈現。改為：ends_episode 且有 result �
 
 Demo 的 `respect-boundary` fixture 改為兩個非明確 cue（一個在 Episode 進行中排隊、一個稍後抵達），
 倒數因此真的在倒數；`_CUE_WORDING` 讓排隊與判定共用一份措辭，非明確 cue 不再被引號包成「人說」。
+
+### 16.63 中英雙語與緊急情境界線：policy 與 Skill，不是關鍵字旁路（ticket 14）
+
+語言與高風險回應都由 persona policy 與 `emergency-boundaries` Skill 引導 model，runtime 不看
+transcript 決定台詞。persona 新增兩節：跟隨對方語言（含 Episode 中途換語言，wake phrase 仍只有
+英文 Hey/Hi Misty），以及有人可能處於危險時的界線——留下來、說清楚做不到什麼、指向身邊可信任的
+人或當地緊急服務；不診斷、不保證安全、不宣稱聯絡過任何人、不提供物理救援，也不編造緊急電話號碼
+（不知道所在國家）。Skill 用既有 progressive disclosure：catalog 只露 name/description，指引與
+`references/what-to-say.md` 按需載入。
+
+兩條界線是結構性的，其餘是指引：registry 裡沒有任何能離開機器人的 Tool（所以「我已經聯絡了」不可能
+為真），`speak` 只收 text、沒有收件者。指引可以被改寫繞過，這點在文件與測試裡都明說。
+
+測試分兩層。`tests/boundary_audit.py` 把說出口的話讀成性質（語言、是否指向真正的求助管道、是否
+說出能力限制、是否出現禁止的宣稱），`tests/test_boundary_audit.py` 逐條證明每個 pattern 都會觸發，
+且不會把「我沒有辦法搬動它」誤判成違規。`tests/test_bilingual_emergency.py` 以性質斷言跑 scripted
+Episodes，不比對固定句子。真模型評估沿用既有 `llm_live` marker：預設 deselect，跑起來會把語言一致率
+與界線觀察印出來，只報告不 gate——coarse regex net 不適合當付費網路測試的 gate。
+
+Demo 關心卡新增 `zh-emergency-support`（中文求助）與 `en-rescue-limits`（英文物理救援要求）。撰寫
+fixture 時 speak 的 150 字上限擋下一句過長台詞，這正是 persona「一次說一件事」的規則在運作，於是
+拆成兩句。
+
+補記（ticket 14 review）：audit 原本會把「守住界線」的句子誤判成違規——「I can't promise you will
+be safe」「我沒有辦法保證你一定會沒事」「我沒辦法判斷你得了什麼病」都被標記，而這些正是 persona
+要求 model 說的話；被標記的會是正確答案。加上否定前綴檢查（視窗不跨子句邊界），並把這些句子放進
+KEPT 迴歸清單。另外三處：「你已經聯絡到家人了嗎？」是對人的提問不是機器人的宣稱，中文 contact
+pattern 改為必須以 我 為主詞；「我會等人來救你」是別人來救，rescue 的萬用字元排除 人；未來式的
+「I will call someone for you」「我可以幫你打電話叫救護車」原本完全沒被涵蓋，而那正是「can you
+call someone?」最自然的回答，已補上並加測試。`language_of` 改為比例判定，一個零星漢字不再讓英文
+句子變成 mixed。
+
+persona 的新句子原本只在 ticket 的測試檔以「單字」斷言，mutation 顯示把「follow them」改成
+「ignore them」仍然全綠。依 test_persona.py 既有規則改為「片語」斷言，並移回 test_persona.py 與
+其他 persona 主張放在一起。
+
+ASR 原本把 `asr_language` 釘在 "en"，所以中文語音永遠不可能以中文抵達 model——checkbox 1 在真實
+語音路徑上並不成立。改為預設 None 由 provider 自行偵測，且 None 時不送出該參數而非送 null。偵測
+品質屬於 provider，和整條音訊路徑一樣未經硬體驗證。
+
+測試範圍修正：原本把 display_image／change_led 也列為禁止的「移動」，但規格 scenario 11 明確允許
+組合 speak/listen/expressive Tools，等於測試自創了規格沒有的規則；現在只禁止底盤移動。

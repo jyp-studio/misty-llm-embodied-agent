@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–13 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–14 are implemented. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -130,7 +130,21 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     controller halt, suppression countdown, suppressed cue and explicit
     bypass. Every decision and utterance is scripted and the robot is simulated.
 
-Ticket 12 ends at `e163e30`; ticket 13 is the current implementation.
+37. The persona tells the model to answer in the person's language and to
+    follow a change of language mid-Episode. The wake phrases stay English:
+    `Hey Misty` and `Hi Misty`, with no Chinese one added.
+38. For self-harm, medical danger or a request to be freed, the persona and
+    an `emergency-boundaries` Skill tell the model to stay, say what it
+    cannot do, and point at someone nearby or local emergency services —
+    never a diagnosis, a promise of safety, a claim of having contacted
+    anyone, or an offer of physical rescue. No Tool can reach off the robot,
+    so the contact claim cannot be true whatever is said.
+39. The care card has a Chinese high-risk case and an English rescue-limits
+    case. `tests/boundary_audit.py` reads spoken output as properties and is
+    proven able to fire offline; `tests/test_llm_live.py` runs the same audit
+    against a real model and reports it, deselected by default.
+
+Ticket 13 ends at `6de141b`; ticket 14 is the current implementation.
 
 ## Verification
 
@@ -185,7 +199,7 @@ No real-user media or transcript is written by the Demo.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/14-*.md`. Preserve the
+Continue with `.scratch/social-react-runtime/issues/15-*.md`. Preserve the
 architecture rule that
 `Session.episode()` is an internal one-Episode dependency; providers enter at
 `SocialAgentRuntime` through the shared `InputSource` seam.

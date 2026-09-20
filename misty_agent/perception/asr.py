@@ -172,10 +172,14 @@ class OpenAITranscriber:
                 if timeout_s is not None
                 else self._client
             )
+            # Omitted rather than sent as null when there is no hint: the
+            # provider detects the language itself, which is what a
+            # bilingual deployment needs.
+            hint = {"language": self._language} if self._language else {}
             response = client.audio.transcriptions.create(
                 model=self._model,
                 file=("utterance.wav", audio, "audio/wav"),
-                language=self._language,
+                **hint,
             )
             text = (response.text or "").strip()
         except Exception as exc:

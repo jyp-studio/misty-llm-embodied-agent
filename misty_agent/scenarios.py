@@ -60,6 +60,11 @@ class AudioFixture:
     label: str
     asset: str
     transcript: str
+    #: Whether the card's other timed cues follow the recording. The greeting
+    #: card's recordings share a queue-stress timeline (dedupe, replace,
+    #: overflow, expiry) that opens several Episodes; a fixture that stands
+    #: for one plain greeting has to leave it out, or it is not one greeting.
+    with_other_cues: bool = True
 
 
 @dataclass(frozen=True)
@@ -494,6 +499,13 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             label="Hey … Misty · 含停頓",
             asset="hey_misty_pause.wav",
             transcript="Misty，你好！",
+        ),
+        AudioFixture(
+            key="hey-greeting-only",
+            label="Hey Misty · 只有一句問候",
+            asset="hey_misty_normal.wav",
+            transcript="Misty，你好！",
+            with_other_cues=False,
         ),
     ),
     visual_fixtures=VISUAL_FIXTURES,

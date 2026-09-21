@@ -217,7 +217,10 @@ def run_fixture(
                 clock=clock,
                 config=config,
             ),
-            ScenarioInputAdapter(clock, card.inputs[1:]),
+            ScenarioInputAdapter(
+                clock,
+                card.inputs[1:] if selected_audio.with_other_cues else (),
+            ),
         )
         input_kind = "audio"
     elif selected_visual is not None:
@@ -339,14 +342,15 @@ ACCEPTANCE_CONTRACTS: Tuple[AcceptanceContract, ...] = (
         number=3,
         situation="A wake phrase and an ordinary greeting: answer, then finish.",
         card="greeting",
-        fixture="hey-normal",
+        # The recording alone, without the queue-stress cues the other
+        # greeting recordings share, so the count can be what the spec
+        # sentence says: one greeting, one Episode.
+        fixture="hey-greeting-only",
         opens_episode=True,
         requires_tools=("speak",),
         forbidden_tools=_NO_APPROACH,
         cue_kind="explicit_request",
-        # No count: this fixture also carries the queue-stress inputs the
-        # bounded-queue coverage needs, so it opens more than the one
-        # greeting the spec sentence describes.
+        episodes=1,
     ),
     AcceptanceContract(
         number=4,

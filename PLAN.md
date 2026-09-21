@@ -2907,3 +2907,9 @@ speak，任何會說話的 Episode 都滿足。加上 `halts`、`episodes`、`cu
 Tool 名字會被 registry 比對抓到（原本拼錯等於靜默關閉該條）、entry-point 測試不再把 app.py 排除
 在外（原本排除的正是最可能出現繞道的檔案）、`ChainedScenarioInput.stop` 恢復反序（搬移時漏掉）、
 明確傳入不存在的 fixture 仍回 400。
+
+補記（ticket 15 之後）：情境 3 原本指向 `hey-normal`，但問候卡的錄音 fixture 會接上同一條 queue
+壓力測試時間線（去重、取代、溢出、過期），跑一次會開四個 Episode，契約只好不檢查數量，比規格那句
+「一句問候」寬鬆。`AudioFixture` 加上 `with_other_cues`，新增 `hey-greeting-only`：同一段錄音、
+不帶其他 cue。情境 3 改指向它並要求剛好一個 Episode——本機 wake 辨識、擷取、轉文字、一個明確請求、
+一個 Episode。原本四個錄音 fixture 照舊帶著壓力時間線，queue 的覆蓋不受影響。

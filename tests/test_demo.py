@@ -139,6 +139,9 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "hi-slow",
         "hey-fast",
         "hey-pause",
+        # Scenario 3 on its own: the same recording without the queue-stress
+        # cues, so exactly one greeting opens exactly one Episode.
+        "hey-greeting-only",
     ]
     assert [fixture["key"] for fixture in listed[0]["visual_fixtures"]] == [
         "visual-empty-room",

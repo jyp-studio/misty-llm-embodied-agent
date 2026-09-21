@@ -2877,3 +2877,33 @@ ASR 原本把 `asr_language` 釘在 "en"，所以中文語音永遠不可能以�
 
 測試範圍修正：原本把 display_image／change_led 也列為禁止的「移動」，但規格 scenario 11 明確允許
 組合 speak/listen/expressive Tools，等於測試自創了規格沒有的規則；現在只禁止底盤移動。
+
+### 16.64 十五個 Acceptance Scenario 收斂成一份契約，Demo 與測試共用同一條執行路徑（ticket 15）
+
+規格列的十五個社交情境寫成 `misty_agent/acceptance.py` 的 `ACCEPTANCE_CONTRACTS`：每條指名所屬
+card 與 fixture、是否允許開 Episode、Episode 數、第一個 cue 的種類、必須留下的 records（runtime
+與 Journal 兩邊）、會讓結果不安全或越界的 Tools、底盤是否可動、是否必須 halt。刻意不釘台詞與
+Tool 順序——社交情境本來就不只一種合理回應——但明確拒絕不安全的結果。空房間與路人兩條的
+`opens_episode=False` 是全檔最強的斷言：不打擾。另外，十五條一律套用 ticket 14 的 boundary audit。
+
+補上規格缺的三個情境：分享好消息、只說需要幫忙、不需移動的問題。
+
+`run_fixture` 成為執行內建 scenario 的唯一路徑，Demo 與 `tests/test_acceptance_scenarios.py` 都
+呼叫它；原本 `demo/__init__.py` 的 fixture helpers 移進 `acceptance.py`。這避免規格警告的「另建
+平行 harness」。
+
+Demo：picker 標出每個 fixture 對應規格第幾個情境並顯示該情境敘述、`/acceptance` 提供完整契約與
+「這不是 benchmark」說明、provenance 分成 specification fixture／scripted run／live-model run
+三類且一律附 hardware-unverified（scripted 與 live 兩條路徑都貼）、replay 可播放／暫停／從頭／
+拖曳整場所有 Moments。
+
+`tests/test_documentation_contract.py` 讓文件各司其職可被測試，退場說法重新出現會紅；否定句不算
+宣稱，否則 ADR 0001「本設計不是 PPA」反而會被判違規。
+
+補記（review）：第一版契約有幾條是空的——14（hazard 中止）與 8（正常接近）欄位完全相同，用 8 的
+run 去跑 14 的契約會通過；13 沒有斷言第二個 Episode，handoff 等於沒被檢查；4／10／12 只要求
+speak，任何會說話的 Episode 都滿足。加上 `halts`、`episodes`、`cue_kind` 三個欄位並在測試裡真的
+讀它們之後，14 對 8 的 run 會紅、13 少一個 Episode 會紅、4 的 cue 種類錯會紅。另外補上：契約寫錯
+Tool 名字會被 registry 比對抓到（原本拼錯等於靜默關閉該條）、entry-point 測試不再把 app.py 排除
+在外（原本排除的正是最可能出現繞道的檔案）、`ChainedScenarioInput.stop` 恢復反序（搬移時漏掉）、
+明確傳入不存在的 fixture 仍回 400。

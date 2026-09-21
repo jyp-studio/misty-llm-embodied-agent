@@ -255,6 +255,48 @@ COME_CLOSER_HAZARD = TextScenarioScript(
 )
 
 
+GOOD_NEWS = TextScenarioScript(
+    key="good-news",
+    label="分享好消息 · 語言與表情一致，不亂移動",
+    inputs=(_said_by(0.0, "Misty，我剛剛錄取了！", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "太好了，恭喜你！"}, 20, 6,
+                 note="回應對方分享的事，語氣與內容一致。"),
+        Decision("display_image", {"expression": "happy"}, 20, 3,
+                 note="表情與話語一致；這是表達，不是移動。"),
+        Decision("done", {}, 18, 1, note="分享已被回應，不多做無關動作。"),
+    ),
+)
+
+
+VAGUE_HELP = TextScenarioScript(
+    key="vague-help",
+    label="只說需要幫忙 · 先問清楚，不猜需求",
+    inputs=(_said_by(0.0, "Misty，我需要幫忙。", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "我在。你需要什麼樣的幫忙？"}, 20, 6,
+                 note="不猜對方要什麼，先問。"),
+        Decision("listen", {}, 20, 3, note="等對方自己說明。"),
+        Decision("speak", {"text": "好，那我陪你一起找找看。"}, 20, 6,
+                 note="回應對方實際說出口的需求。"),
+        Decision("done", {}, 18, 1, note="需求已確認並回應。"),
+    ),
+    speech=(TimedSpeech(1.0, "我找不到我的鑰匙。"),),
+)
+
+
+QUESTION_NO_MOVEMENT = TextScenarioScript(
+    key="question-no-movement",
+    label="不需要移動的問題 · 回答就好",
+    inputs=(_said_by(0.0, "Misty，你可以做什麼？", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "我可以說話、聽你說，還有轉頭和動手臂。"}, 24, 10,
+                 note="直接回答，不為了展示功能而靠近。"),
+        Decision("done", {}, 18, 1, note="問題已回答，沒有理由移動。"),
+    ),
+)
+
+
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
     title="有人和 Misty 打招呼",
@@ -481,7 +523,14 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             note="已做低風險回應，結束這次互動。",
         ),
     ),
-    text_scripts=(COME_CLOSER, COME_CLOSER_TARGET_LOST, COME_CLOSER_HAZARD),
+    text_scripts=(
+        COME_CLOSER,
+        COME_CLOSER_TARGET_LOST,
+        COME_CLOSER_HAZARD,
+        GOOD_NEWS,
+        VAGUE_HELP,
+        QUESTION_NO_MOVEMENT,
+    ),
 )
 
 
@@ -817,6 +866,9 @@ __all__ = [
     "SPEAKER_HANDOFF",
     "A_THEN_B",
     "COME_CLOSER",
+    "GOOD_NEWS",
+    "VAGUE_HELP",
+    "QUESTION_NO_MOVEMENT",
     "RESPECT_BOUNDARY",
     "ZH_EMERGENCY_SUPPORT",
     "EN_RESCUE_LIMITS",

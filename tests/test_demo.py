@@ -34,6 +34,8 @@ from misty_agent.agent.model import API_KEY_VARIABLE
 from misty_agent.app import DEFAULT_START_CM
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.demo import (
+    HARDWARE_UNVERIFIED,
+    PROVENANCE,
     ANY_FREE_PORT,
     MOST_ONE_REQUEST_MAY_CARRY,
     EXAMPLES,
@@ -341,7 +343,9 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
 
     execution = payload["execution"]
     assert execution["provenance"] == {
-        "kind": "scripted_current_run",
+        "kind": "scripted_run",
+        "kind_means": PROVENANCE["scripted_run"],
+        "hardware_unverified": HARDWARE_UNVERIFIED,
         "headline": "這是剛剛執行的模擬結果",
         "model": "預設腳本模型",
         "robot": "模擬 Misty",
@@ -406,8 +410,10 @@ def test_the_human_ending_is_derived_from_an_abnormal_current_run(monkeypatch):
         def decide(self, working_context, tools):
             return Says("speak").decide(working_context, tools)
 
+    # Patched where the scenario is actually run: ticket 15 moved that out of
+    # the Demo into the runner the acceptance tests share with it.
     monkeypatch.setattr(
-        "misty_agent.demo.ScenarioModel", lambda decisions: NeverDoneModel()
+        "misty_agent.acceptance.ScenarioModel", lambda decisions: NeverDoneModel()
     )
 
     payload = run_scenario("greeting")

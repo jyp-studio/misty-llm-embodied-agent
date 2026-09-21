@@ -14,7 +14,7 @@ def test_care_card_runs_calming_support_and_shows_loaded_skill_and_actual_tools(
     assert response.status == 200
     run = json.loads(response.body)
     assert run["execution"]["provenance"]["input_kind"] == "text"
-    assert run["execution"]["provenance"]["kind"] == "scripted_current_run"
+    assert run["execution"]["provenance"]["kind"] == "scripted_run"
     beats = run["execution"]["flow"]
     assert next(beat for beat in beats if beat["kind"] == "cue")["headline"] == "明確互動請求"
     assert any("請協助我冷靜" in beat["headline"] for beat in beats if beat["kind"] == "input")

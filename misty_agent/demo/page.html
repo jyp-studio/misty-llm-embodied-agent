@@ -74,6 +74,7 @@
   .fixture-control { display: grid; gap: 5px; min-width: 215px; }
   .fixture-control[hidden] { display: none; }
   .fixture-control label { color: #6e6e73; font-size: 12px; font-weight: 600; }
+  .fixture-control small { color: #86868b; font-size: 12px; }
   .fixture-control select { width: 100%; padding: 10px 34px 10px 12px; color: #1d1d1f; background: #fff; border: 1px solid #b9b9bf; border-radius: 10px; }
   .flow-label { display: block; margin-top: 26px; color: #6e6e73; font-size: 13px; font-weight: 600; letter-spacing: .06em; }
   .flow { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 28px; background: #fff; border-radius: 16px; }
@@ -107,6 +108,8 @@
   .replay button { padding: 9px 14px; color: #0066cc; background: #fff; border: 1px solid #b9b9bf; border-radius: 999px; cursor: pointer; }
   .replay button[disabled] { color: #86868b; background: #f5f5f7; cursor: not-allowed; }
   .replay span { color: #86868b; font-size: 13px; }
+  .replay input[type=range] { flex: 1; min-width: 120px; accent-color: #0071e3; }
+  .replay input[type=range][disabled] { opacity: .4; }
   .replay-stage { display: grid; gap: 4px; margin-top: 13px; padding: 16px; background: #f5f5f7; border-radius: 12px; }
   .replay-stage[hidden] { display: none; }
   .replay-stage small { color: #6e6e73; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
@@ -204,13 +207,15 @@
       <div class="fixture-control" id="fixtureControl" hidden>
         <label for="wakeFixture">選擇這次要執行的範例</label>
         <select id="wakeFixture"></select>
+        <small id="fixtureSituation"></small>
       </div>
       <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
     </div>
     <div class="execution-result" id="executionResult" aria-live="polite" hidden>
       <span class="eyebrow">CURRENT RUN</span>
       <h3 id="executionHeadline"></h3>
-      <div class="execution-badges"><span id="audioBadge"></span><span id="modelBadge"></span><span id="robotBadge"></span></div>
+      <div class="execution-badges"><span id="provenanceBadge"></span><span id="audioBadge"></span><span id="modelBadge"></span><span id="robotBadge"></span></div>
+      <p id="provenanceMeans"></p>
       <p id="executionDetail"></p>
       <div class="decision-note"><b id="decisionHeadline"></b><br><span id="decisionDetail"></span></div>
       <section class="attention-state" id="attentionState" hidden>
@@ -218,7 +223,12 @@
         <p id="activeCue"></p>
         <div class="cue-queue" id="cueQueue"></div>
       </section>
-      <div class="replay"><button id="replayJournal" type="button" disabled>重播 Episode Journal</button><span id="replayCounter"></span></div>
+      <div class="replay">
+        <button id="replayJournal" type="button" disabled>播放 Episode Journal</button>
+        <button id="replayRestart" type="button" disabled>從頭</button>
+        <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="拖曳瀏覽每個 Moment">
+        <span id="replayCounter"></span>
+      </div>
       <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span><span id="replaySkills"></span></div>
     </div>
     <span class="flow-label" id="flow-label">執行前預覽</span>
@@ -249,6 +259,7 @@
 const byId = (id) => document.getElementById(id);
 const state = {
   selected: "greeting", scenarios: {}, replayMoments: [], replayTimer: null,
+  replayAt: 0,
   runSerial: 0,
 };
 
@@ -291,9 +302,11 @@ function selectScenario(name) {
   byId("scenario-summary").textContent = scenario.subtitle;
   const fixtures = scenario.fixtures || [];
   byId("fixtureControl").hidden = fixtures.length === 0;
-  byId("wakeFixture").innerHTML = fixtures.map((fixture) =>
-    `<option value="${escapeText(fixture.key)}">${escapeText(fixture.label)}</option>`
-  ).join("");
+  byId("wakeFixture").innerHTML = fixtures.map((fixture) => {
+    const spec = fixture.spec_scenario ? `規格情境 ${fixture.spec_scenario} · ` : "";
+    return `<option value="${escapeText(fixture.key)}">${spec}${escapeText(fixture.label)}</option>`;
+  }).join("");
+  showSituation();
   renderFlow(scenario.preview);
   const ready = scenario.availability === "ready";
   byId("result-mode").textContent = ready
@@ -322,41 +335,72 @@ function renderFlow(beats) {
       <h3>${escapeText(beat.headline)}</h3><p>${escapeText(beat.detail)}</p></div></article>`).join("");
 }
 
+function showSituation() {
+  const scenario = state.scenarios[state.selected];
+  const fixtures = scenario?.fixtures || [];
+  const chosen = fixtures.find((item) => item.key === byId("wakeFixture").value);
+  byId("fixtureSituation").textContent = chosen?.situation || "";
+}
+
 function resetReplay() {
   if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
   state.replayTimer = null;
   state.replayMoments = [];
+  state.replayAt = 0;
   byId("replayJournal").disabled = true;
+  byId("replayJournal").textContent = "播放 Episode Journal";
+  byId("replayRestart").disabled = true;
+  byId("replayScrub").disabled = true;
+  byId("replayScrub").max = "0";
+  byId("replayScrub").value = "0";
   byId("replayCounter").textContent = "";
   byId("replayStage").hidden = true;
   byId("attentionState").hidden = true;
   byId("cueQueue").innerHTML = "";
 }
 
-function replayJournal() {
-  if (!state.replayMoments.length) return;
-  if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
-  const button = byId("replayJournal");
-  button.disabled = true;
+function showMoment(index) {
+  const moments = state.replayMoments;
+  if (!moments.length) return;
+  const at = Math.max(0, Math.min(index, moments.length - 1));
+  const moment = moments[at];
+  state.replayAt = at;
+  byId("replayScrub").value = String(at);
+  byId("replayCounter").textContent = `${at + 1} / ${moments.length}`;
   byId("replayStage").hidden = false;
-  let index = 0;
-  const showNext = () => {
-    const moment = state.replayMoments[index];
-    byId("replayCounter").textContent = `${index + 1} / ${state.replayMoments.length}`;
-    byId("replayKind").textContent = moment.kind.replaceAll("_", " ").toUpperCase();
-    byId("replayHeadline").textContent = moment.headline;
-    byId("replayDetail").textContent = moment.detail || "";
-    byId("replaySkills").textContent = moment.skill_status || "";
-    index += 1;
-    if (index < state.replayMoments.length) {
-      state.replayTimer = window.setTimeout(showNext, 550);
-    } else {
+  byId("replayKind").textContent = moment.kind.replaceAll("_", " ").toUpperCase();
+  byId("replayHeadline").textContent = moment.headline;
+  byId("replayDetail").textContent = moment.detail || "";
+  byId("replaySkills").textContent = moment.skill_status || "";
+}
+
+function pauseReplay() {
+  if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
+  state.replayTimer = null;
+  byId("replayJournal").textContent = "繼續播放";
+}
+
+function playReplay() {
+  if (!state.replayMoments.length) return;
+  if (state.replayTimer !== null) { pauseReplay(); return; }
+  if (state.replayAt >= state.replayMoments.length - 1) state.replayAt = -1;
+  byId("replayJournal").textContent = "暫停";
+  const step = () => {
+    if (state.replayAt >= state.replayMoments.length - 1) {
       state.replayTimer = null;
-      button.disabled = false;
-      button.textContent = "再次重播 Episode Journal";
+      byId("replayJournal").textContent = "再播一次";
+      return;
     }
+    showMoment(state.replayAt + 1);
+    state.replayTimer = window.setTimeout(step, 550);
   };
-  showNext();
+  step();
+}
+
+function restartReplay() {
+  pauseReplay();
+  showMoment(0);
+  byId("replayJournal").textContent = "播放 Episode Journal";
 }
 
 async function runScenario() {
@@ -387,6 +431,9 @@ async function runScenario() {
     const execution = payload.execution;
     byId("executionResult").hidden = false;
     byId("executionHeadline").textContent = execution.provenance.headline;
+    byId("provenanceBadge").textContent = execution.provenance.kind.replaceAll("_", " ");
+    byId("provenanceMeans").textContent =
+      `${execution.provenance.kind_means} ${execution.provenance.hardware_unverified}`;
     byId("audioBadge").textContent = `輸入：${execution.provenance.fixture}`;
     byId("modelBadge").textContent = `模型：${execution.provenance.model}`;
     byId("robotBadge").textContent = `機器人：${execution.provenance.robot}`;
@@ -407,7 +454,13 @@ async function runScenario() {
     byId("truth-title").textContent = ending.headline;
     byId("truth-copy").textContent = ending.detail;
     state.replayMoments = payload.episodes.flatMap((episode) => episode.storyboard?.moments || []);
-    byId("replayJournal").disabled = state.replayMoments.length === 0;
+    state.replayAt = 0;
+    const hasMoments = state.replayMoments.length > 0;
+    byId("replayJournal").disabled = !hasMoments;
+    byId("replayRestart").disabled = !hasMoments;
+    byId("replayScrub").disabled = !hasMoments;
+    byId("replayScrub").max = String(Math.max(0, state.replayMoments.length - 1));
+    if (hasMoments) showMoment(0);
     byId("evidence").textContent = JSON.stringify({
       scenario: payload.scenario.name,
       execution: payload.execution,
@@ -494,7 +547,13 @@ document.querySelector(".scenario-grid").addEventListener("click", (event) => {
   if (card) selectScenario(card.dataset.scenario);
 });
 byId("runScenario").addEventListener("click", runScenario);
-byId("replayJournal").addEventListener("click", replayJournal);
+byId("wakeFixture").addEventListener("change", showSituation);
+byId("replayJournal").addEventListener("click", playReplay);
+byId("replayRestart").addEventListener("click", restartReplay);
+byId("replayScrub").addEventListener("input", (event) => {
+  pauseReplay();
+  showMoment(Number(event.target.value));
+});
 byId("runLive").addEventListener("click", runLive);
 boot().catch((error) => { byId("evidence").textContent = String(error); });
 </script>

@@ -57,6 +57,13 @@ from misty_agent.agent.journal import (
     from_jsonl,
     to_jsonl,
 )
+from misty_agent.acceptance import (
+    ACCEPTANCE_CONTRACTS,
+    SCENARIO_CONFIG,
+    UnknownFixture,
+    contract_for,
+    run_fixture,
+)
 from misty_agent.agent.model import MissingApiKey, OpenAIModel
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.agent.tools import STEPS_KEY
@@ -69,17 +76,11 @@ from misty_agent.app import (
     look_at,
     simulated_session,
 )
-from misty_agent.audio_input import LiveInputAdapter, WavAudioFixtureSource
-from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock
 from misty_agent.perception.asr import (
     OpenAITranscriber,
-    Transcription,
-    TranscriptionEnding,
     wav_to_pcm,
 )
-from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
-from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.runtime import (
     AudioAttentionRecorded,
     AttentionStarted,
@@ -112,18 +113,12 @@ from misty_agent.runtime import (
 )
 from misty_agent.scenarios import (
     DEFAULT_ACTOR,
-    ScenarioSpeech,
     DEMO_SCENARIOS,
     EXPLICIT_TEXT_REQUEST,
     AcceptanceScenario,
     PresentationBeat,
     ScenarioCard,
     ScenarioModel,
-)
-from misty_agent.visual_input import (
-    LocalVisualGate,
-    VisualFixtureSource,
-    VisualInputAdapter,
 )
 
 #: The only address this binds. A demo that listened on every interface would
@@ -139,7 +134,6 @@ _HERE = pathlib.Path(__file__).resolve().parent
 _PAGE = _HERE / "page.html"
 NO_STORE = {"Cache-Control": "no-store"}
 _GOLDENS = _HERE.parent.parent / "tests" / "goldens"
-_WAKE_FIXTURES = _HERE.parent.parent / "tests" / "fixtures" / "wake"
 
 #: What the four original goldens say about themselves. Spelled out rather
 #: than derived: the claim is historical, and there is nothing on disk that
@@ -283,6 +277,20 @@ def answer(
         )
     if path == "/scenarios":
         return _json(200, [_scenario_payload(case) for case in DEMO_SCENARIOS])
+    if path == "/acceptance":
+        return _json(
+            200,
+            {
+                "provenance": PROVENANCE,
+                "hardware_unverified": HARDWARE_UNVERIFIED,
+                "not_a_benchmark": (
+                    "Fifteen situations with a floor under each outcome. "
+                    "There is no score, no leaderboard and no comparison "
+                    "with any published benchmark."
+                ),
+                "scenarios": [asdict(contract) for contract in ACCEPTANCE_CONTRACTS],
+            },
+        )
     if path == "/examples":
         return _json(
             200,
@@ -306,6 +314,48 @@ def _scenario_run_name(path: str) -> Optional[str]:
     return name if name and "/" not in name else None
 
 
+#: What kind of thing the page is showing, so a visitor is never left to
+#: guess whether they are reading a specification, a replayed simulation or
+#: a paid model call. Every one of them is hardware-unverified: this project
+#: has no Misty II, so no path here is evidence about a robot.
+PROVENANCE = {
+    "specification_fixture": (
+        "A Journal written from the specification before the loop existed. "
+        "It is a claim about what should happen, kept on disk."
+    ),
+    "scripted_run": (
+        "Executed just now by this code. The inputs and the model's decisions "
+        "are authored fixtures, and the robot is simulated."
+    ),
+    "live_model_run": (
+        "Executed just now against a hosted model, which costs money and "
+        "needs a key. The robot is still simulated."
+    ),
+}
+
+#: True of every one of them, and said in one place so no surface can quietly
+#: drop it.
+HARDWARE_UNVERIFIED = (
+    "No Misty II has ever run any of this. Physical behaviour, timing and "
+    "reliability are unverified."
+)
+
+
+def _fixture_entry(item, input_kind: str, card: str) -> dict:
+    """One pickable fixture, carrying the spec situation it stands for.
+
+    The number comes from `misty_agent.acceptance`, the same tuple the
+    acceptance tests assert against, so the picker cannot claim a coverage
+    the tests do not have.
+    """
+    contract = contract_for(card, item.key)
+    entry = {"key": item.key, "label": item.label, "input_kind": input_kind}
+    if contract is not None:
+        entry["spec_scenario"] = contract.number
+        entry["situation"] = contract.situation
+    return entry
+
+
 def _scenario_payload(case: ScenarioCard) -> dict:
     """The stable, human-readable facts displayed on a scenario card."""
     payload = {
@@ -320,87 +370,25 @@ def _scenario_payload(case: ScenarioCard) -> dict:
     if isinstance(case, AcceptanceScenario):
         payload["actors"] = list(case.actors)
         audio_fixtures = [
-            {"key": item.key, "label": item.label, "input_kind": "audio"}
-            for item in case.audio_fixtures
+            _fixture_entry(item, "audio", case.name) for item in case.audio_fixtures
         ]
         visual_fixtures = [
-            {"key": item.key, "label": item.label, "input_kind": "visual"}
-            for item in case.visual_fixtures
+            _fixture_entry(item, "visual", case.name) for item in case.visual_fixtures
         ]
         payload["audio_fixtures"] = audio_fixtures
         payload["visual_fixtures"] = visual_fixtures
         payload["fixtures"] = audio_fixtures + visual_fixtures + [
-            {"key": item.key, "label": item.label, "input_kind": "text"}
-            for item in case.text_scripts
+            _fixture_entry(item, "text", case.name) for item in case.text_scripts
         ]
     return payload
 
 
-class _ScriptedFixtureTranscriber:
-    """Deterministic ASR; local wake detection still analyzes the WAV."""
-
-    def __init__(self, transcript: str) -> None:
-        self._transcript = transcript
-
-    def transcribe_bounded(self, pcm, sample_rate, *, timeout_s):
-        return Transcription(
-            text=self._transcript,
-            ending=TranscriptionEnding.TRANSCRIBED,
-        )
 
 
-@dataclass
-class _ScenarioEars:
-    """Finite speech made available to a scenario's cheap Snapshots."""
-
-    utterances: list[str]
-
-    def mute_for(self, seconds: float) -> None:
-        return None
-
-    def read(self, timeout: float):
-        if not self.utterances:
-            return None
-        return _ScenarioUtterance(self.utterances.pop(0))
 
 
-@dataclass(frozen=True)
-class _ScenarioUtterance:
-    text: str
 
 
-class _ChainedScenarioInput:
-    """Expose sequential providers as one Runtime input lifecycle."""
-
-    def __init__(self, *sources) -> None:
-        self._sources = sources
-        self._index = 0
-
-    def start(self) -> None:
-        for source in self._sources:
-            source.start()
-
-    def read(self):
-        while self._index < len(self._sources):
-            value = self._sources[self._index].read()
-            if value is not None:
-                return value
-            self._index += 1
-        return None
-
-    def read_available(self):
-        available = []
-        while self._index < len(self._sources):
-            source = self._sources[self._index]
-            available.extend(source.read_available())
-            if available or not getattr(source, "exhausted", False):
-                break
-            self._index += 1
-        return tuple(available)
-
-    def stop(self) -> None:
-        for source in reversed(self._sources):
-            source.stop()
 
 
 def _scenario_request(body: bytes) -> Mapping[str, Any]:
@@ -416,7 +404,12 @@ def _scenario_request(body: bytes) -> Mapping[str, Any]:
 
 
 def _run_scenario(name: str, body: bytes = b"") -> Reply:
-    """Run one named offline scenario through the real runtime seam."""
+    """Run one named offline scenario through the real runtime seam.
+
+    The running itself is `misty_agent.acceptance.run_fixture`, which the
+    acceptance tests also call: what a visitor watches here is the same
+    execution the tests asserted on, not a second copy of the wiring.
+    """
     case = next((item for item in DEMO_SCENARIOS if item.name == name), None)
     if case is None:
         return _json(404, {"error": f"there is no scenario called {name!r}"})
@@ -436,90 +429,16 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
     except ValueError as why:
         return _json(400, {"error": str(why)})
 
-    clock = FakeClock()
-    scenario_config = Settings(
-        cue_queue_capacity=3,
-        cue_freshness_s=5.0,
-        cue_suppression_s=30.0,
-    )
-    selected_audio = None
-    selected_visual = None
-    selected_text = None
-    visual_script = None
-    active_perception = None
-    all_fixtures = (*case.audio_fixtures, *case.visual_fixtures, *case.text_scripts)
-    if all_fixtures:
-        requested = asked.get("fixture", all_fixtures[0].key)
-        selected_audio = next(
-            (item for item in case.audio_fixtures if item.key == requested),
-            None,
-        )
-        selected_visual = next(
-            (item for item in case.visual_fixtures if item.key == requested),
-            None,
-        )
-        selected_text = next((item for item in case.text_scripts if item.key == requested), None)
-        if selected_audio is None and selected_visual is None and selected_text is None:
-            return _json(
-                400,
-                {"error": f"there is no scenario fixture called {requested!r}"},
-            )
-    if selected_audio is not None:
-        live_audio = LiveInputAdapter(
-            audio=WavAudioFixtureSource(
-                _WAKE_FIXTURES / selected_audio.asset,
-                clock=clock,
-            ),
-            wake_detector=PocketSphinxWakeDetector(
-                minimum_confidence=scenario_config.wake_minimum_confidence
-            ),
-            transcriber=_ScriptedFixtureTranscriber(
-                selected_audio.transcript
-            ),
-            clock=clock,
-            config=scenario_config,
-        )
-        source = _ChainedScenarioInput(
-            live_audio,
-            ScenarioInputAdapter(clock, case.inputs[1:]),
-        )
-    elif selected_visual is not None:
-        visual_script = case.visual_script_for(selected_visual.key)
-        active_perception = LocalVisualGate()
-        source = VisualInputAdapter(
-            frames=VisualFixtureSource(clock, selected_visual.frames),
-            clock=clock,
-            gate=active_perception,
-        )
-    elif selected_text is not None:
-        source = ScenarioInputAdapter(clock, selected_text.inputs)
-    else:
-        source = ScenarioInputAdapter(clock, case.inputs)
-    script = selected_text or visual_script
-    decisions = script.decisions if script else case.decisions
-    session = simulated_session(
-        None,
-        model=ScenarioModel(decisions),
-        clock=clock,
-        placement=selected_text.placement if selected_text else None,
-        ears=ScenarioSpeech(clock, selected_text.speech) if selected_text else _ScenarioEars(
-            list(visual_script.heard_after_first_tool)
-            if visual_script
-            else []
-        ),
-        active_perception=(
-            active_perception
-            if active_perception is not None
-            else NO_ACTIVE_PERCEPTION
-        ),
-    )
-    result = SocialAgentRuntime(
-        source=source,
-        session=session,
-        clock=clock,
-        config=scenario_config,
-    ).run()
-    selected_fixture = selected_audio or selected_visual or selected_text
+    try:
+        run = run_fixture(name, asked.get("fixture"))
+    except UnknownFixture as why:
+        return _json(400, {"error": str(why)})
+
+    result = run.result
+    session = run.session
+    input_kind = run.input_kind
+    scenario_config = SCENARIO_CONFIG
+    selected_fixture = run.fixture
     if selected_fixture is None:
         raise RuntimeError("an acceptance scenario has no fixture")
     episodes = []
@@ -546,7 +465,7 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
                 result.episodes[0] if result.episodes else None,
                 queue_capacity=scenario_config.cue_queue_capacity,
                 fixture_label=selected_fixture.label,
-                input_kind=("audio" if selected_audio else "text" if selected_text else "visual"),
+                input_kind=input_kind,
                 actors=case.actors,
                 robot_state=session.robot.as_facts(),
             ),
@@ -766,7 +685,9 @@ def _scenario_execution(
     )
     return {
         "provenance": {
-            "kind": "scripted_current_run",
+            "kind": "scripted_run",
+            "kind_means": PROVENANCE["scripted_run"],
+            "hardware_unverified": HARDWARE_UNVERIFIED,
             "headline": "這是剛剛執行的模擬結果",
             "model": (
                 "未呼叫"
@@ -1652,6 +1573,11 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     }
     answered = {
         "example": asdict(LIVE),
+        "provenance": {
+            "kind": "live_model_run",
+            "kind_means": PROVENANCE["live_model_run"],
+            "hardware_unverified": HARDWARE_UNVERIFIED,
+        },
         "perception": perceived,
         "heard": heard,
         "moves": [],

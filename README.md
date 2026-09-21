@@ -189,8 +189,12 @@ Suppression to repeated non-explicit cues while allowing a new direct request
 to bypass it. It answers in the person's language, follows a change of language
 mid-conversation, and in a high-risk moment stays, says what it cannot do,
 and points at someone nearby or local emergency services rather than
-diagnosing, promising safety or claiming to have called anyone. Planned
-vertical slices add the remaining acceptance scenarios. See
+diagnosing, promising safety or claiming to have called anyone.
+
+The spec's fifteen social situations run in the default suite and are
+pickable in the Demo, which labels each one with the situation it stands
+for. They are a floor under behaviour, not a benchmark: no score, no
+leaderboard, and every model decision in them is an authored fixture. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

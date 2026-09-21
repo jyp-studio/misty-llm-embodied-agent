@@ -8,7 +8,7 @@ approved social-runtime effort lives under `.scratch/social-react-runtime/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–14 are implemented. `SocialAgentRuntime` is the
+Social runtime tickets 01–15 are implemented, and the effort is complete. `SocialAgentRuntime` is the
 highest product seam for the CLI, local Demo, and acceptance coverage:
 
 1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
@@ -144,7 +144,20 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
     proven able to fire offline; `tests/test_llm_live.py` runs the same audit
     against a real model and reports it, deselected by default.
 
-Ticket 13 ends at `6de141b`; ticket 14 is the current implementation.
+40. The spec's fifteen situations are one declarative set in
+    `misty_agent/acceptance.py`: each names the card and fixture it runs,
+    whether an Episode may open, the records it must make observable, the
+    Tools that would make it unsafe, and whether the base may move. The Demo
+    and `tests/test_acceptance_scenarios.py` call the same `run_fixture`, so
+    the page shows the execution the tests asserted on.
+41. The Demo labels what a visitor is looking at — specification fixture,
+    scripted run or live-model run — and every one of them carries the
+    hardware-unverified note. Replay plays, pauses, restarts and scrubs
+    across every Moment of every Episode in the run.
+42. `tests/test_documentation_contract.py` pins one job per document and
+    fails on a claim the code has retired.
+
+Ticket 14 ends at `ab22bf5`; ticket 15 is the current implementation.
 
 ## Verification
 
@@ -199,10 +212,16 @@ No real-user media or transcript is written by the Demo.
 
 ## Next ticket
 
-Continue with `.scratch/social-react-runtime/issues/15-*.md`. Preserve the
-architecture rule that
-`Session.episode()` is an internal one-Episode dependency; providers enter at
-`SocialAgentRuntime` through the shared `InputSource` seam.
+The social-runtime effort under `.scratch/social-react-runtime/` is
+finished: all fifteen tickets are resolved and the fifteen acceptance
+situations run in the default suite. `PLAN.md` §7 holds what comes after it.
+
+Two rules to preserve in anything built next. `Session.episode()` is an
+internal one-Episode dependency: providers enter at `SocialAgentRuntime`
+through the shared `InputSource` seam, and
+`tests/test_acceptance_scenarios.py` fails if a second caller appears.
+Built-in scenarios are run by `misty_agent.acceptance.run_fixture` and
+nothing else, so the Demo and the tests cannot drift apart.
 
 ## Local-work warning
 

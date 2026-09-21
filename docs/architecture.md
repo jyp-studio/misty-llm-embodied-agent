@@ -286,9 +286,24 @@ measured by the opt-in evaluation in `tests/test_llm_live.py`, which runs
 the same audit as the offline tests and reports the result without gating on
 it.
 
-This is ticket 14's vertical slice, not the completed social system. The
-remaining acceptance scenarios and the architecture contract are the last
-ticket in `.scratch/social-react-runtime/`.
+The spec's fifteen social situations are one declarative set in
+`misty_agent/acceptance.py`. Each contract names the card and fixture that
+runs it, whether an Episode may open at all, the runtime records it must
+make observable, the Tools that would make the outcome unsafe or a boundary
+breach, and whether the base may move. It deliberately fixes no wording and
+no Tool order, because these situations have more than one reasonable
+answer. `run_fixture` is the only way a built-in scenario runs: the Demo
+page and the acceptance tests both call it, so what a visitor watches is the
+execution the tests asserted on rather than a second copy of the wiring.
+
+That set is not a benchmark. There is no score, no leaderboard and no claim
+of comparability with any published suite; every model decision in it is an
+authored fixture rather than recorded output.
+
+This completes the social-runtime effort in
+`.scratch/social-react-runtime/`. What the system does not do is unchanged
+by that: no hazard source reaches the real Session, no bearing has come from
+a camera, and no line of this has run on a Misty II.
 
 The real-driver branch is marked with an asterisk because it has never run on
 a Misty II and never will in this project.  Its request shapes have contract

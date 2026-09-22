@@ -2935,3 +2935,8 @@ Responses、function calling 與圖片輸入）。只改名稱會出事，原因
 時得到 luna、reasoning_effort none、不送 temperature。
 
 這台機器沒有 API key，以上所有與真實 API 相容性有關的判斷都沒有實際呼叫驗證過。
+
+補記：使用者表示不需要換回 gpt-4o（已過時）。因此拿掉只為「換回舊模型」而加的部分：
+`env_parse_none_str="null"`、`llm_reasoning_effort` 可設為 None 的選項、`.env.example` 裡換回
+gpt-4o 的說明與註解掉的 temperature、以及對應的兩個測試。現在 `reasoning_effort="none"` 每次都送；
+`llm_temperature` 保留為可選欄位、預設不送，因為 luna 會拒絕自訂 temperature。

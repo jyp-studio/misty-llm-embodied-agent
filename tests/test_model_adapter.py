@@ -415,17 +415,6 @@ def test_reasoning_effort_none_is_sent_by_default():
     assert client.chat.completions.calls[0]["reasoning_effort"] == "none"
 
 
-def test_reasoning_effort_can_be_left_out_for_a_model_that_rejects_it():
-    """A non-reasoning model such as gpt-4o rejects the parameter outright,
-    so switching back has to be able to stop sending it."""
-    model, client = a_model()
-    model._reasoning_effort = None
-
-    model.decide([], [])
-
-    assert "reasoning_effort" not in client.chat.completions.calls[0]
-
-
 def test_reasoning_effort_values_outside_the_documented_set_are_refused():
     import pytest
     from pydantic import ValidationError
@@ -435,7 +424,6 @@ def test_reasoning_effort_values_outside_the_documented_set_are_refused():
     with pytest.raises(ValidationError):
         Settings(llm_reasoning_effort="extreme")
     assert Settings(llm_reasoning_effort="low").llm_reasoning_effort == "low"
-    assert Settings(llm_reasoning_effort=None).llm_reasoning_effort is None
 
 
 def test_an_explicit_temperature_of_zero_is_honoured():
@@ -447,19 +435,3 @@ def test_an_explicit_temperature_of_zero_is_honoured():
     model.decide([], [])
 
     assert model._temperature == 0.0
-
-
-def test_an_environment_variable_can_switch_the_optional_controls_off(monkeypatch):
-    """Switching back to a model like gpt-4o means sending a temperature and
-    no reasoning effort, and that has to be possible from .env alone."""
-    from misty_agent.config import Settings
-
-    monkeypatch.setenv("MISTY_LLM_MODEL", "gpt-4o")
-    monkeypatch.setenv("MISTY_LLM_REASONING_EFFORT", "null")
-    monkeypatch.setenv("MISTY_LLM_TEMPERATURE", "0.5")
-
-    configured = Settings()
-
-    assert configured.llm_model == "gpt-4o"
-    assert configured.llm_reasoning_effort is None
-    assert configured.llm_temperature == 0.5

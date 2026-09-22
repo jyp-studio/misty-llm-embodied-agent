@@ -35,10 +35,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
-        # How an environment variable says "not set" for an optional field.
-        # Without it there is no way to stop sending a reasoning effort, or to
-        # clear the ASR language hint, from .env: an empty value is a string.
-        env_parse_none_str="null",
     )
 
     # ------------------------------------------------------------------
@@ -195,21 +191,20 @@ class Settings(BaseSettings):
     llm_temperature: float | None = Field(
         default=None, ge=0.0, le=2.0,
         description=(
-            "Sampling temperature, sent only when set. None by default "
-            "because GPT-5-family reasoning models reject a custom "
-            "temperature; set it only for a model that accepts one."
+            "Sampling temperature, sent only when set. Unset by default: "
+            "gpt-5.6-luna is a reasoning model, and reasoning models reject "
+            "a custom temperature."
         ),
     )
     llm_reasoning_effort: Literal[
         "none", "minimal", "low", "medium", "high", "xhigh", "max"
-    ] | None = Field(
+    ] = Field(
         default="none",
         description=(
-            "Reasoning effort, sent only when set. 'none' by default because "
+            "Reasoning effort sent with every decision call. 'none' because "
             "Chat Completions refuses function tools with any other effort "
             "for the GPT-5.6 family: confirmed for gpt-5.6-sol, assumed for "
-            "gpt-5.6-luna. Set to None for a non-reasoning model such as "
-            "gpt-4o, which rejects the parameter."
+            "gpt-5.6-luna. Reasoning would need the Responses API."
         ),
     )
 

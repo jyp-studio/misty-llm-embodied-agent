@@ -103,21 +103,18 @@ class OpenAIModel:
         working_context: Sequence[Mapping[str, Any]],
         tools: Sequence[Mapping[str, Any]],
     ) -> Decision:
-        # Sampling and reasoning controls are sent only when configured.
-        # Reasoning models reject a custom temperature, and non-reasoning
-        # models reject a reasoning effort, so whichever one a model does
-        # not take has to be absent rather than defaulted.
+        # A temperature only when one is configured: reasoning models reject
+        # a custom one, so the default is to send nothing.
         optional = {}
         if self._temperature is not None:
             optional["temperature"] = self._temperature
-        if self._reasoning_effort is not None:
-            optional["reasoning_effort"] = self._reasoning_effort
         response = self._connection().chat.completions.create(
             model=self._model,
             messages=[_as_message(entry) for entry in working_context],
             tools=list(tools),
             tool_choice="required",
             parallel_tool_calls=False,
+            reasoning_effort=self._reasoning_effort,
             **optional,
         )
         choice = response.choices[0].message

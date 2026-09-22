@@ -2913,3 +2913,25 @@ Tool 名字會被 registry 比對抓到（原本拼錯等於靜默關閉該條�
 「一句問候」寬鬆。`AudioFixture` 加上 `with_other_cues`，新增 `hey-greeting-only`：同一段錄音、
 不帶其他 cue。情境 3 改指向它並要求剛好一個 Episode——本機 wake 辨識、擷取、轉文字、一個明確請求、
 一個 Episode。原本四個錄音 fixture 照舊帶著壓力時間線，queue 的覆蓋不受影響。
+
+### 16.65 預設模型改為 gpt-5.6-luna，並讓推理模型的參數限制不會讓每次呼叫失敗
+
+使用者要求把預設模型從 gpt-4o 改成 `gpt-5.6-luna`（OpenAI API 的 model ID；支援 Chat Completions、
+Responses、function calling 與圖片輸入）。只改名稱會出事，原因有二，所以一起處理：
+
+1. adapter 每次都送 `temperature=0.5`。社群回報 GPT-5 系列推理模型拒絕自訂 temperature；官方
+   模型頁沒寫。改為 `llm_temperature` 預設 None、只有設定時才送。
+2. 同系列的 `gpt-5.6-sol` 已確認：Chat Completions 搭配 function tools 時，只要 reasoning_effort
+   不是 `none` 就報錯，要求改用 Responses API 或設為 `none`；OpenAI 客服已承認、尚未修正。
+   `luna` 是否相同未確認，但本專案正是 Chat Completions 加 function tools。新增
+   `llm_reasoning_effort`，預設 `none`、只有設定時才送。
+
+代價：`none` 等於不做推理，模型行為接近非推理模型。對這裡「每個 Turn 選一個 Tool」的短決策而言
+延遲較低，但不是 luna 的最強模式。要用推理，得把 adapter 改成 Responses API——那是較大的改動
+（ticket 02 的原生 tool call 身分與 tool 結果角色都建在 Chat Completions 上），這次沒做。
+
+設定新增 `env_parse_none_str="null"`，否則無法從 `.env` 把可選欄位設回「不送」，換回 gpt-4o
+就做不到。`.env.example` 與 `OAI_CONFIG_LIST.json.example` 同步更新；範例檔直接當 `.env` 載入
+時得到 luna、reasoning_effort none、不送 temperature。
+
+這台機器沒有 API key，以上所有與真實 API 相容性有關的判斷都沒有實際呼叫驗證過。

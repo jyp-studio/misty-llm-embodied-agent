@@ -22,6 +22,8 @@ consumes these values — and the analysis of which of its branches are reachabl
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,6 +35,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
+        # How an environment variable says "not set" for an optional field.
+        # Without it there is no way to stop sending a reasoning effort, or to
+        # clear the ASR language hint, from .env: an empty value is a string.
+        env_parse_none_str="null",
     )
 
     # ------------------------------------------------------------------
@@ -179,12 +185,32 @@ class Settings(BaseSettings):
     # Language models
     # ------------------------------------------------------------------
     llm_model: str = Field(
-        default="gpt-4o",
-        description="Decision and vision model driving the ReAct loop.",
+        default="gpt-5.6-luna",
+        description=(
+            "Decision and vision model driving the ReAct loop. gpt-5.6-luna "
+            "accepts text and image input and function tools; it has never "
+            "been run by this project, which has no key configured."
+        ),
     )
-    llm_temperature: float = Field(
-        default=0.5, ge=0.0, le=2.0,
-        description="Sampling temperature for the decision call.",
+    llm_temperature: float | None = Field(
+        default=None, ge=0.0, le=2.0,
+        description=(
+            "Sampling temperature, sent only when set. None by default "
+            "because GPT-5-family reasoning models reject a custom "
+            "temperature; set it only for a model that accepts one."
+        ),
+    )
+    llm_reasoning_effort: Literal[
+        "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] | None = Field(
+        default="none",
+        description=(
+            "Reasoning effort, sent only when set. 'none' by default because "
+            "Chat Completions refuses function tools with any other effort "
+            "for the GPT-5.6 family: confirmed for gpt-5.6-sol, assumed for "
+            "gpt-5.6-luna. Set to None for a non-reasoning model such as "
+            "gpt-4o, which rejects the parameter."
+        ),
     )
 
     # ------------------------------------------------------------------

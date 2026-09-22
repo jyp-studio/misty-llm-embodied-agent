@@ -119,7 +119,7 @@ It exercises the real closed-loop `approach()` through its public interface — 
 
 Two things it does **not** cover, both recorded rather than hidden: reading noise, and losing the user *after* the robot has already moved. `docs/measurements/m6-coverage-audit.md` itemises every check the previous simulation runner carried and where it went.
 
-**Live model suite (real GPT-4o, fake robot, ~a few cents):**
+**Live model suite (real gpt-5.6-luna, fake robot, ~a few cents at most):**
 
 ```bash
 export OPENAI_API_KEY=sk-...

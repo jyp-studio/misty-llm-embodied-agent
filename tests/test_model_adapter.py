@@ -111,6 +111,30 @@ def test_multiple_tool_calls_are_rejected_instead_of_silently_truncated():
         model.decide([], [])
 
 
+@pytest.mark.parametrize(
+    "written",
+    [
+        "Decision Note: I will wave.",
+        "decision note - I will wave.",
+        "**Decision Note:** I will wave.",
+        "Decision Note：I will wave.",
+    ],
+)
+def test_a_note_the_model_titled_itself_is_not_labelled_twice(written):
+    """The Journal already calls this a decision note. A model that heads its
+    own text the same way made the CLI print "decision note, Decision Note:
+    ..." — seen on gpt-5.6-luna's first live run."""
+    model, _ = a_model(a_response(note=written))
+
+    assert model.decide([], []).note == "I will wave."
+
+
+def test_a_note_that_merely_mentions_decisions_is_kept_whole():
+    model, _ = a_model(a_response(note="My decision: note the time, then wave."))
+
+    assert model.decide([], []).note == "My decision: note the time, then wave."
+
+
 def test_a_decision_note_cannot_expand_into_a_reasoning_transcript():
     from misty_agent.agent.journal import MAX_DECISION_NOTE_CHARS
 

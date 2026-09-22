@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 from misty_agent.agent.journal import MAX_DECISION_NOTE_CHARS
@@ -64,6 +65,15 @@ class MissingApiKey(RuntimeError):
 
 def api_key_available() -> bool:
     return bool(os.environ.get(API_KEY_VARIABLE, "").strip())
+
+
+#: A heading the model sometimes writes in front of its note. The Journal
+#: already labels the note, so keeping this printed it twice.
+_OWN_LABEL = re.compile(r"^[*_\s]*decision\s+note[*_\s]*[:：\-–—][*_\s]*", re.IGNORECASE)
+
+
+def _without_own_label(note: str) -> str:
+    return _OWN_LABEL.sub("", note.strip(), count=1).strip()
 
 
 class OpenAIModel:
@@ -133,7 +143,7 @@ class OpenAIModel:
         if not call_id:
             raise ModelProtocolError("the provider Tool call has no identity")
         usage = getattr(response, "usage", None)
-        note = str(getattr(choice, "content", "") or "").strip()
+        note = _without_own_label(str(getattr(choice, "content", "") or ""))
         if len(note) > MAX_DECISION_NOTE_CHARS:
             raise ModelProtocolError(
                 f"Decision Note exceeds {MAX_DECISION_NOTE_CHARS} characters"

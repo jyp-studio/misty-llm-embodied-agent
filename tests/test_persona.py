@@ -245,6 +245,51 @@ def test_the_persona_does_not_promise_a_snapshot_after_a_refused_call():
 # What it deliberately leaves to the Tool schemas
 # ---------------------------------------------------------------------------
 
+def test_the_persona_tells_it_to_say_something_before_a_slow_action():
+    """From the first recorded runs: it drove from 150cm to 67cm in silence
+    and then listened three times. A person watching a robot cross a room
+    without a word cannot tell whether it heard them."""
+    assert "say one short line first" in FLAT
+    assert "before you move or scan" in FLAT
+
+
+def test_the_persona_says_two_silences_end_the_waiting():
+    """Same runs: `listen` returned `silence` with the microphone reported
+    unavailable, and it called `listen` again anyway — eleven times in the
+    rescue case, until the Turn cap ended the Episode."""
+    assert "do not call `listen` again" in FLAT
+    assert "say something or finish" in FLAT
+
+
+def test_the_persona_says_speech_arrives_without_listening_for_it():
+    """`new_speech` rides on every snapshot, so waiting is only for an
+    answer it actually asked for."""
+    assert "you do not need `listen` to notice that somebody spoke" in FLAT
+
+
+def test_the_persona_puts_words_first_when_somebody_is_in_trouble():
+    """The rescue recording spent its whole Episode on Skills and listening
+    and never answered the person at all."""
+    assert "answer them in words before" in FLAT
+
+
+def test_the_persona_forbids_finishing_without_having_said_anything():
+    """The second recording pass still produced Episodes that observed, took
+    a Skill, listened and closed without one word — for a person trapped
+    under a shelf, and for somebody who had just said hello. Silence reads
+    as a broken robot, whatever the Journal says happened."""
+    assert "never call `done` without having said something" in FLAT
+
+
+def test_the_persona_answers_in_a_language_somebody_actually_used():
+    """With reasoning on, it greeted an English speaker in Spanish and a
+    silent waving person in German, and switched a Traditional Chinese
+    conversation into Simplified partway through."""
+    assert "never answer in a language nobody here has used" in FLAT
+    assert "nobody has said anything yet" in FLAT
+    assert "keep the script they wrote in" in FLAT
+
+
 def test_the_persona_does_not_restate_what_a_tool_schema_already_says():
     """The nine schemas are sent alongside it every Turn. §15.4's
     one-fact-one-place: two statements of one rule are two things that can

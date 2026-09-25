@@ -147,15 +147,22 @@ highest product seam for the CLI, local Demo, and acceptance coverage:
 40. The spec's fifteen situations are one declarative set in
     `misty_agent/acceptance.py`: each names the card and fixture it runs,
     whether an Episode may open, the records it must make observable, the
-    Tools that would make it unsafe, and whether the base may move. The Demo
-    and `tests/test_acceptance_scenarios.py` call the same `run_fixture`, so
-    the page shows the execution the tests asserted on.
+    Tools that would make it unsafe, and whether the base may move. The
+    acceptance tests, the scripted `/scenarios/<card>/run` route and the
+    Demo's recorder call the same `run_fixture`.
 41. The Demo labels what a visitor is looking at — specification fixture,
-    scripted run or live-model run — and every one of them carries the
-    hardware-unverified note. Replay plays, pauses, restarts and scrubs
-    across every Moment of every Episode in the run.
+    scripted run, recorded model run or live-model run — and every one of
+    them carries the hardware-unverified note. Replay plays, pauses,
+    restarts and scrubs across every Moment of every Episode in the run.
 42. `tests/test_documentation_contract.py` pins one job per document and
     fails on a claim the code has retired.
+43. The Demo page is in English and shows sixteen recorded hosted-model runs
+    (`misty_agent/demo/recordings/`, made by
+    `python -m misty_agent.demo.record`) instead of scripted runs. An
+    animated simulated Misty draws each Tool call: speech bubble and mouth,
+    arms, head, face, chest LED, wheels and approach distance, listening,
+    scanning and Skill loading. The live panel plays on the same stage.
+    Recording needs a key and costs a little; the suite never records.
 
 Ticket 14 ends at `ab22bf5`; ticket 15 is the current implementation.
 
@@ -172,16 +179,19 @@ zero skips. MediaPipe needs a macOS OpenGL context; a restricted shell can fail
 those tests even with the correct virtual environment, so run the final suite
 outside that sandbox rather than accepting partial green.
 
-To inspect the no-key tracer bullet:
+To see the Demo:
 
 ```bash
 .venv/bin/python -m misty_agent --demo
 ```
 
-Choose the greeting or care card, select a WAV or visual timeline, and
-select `執行離線模擬`. The page is loopback-only and needs no API key. The
-selected local gate, Runtime, Tool dispatch and Journal execute afresh; visual
-detector signals, ASR transcripts and model decisions are explicitly scripted.
+Pick a group and an example; it replays a recorded hosted-model run on the
+animated simulated robot. The page is loopback-only and needs no API key.
+To re-record the examples against the configured model (needs a key):
+
+```bash
+.venv/bin/python -m misty_agent.demo.record
+```
 
 ## Evidence boundary
 
@@ -221,7 +231,7 @@ internal one-Episode dependency: providers enter at `SocialAgentRuntime`
 through the shared `InputSource` seam, and
 `tests/test_acceptance_scenarios.py` fails if a second caller appears.
 Built-in scenarios are run by `misty_agent.acceptance.run_fixture` and
-nothing else, so the Demo and the tests cannot drift apart.
+nothing else, so the Demo's recordings and the tests cannot drift apart.
 
 ## Local-work warning
 

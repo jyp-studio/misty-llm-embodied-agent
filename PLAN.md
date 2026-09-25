@@ -2940,3 +2940,44 @@ Responses、function calling 與圖片輸入）。只改名稱會出事，原因
 `env_parse_none_str="null"`、`llm_reasoning_effort` 可設為 None 的選項、`.env.example` 裡換回
 gpt-4o 的說明與註解掉的 temperature、以及對應的兩個測試。現在 `reasoning_effort="none"` 每次都送；
 `llm_temperature` 保留為可選欄位、預設不送，因為 luna 會拒絕自訂 temperature。
+
+### 16.66 Demo 範例改成真實模型錄音，並為此把 adapter 換到 Responses API
+
+使用者要求 Demo 的範例不要再用我們自己寫的動作，而是把模型真的跑一次的結果錄下來離線播放；
+同時頁面要全英文、要有機器人動畫、拿掉工程證據區塊。
+
+`run_fixture` 多一個 `model` 參數，只換掉「誰做決定」，輸入、時間線、模擬房間都還是 fixture 的。
+`misty_agent/demo/record.py` 用它對 15 個範例各跑一次，寫成
+`misty_agent/demo/recordings/*.json`，provenance 標 `recorded_model_run` 加模型名稱與日期。
+測試不用錄音：15 個規格情境仍用寫好的決定，因為測試要的是每次一樣。錄音只被當成資料檢查
+形狀，並對 Misty 說出口的每一句跑 boundary audit——要給別人看的東西不該越界。
+
+`b-expires` 不列入 Demo。B 的 cue 會不會過期取決於 A 的 Episode 花多久，模型自己選工具之後
+那不再是 fixture 能決定的；第一次錄到的是一次正常交接。它仍是 acceptance 契約之一。
+
+**第一次錄音暴露的問題，以及為什麼最後動到 adapter。** 模型大量使用 `listen`、動作前後不說話、
+`en-rescue-limits` 連續聽十一次撞到 turn 上限、`calming-support` 對英文輸入回克羅埃西亞語。
+先改 persona（動作前先說一句、`listen` 只等自己問的問題、連兩次靜音就別再聽、危險時先用話回應、
+沒說過話不准 `done`），重錄後仍有三則全程沉默。
+
+改 `reasoning_effort=low` 時 API 回 400：`Function tools with reasoning_effort are not supported
+for gpt-5.6-luna in /v1/chat/completions`。探針確認這是端點限制而非模型限制：sol 與 luna 在
+Chat Completions 都只能 `none`，在 Responses API 則 low/medium 都可以。也就是說先前每一次決策
+都是在完全不推理的狀態下選工具。
+
+因此 `OpenAIModel.decide` 改走 `client.responses.create`：context 轉成 input items（assistant 的
+一個 Turn 會拆成「說的話」與 `function_call` 兩個 item，tool 結果是 `function_call_output`，
+圖片是 `input_image`）、tool schema 攤平一層、`store=False`（人說的話不留在別人的磁碟上）、
+`reasoning={"effort": ...}` 只在不是 `none` 時送。不讀 reasoning item：Journal 是公開紀錄，
+把推理摘要抄進去正是 Decision Note 存在的理由。`llm_reasoning_effort` 預設改為 `low`。
+
+`store=false` 表示 provider 不保留任何東西，因此 Turn 的推理到下一個 Turn 就沒了。改成
+`include=["reasoning.encrypted_content"]` 要回加密的 reasoning item，經由 `Decision.provider_items`
+交給 loop，寫進該 Turn 的 working context，下一個 Turn 原封不動送回去。放在 context 而不是
+adapter 裡是刻意的：context 本來就是一個 Turn 的歷史所在，且隨 Episode 一起丟棄，所以
+Episode 之間不會互相繼承（ticket 12 的保證仍由我們自己的程式維持，離線可測）。Journal 不碰它——
+Journal 是公開紀錄，私有推理不進去，這正是 Decision Note 存在的理由。
+
+boundary audit 修掉一個誤判：Misty 教對方去講的話（「直接說：『請幫我聯絡當地緊急服務』」）
+被讀成它自己宣稱已聯絡。比對前把有引導詞（說／告訴／say／tell 等）帶出的引號內容挖成等長空白，
+只忽略被引述的話，加引號不會讓自己的宣稱躲過，兩個方向都有測試。

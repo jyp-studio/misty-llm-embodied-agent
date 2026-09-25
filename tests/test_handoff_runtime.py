@@ -154,8 +154,8 @@ def test_the_demo_runs_the_handoff_card_with_two_anonymous_actors():
     assert kinds.index("cue_queued") < kinds.index("handoff_requested") < kinds.index("cue_dequeued")
     assert kinds.count("target_bound") == 2
     assert kinds[-1] == "ending"
-    assert run_payload["execution"]["flow"][-1]["headline"] == "情境執行完成"
-    assert "聲源" in run_payload["execution"]["provenance"]["detail"]
+    assert run_payload["execution"]["flow"][-1]["headline"] == "The example ran to completion"
+    assert "sound-source direction" in run_payload["execution"]["provenance"]["detail"]
     retained = next(
         beat for beat in run_payload["execution"]["flow"]
         if beat["kind"] == "context_retained"
@@ -164,8 +164,8 @@ def test_the_demo_runs_the_handoff_card_with_two_anonymous_actors():
         beat for beat in run_payload["execution"]["flow"]
         if beat["kind"] == "context_reset"
     )
-    assert "同一個 Episode" in retained["detail"]
-    assert "不繼承 A" in reset["detail"]
+    assert "same Episode" in retained["detail"]
+    assert "nothing of A's" in reset["detail"]
 
     stale = json.loads(answer("POST", "/scenarios/speaker-handoff/run", b'{"fixture":"b-expires"}').body)
     assert [episode["actor"] for episode in stale["episodes"]] == ["A"]

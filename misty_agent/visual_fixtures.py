@@ -102,12 +102,12 @@ def _gaze_wave_frames(
 VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
     VisualFixture(
         "visual-empty-room",
-        "空房間（不互動）",
+        "Empty room (no interaction)",
         tuple(_frame(at_s) for at_s in (0.0, 0.3, 0.6)),
     ),
     VisualFixture(
         "visual-passerby",
-        "路過但沒有看向 Misty（不互動）",
+        "Walks past without looking at Misty (no interaction)",
         tuple(
             _frame(at_s, _detection(x=x, looking=False))
             for at_s, x in ((0.0, 0.05), (0.3, 0.25), (0.6, 0.45))
@@ -115,12 +115,12 @@ VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
     ),
     VisualFixture(
         "visual-gaze-wave",
-        "持續看向 Misty 並揮手",
+        "Keeps looking at Misty and waves",
         _gaze_wave_frames(),
     ),
     VisualFixture(
         "visual-two-people",
-        "兩人入鏡，其中一人持續揮手",
+        "Two people in frame, one keeps waving",
         _gaze_wave_frames(two_people=True),
     ),
 )
@@ -129,7 +129,7 @@ VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
 CARE_VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
     VisualFixture(
         "care-sustained-signals",
-        "持續縮眼、張口與低頭（不代表情緒診斷）",
+        "Narrowed eyes, open mouth, lowered head (not an emotion diagnosis)",
         tuple(
             _frame(
                 at_s,
@@ -148,7 +148,7 @@ CARE_VISUAL_FIXTURES: Tuple[VisualFixture, ...] = (
     ),
     VisualFixture(
         "care-expression-words-conflict",
-        "嘴角抬高但本人明確說「我其實很難過」",
+        "Smiling mouth, but they say \"Actually, I feel really sad\"",
         tuple(
             _frame(
                 at_s,

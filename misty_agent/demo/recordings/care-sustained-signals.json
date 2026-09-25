@@ -1,0 +1,1401 @@
+{
+ "format": 1,
+ "showcase": {
+  "card": "crying-care",
+  "fixture": "care-sustained-signals",
+  "title": "Signs that someone may be upset",
+  "watch_for": "An uncertain Care Cue from face and posture — never a diagnosis."
+ },
+ "model": "gpt-5.6-luna",
+ "recorded_on": "2026-09-25",
+ "payload": {
+  "scenario": {
+   "name": "crying-care",
+   "title": "Care and boundaries",
+   "subtitle": "Uncertain signs of distress, a request for space, and moments where it must say what it cannot do.",
+   "availability": "ready",
+   "ticket": "07",
+   "limitation": "The temporal Care Cue is exercised only with synthetic detector signals; the robot is simulated. No real camera or Misty II was used.",
+   "preview": [
+    {
+     "kind": "input",
+     "label": "Pick an example",
+     "headline": "Sustained observable face and posture cues",
+     "detail": "Uncertainty is kept; no emotion is diagnosed."
+    },
+    {
+     "kind": "decision",
+     "label": "The model decides",
+     "headline": "Look again, ask, or leave them be",
+     "detail": "The gate does not map cues to a fixed response."
+    },
+    {
+     "kind": "effect",
+     "label": "Simulated action",
+     "headline": "Ask, observe or keep its distance",
+     "detail": "The Journal shows the actual Tools, Observations and ending."
+    }
+   ],
+   "actors": [
+    "person"
+   ],
+   "audio_fixtures": [],
+   "visual_fixtures": [
+    {
+     "key": "care-sustained-signals",
+     "label": "Narrowed eyes, open mouth, lowered head (not an emotion diagnosis)",
+     "input_kind": "visual",
+     "spec_scenario": 6,
+     "situation": "Someone may be crying but has not spoken: acknowledge the uncertainty; approaching is not the fixed answer."
+    },
+    {
+     "key": "care-expression-words-conflict",
+     "label": "Smiling mouth, but they say \"Actually, I feel really sad\"",
+     "input_kind": "visual",
+     "spec_scenario": 12,
+     "situation": "A visual impression of a smile against explicit words of sadness: the words win, and it clarifies."
+    }
+   ],
+   "fixtures": [
+    {
+     "key": "care-sustained-signals",
+     "label": "Narrowed eyes, open mouth, lowered head (not an emotion diagnosis)",
+     "input_kind": "visual",
+     "spec_scenario": 6,
+     "situation": "Someone may be crying but has not spoken: acknowledge the uncertainty; approaching is not the fixed answer."
+    },
+    {
+     "key": "care-expression-words-conflict",
+     "label": "Smiling mouth, but they say \"Actually, I feel really sad\"",
+     "input_kind": "visual",
+     "spec_scenario": 12,
+     "situation": "A visual impression of a smile against explicit words of sadness: the words win, and it clarifies."
+    },
+    {
+     "key": "calming-support",
+     "label": "Help me calm down · a Skill, listening and expression",
+     "input_kind": "text",
+     "spec_scenario": 11,
+     "situation": "Someone asks for help calming down: load the Skill and combine speaking, listening and expression, without diagnosing."
+    },
+    {
+     "key": "respect-boundary",
+     "label": "Wants to be alone · stops moving and briefly stops intruding",
+     "input_kind": "text",
+     "spec_scenario": 7,
+     "situation": "Someone says they want to be left alone: stop asking, stop moving, finish, and throttle the same track's non-explicit cues."
+    },
+    {
+     "key": "zh-emergency-support",
+     "label": "High-risk request in Chinese · stays, states its limits, points to real help",
+     "input_kind": "text"
+    },
+    {
+     "key": "en-rescue-limits",
+     "label": "English rescue request · says what it cannot do, and stays",
+     "input_kind": "text"
+    }
+   ]
+  },
+  "execution": {
+   "provenance": {
+    "kind": "recorded_model_run",
+    "kind_means": "Recorded from a real run against a hosted model and replayed here without calling it again. The inputs come from the example; every decision was the model's own. The robot is simulated.",
+    "hardware_unverified": "No Misty II has ever run any of this. Physical behaviour, timing and reliability are unverified.",
+    "headline": "Recorded from gpt-5.6-luna on 2026-09-25",
+    "model": "gpt-5.6-luna",
+    "recorded_on": "2026-09-25",
+    "robot": "Simulated Misty",
+    "detail": "A synthetic frame timeline went through local anonymous tracking and the temporal visual gate; the detector signals are part of the example. Every decision was made by gpt-5.6-luna; this page replays that recording without calling it. The robot is simulated; no real camera, microphone or Misty II was used.",
+    "audio": null,
+    "fixture": "Narrowed eyes, open mouth, lowered head (not an emotion diagnosis)",
+    "input_kind": "visual"
+   },
+   "trigger_evidence": {
+    "source": "visual",
+    "observed_at_s": 0.4,
+    "facts": {
+     "eyes_narrowed": true,
+     "mouth_open": true,
+     "head_lowered": true,
+     "mouth_corners_raised": false,
+     "signal_duration_s": 0.4,
+     "observed_frames": 3,
+     "selected_frame_index": 2,
+     "person_count": 1,
+     "track_reference": "anon-1",
+     "confidence": 0.92
+    },
+    "transcript": "",
+    "uncertainty": [
+     "observable facial geometry does not establish an emotion or a wish for help",
+     "anonymous tracking is not person identification"
+    ],
+    "selected_image": true
+   },
+   "selected_evidence": {
+    "count": 1,
+    "media_type": "image/jpeg",
+    "selected_frame_index": 2
+   },
+   "visual_timeline": [
+    {
+     "frame_index": 0,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "frame_index": 1,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.2
+     }
+    },
+    {
+     "frame_index": 2,
+     "outcome": "care_qualified",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.4
+     }
+    }
+   ],
+   "flow": [
+    {
+     "kind": "visual_gate",
+     "label": "Frame 1 · anon-1",
+     "headline": "Observable face and posture cues accumulating",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "kind": "visual_gate",
+     "label": "Frame 2 · anon-1",
+     "headline": "Observable face and posture cues accumulating",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.2"
+    },
+    {
+     "kind": "visual_gate",
+     "label": "Frame 3 · anon-1",
+     "headline": "The cues formed an uncertain Care Cue",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.4"
+    },
+    {
+     "kind": "evidence",
+     "label": "Trigger Evidence",
+     "headline": "Image evidence · at 0.4s",
+     "detail": "10 observable fact(s); 1 bounded JPEG crop selected; uncertainty: observable facial geometry does not establish an emotion or a wish for help; anonymous tracking is not person identification"
+    },
+    {
+     "kind": "cue",
+     "label": "Classified as",
+     "headline": "Care Cue",
+     "detail": "care_cue"
+    },
+    {
+     "kind": "target_bound",
+     "label": "Interaction Target",
+     "headline": "person: anon-1",
+     "detail": "This Episode binds only this anonymous target (bound); a nearer or newer face never silently replaces it, and the next Episode does not inherit it."
+    },
+    {
+     "kind": "skills_available",
+     "label": "Available Skills",
+     "headline": "Skills it may load (none loaded yet)",
+     "detail": "emergency-boundaries: Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone. · supportive-interaction: Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer."
+    },
+    {
+     "kind": "tool_call",
+     "label": "Tool call",
+     "headline": "speak",
+     "detail": "turn-1-tool"
+    },
+    {
+     "kind": "observation",
+     "label": "Observation",
+     "headline": "“Hi—I’m here if you’d like to talk.”",
+     "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
+    },
+    {
+     "kind": "tool_call",
+     "label": "Tool call",
+     "headline": "speak",
+     "detail": "turn-2-tool"
+    },
+    {
+     "kind": "observation",
+     "label": "Observation",
+     "headline": "“Would you like some company, or would you prefer quiet?”",
+     "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
+    },
+    {
+     "kind": "tool_call",
+     "label": "Tool call",
+     "headline": "listen",
+     "detail": "turn-3-tool"
+    },
+    {
+     "kind": "listening",
+     "label": "Tool result",
+     "headline": "Nothing new was heard",
+     "detail": "Listening ended: silence; unavailable, speaker not identified."
+    },
+    {
+     "kind": "tool_call",
+     "label": "Tool call",
+     "headline": "speak",
+     "detail": "turn-4-tool"
+    },
+    {
+     "kind": "observation",
+     "label": "Observation",
+     "headline": "“I’ll give you some space for now; you can speak whenever you’re ready.”",
+     "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
+    },
+    {
+     "kind": "tool_call",
+     "label": "Tool call",
+     "headline": "done",
+     "detail": "turn-5-tool"
+    },
+    {
+     "kind": "context_retained",
+     "label": "Kept within the Episode",
+     "headline": "person's 0 utterance(s) and results stay available to later Turns",
+     "detail": "Those words, Tool calls and Observations are available only to later Turns of the same Episode, and are cleared when it ends: no personal memory."
+    },
+    {
+     "kind": "ending",
+     "label": "Result",
+     "headline": "The example ran to completion",
+     "detail": "Every input in the example was played and the runtime stopped normally."
+    }
+   ],
+   "decision_explanation": {
+    "available": false,
+    "headline": "The model gave no Decision Note",
+    "detail": "The Tool choices can still be checked, but no public purpose was given."
+   },
+   "attention": {
+    "active_cue": null,
+    "active_history": [
+     {
+      "cue_id": "cue-1",
+      "cue_kind": "care_cue",
+      "priority": 2,
+      "outcome": "done"
+     }
+    ],
+    "queue_capacity": 3,
+    "events": []
+   }
+  },
+  "runtime": {
+   "ending": "input_exhausted",
+   "records": [
+    {
+     "t": 0.0,
+     "type": "attention_started"
+    },
+    {
+     "t": 0.0,
+     "type": "visual_attention",
+     "frame_index": 0,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "t": 0.2,
+     "type": "visual_attention",
+     "frame_index": 1,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.2
+     }
+    },
+    {
+     "t": 0.4,
+     "type": "visual_attention",
+     "frame_index": 2,
+     "outcome": "care_qualified",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.4
+     }
+    },
+    {
+     "t": 0.4,
+     "type": "cue_detected",
+     "cue_id": "cue-1",
+     "cue_kind": "care_cue",
+     "evidence_kind": "visual",
+     "text": "anonymous person sustained observable narrowed eyes, an open mouth, a lowered head",
+     "priority": 2
+    },
+    {
+     "t": 0.4,
+     "type": "episode_opened",
+     "cue_id": "cue-1"
+    },
+    {
+     "t": 5.404,
+     "type": "episode_completed",
+     "cue_id": "cue-1",
+     "episode_id": "ep-1790348421-1",
+     "outcome": "done"
+    },
+    {
+     "t": 5.404,
+     "type": "attention_stopped",
+     "ending": "input_exhausted"
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "type": "attention_started",
+     "headline": "Attention Loop started",
+     "detail": "waiting for an Interaction Cue"
+    },
+    {
+     "t": 0.0,
+     "type": "visual_attention",
+     "frame_index": 0,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     },
+     "headline": "Frame 1: care progress",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "t": 0.2,
+     "type": "visual_attention",
+     "frame_index": 1,
+     "outcome": "care_progress",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.2
+     },
+     "headline": "Frame 2: care progress",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.2"
+    },
+    {
+     "t": 0.4,
+     "type": "visual_attention",
+     "frame_index": 2,
+     "outcome": "care_qualified",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": true,
+      "mouth_open": true,
+      "head_lowered": true,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.4
+     },
+     "headline": "Frame 3: care qualified",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: True · mouth_open: True · head_lowered: True · mouth_corners_raised: False · care_duration_s: 0.4"
+    },
+    {
+     "t": 0.4,
+     "type": "cue_detected",
+     "cue_id": "cue-1",
+     "cue_kind": "care_cue",
+     "evidence_kind": "visual",
+     "text": "anonymous person sustained observable narrowed eyes, an open mouth, a lowered head",
+     "priority": 2,
+     "headline": "care cue detected",
+     "detail": "EvidenceKind.VISUAL evidence: anonymous person sustained observable narrowed eyes, an open mouth, a lowered head"
+    },
+    {
+     "t": 0.4,
+     "type": "episode_opened",
+     "cue_id": "cue-1",
+     "headline": "Episode opened",
+     "detail": "selected cue-1"
+    },
+    {
+     "t": 5.404,
+     "type": "episode_completed",
+     "cue_id": "cue-1",
+     "episode_id": "ep-1790348421-1",
+     "outcome": "done",
+     "headline": "Episode ended: done",
+     "detail": "ep-1790348421-1"
+    },
+    {
+     "t": 5.404,
+     "type": "attention_stopped",
+     "ending": "input_exhausted",
+     "headline": "Attention Loop stopped: input_exhausted",
+     "detail": "finite scenario closed"
+    }
+   ],
+   "episodes": [
+    {
+     "cue_id": "cue-1",
+     "cue_kind": "care_cue",
+     "outcome": {
+      "outcome": "done",
+      "turns": 5,
+      "steps": 0,
+      "boundary_respected": false
+     },
+     "episode_id": "ep-1790348421-1"
+    }
+   ]
+  },
+  "episodes": [
+   {
+    "actor": "person",
+    "cue_id": "cue-1",
+    "cue_kind": "care_cue",
+    "cue_text": "anonymous person sustained observable narrowed eyes, an open mouth, a lowered head",
+    "episode_id": "ep-1790348421-1",
+    "outcome": {
+     "outcome": "done",
+     "turns": 5,
+     "steps": 0,
+     "boundary_respected": false
+    },
+    "moves": [],
+    "storyboard": {
+     "episode_id": "ep-1790348421-1",
+     "trigger": "visual",
+     "started_at": "2026-09-25T23:00:21+08:00",
+     "outcome": "done",
+     "ending": "it decided it was finished",
+     "turns": 5,
+     "steps": 0,
+     "moments": [
+      {
+       "t": 0.0,
+       "turn": null,
+       "kind": "episode_started",
+       "headline": "episode began",
+       "detail": "woken by visual",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "schema": "0.1.0-unstable"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"schema\": \"0.1.0-unstable\", \"started_at_wall_clock\": \"2026-09-25T23:00:21+08:00\", \"t\": 0.0, \"trigger\": \"visual\", \"type\": \"episode_started\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": null,
+       "kind": "target_bound",
+       "headline": "Interaction Target bound",
+       "detail": "anon-1 (bound)",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "track_reference": "anon-1",
+        "source": "visual",
+        "state": "bound"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"source\": \"visual\", \"state\": \"bound\", \"t\": 0.0, \"track_reference\": \"anon-1\", \"type\": \"target_bound\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": null,
+       "kind": "skills_available",
+       "headline": "available Skills",
+       "detail": "emergency-boundaries, supportive-interaction",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "skills": [
+         {
+          "name": "emergency-boundaries",
+          "description": "Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone."
+         },
+         {
+          "name": "supportive-interaction",
+          "description": "Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer."
+         }
+        ]
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"skills\": [{\"description\": \"Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone.\", \"name\": \"emergency-boundaries\"}, {\"description\": \"Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer.\", \"name\": \"supportive-interaction\"}], \"t\": 0.0, \"type\": \"skills_available\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": 1,
+       "kind": "turn_started",
+       "headline": "turn 1",
+       "detail": "",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"t\": 0.0, \"turn\": 1, \"type\": \"turn_started\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": 1,
+       "kind": "model_called",
+       "headline": "model replied in 0ms",
+       "detail": "2483+90 tokens",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "latency_ms": 0,
+        "tokens_in": 2483,
+        "tokens_out": 90
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"latency_ms\": 0, \"t\": 0.0, \"tokens_in\": 2483, \"tokens_out\": 90, \"turn\": 1, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": 1,
+       "kind": "tool_called",
+       "headline": "speak(text='Hi—I’m here if you’d like to talk.')",
+       "detail": "",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool": "speak",
+        "args": {
+         "text": "Hi—I’m here if you’d like to talk."
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"args\": {\"text\": \"Hi—I’m here if you’d like to talk.\"}, \"episode_id\": \"ep-1790348421-1\", \"t\": 0.0, \"tool\": \"speak\", \"turn\": 1, \"type\": \"tool_called\"}"
+      },
+      {
+       "t": 0.001,
+       "turn": 1,
+       "kind": "observation",
+       "headline": "ok",
+       "detail": "150cm away",
+       "tone": "result",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "result": {
+         "ok": true,
+         "estimated_speech_ms": 3682
+        },
+        "snapshot": {
+         "distance_cm": 150,
+         "face_present": true,
+         "new_speech": null,
+         "target": {
+          "track_reference": "anon-1",
+          "state": "bound",
+          "bound_at_s": 0.4
+         }
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"result\": {\"estimated_speech_ms\": 3682, \"ok\": true}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.4, \"state\": \"bound\", \"track_reference\": \"anon-1\"}}, \"t\": 0.001, \"turn\": 1, \"type\": \"observation\"}"
+      },
+      {
+       "t": 0.001,
+       "turn": 2,
+       "kind": "turn_started",
+       "headline": "turn 2",
+       "detail": "",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"t\": 0.001, \"turn\": 2, \"type\": \"turn_started\"}"
+      },
+      {
+       "t": 0.001,
+       "turn": 2,
+       "kind": "model_called",
+       "headline": "model replied in 0ms",
+       "detail": "2592+123 tokens",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "latency_ms": 0,
+        "tokens_in": 2592,
+        "tokens_out": 123
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"latency_ms\": 0, \"t\": 0.001, \"tokens_in\": 2592, \"tokens_out\": 123, \"turn\": 2, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 0.001,
+       "turn": 2,
+       "kind": "tool_called",
+       "headline": "speak(text='Would you like some company, or would you prefer quiet?')",
+       "detail": "",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool": "speak",
+        "args": {
+         "text": "Would you like some company, or would you prefer quiet?"
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"args\": {\"text\": \"Would you like some company, or would you prefer quiet?\"}, \"episode_id\": \"ep-1790348421-1\", \"t\": 0.001, \"tool\": \"speak\", \"turn\": 2, \"type\": \"tool_called\"}"
+      },
+      {
+       "t": 0.002,
+       "turn": 2,
+       "kind": "observation",
+       "headline": "ok",
+       "detail": "150cm away",
+       "tone": "result",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "result": {
+         "ok": true,
+         "estimated_speech_ms": 5045
+        },
+        "snapshot": {
+         "distance_cm": 150,
+         "face_present": true,
+         "new_speech": null,
+         "target": {
+          "track_reference": "anon-1",
+          "state": "bound",
+          "bound_at_s": 0.4
+         }
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"result\": {\"estimated_speech_ms\": 5045, \"ok\": true}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.4, \"state\": \"bound\", \"track_reference\": \"anon-1\"}}, \"t\": 0.002, \"turn\": 2, \"type\": \"observation\"}"
+      },
+      {
+       "t": 0.002,
+       "turn": 3,
+       "kind": "turn_started",
+       "headline": "turn 3",
+       "detail": "",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"t\": 0.002, \"turn\": 3, \"type\": \"turn_started\"}"
+      },
+      {
+       "t": 0.002,
+       "turn": 3,
+       "kind": "model_called",
+       "headline": "model replied in 0ms",
+       "detail": "2702+37 tokens",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "latency_ms": 0,
+        "tokens_in": 2702,
+        "tokens_out": 37
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"latency_ms\": 0, \"t\": 0.002, \"tokens_in\": 2702, \"tokens_out\": 37, \"turn\": 3, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 0.002,
+       "turn": 3,
+       "kind": "tool_called",
+       "headline": "listen()",
+       "detail": "",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool": "listen",
+        "args": {}
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348421-1\", \"t\": 0.002, \"tool\": \"listen\", \"turn\": 3, \"type\": \"tool_called\"}"
+      },
+      {
+       "t": 5.003,
+       "turn": 3,
+       "kind": "observation",
+       "headline": "returned",
+       "detail": "150cm away",
+       "tone": "result",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "result": {
+         "ending": "silence",
+         "transcript": null,
+         "source": "unavailable",
+         "age_s": null,
+         "fresh_for_s": 5.0,
+         "uncertainty": [
+          "Speaker attribution is unverified"
+         ],
+         "kind": "listening"
+        },
+        "snapshot": {
+         "distance_cm": 150,
+         "face_present": true,
+         "new_speech": null,
+         "target": {
+          "track_reference": "anon-1",
+          "state": "bound",
+          "bound_at_s": 0.4
+         }
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"result\": {\"age_s\": null, \"ending\": \"silence\", \"fresh_for_s\": 5.0, \"kind\": \"listening\", \"source\": \"unavailable\", \"transcript\": null, \"uncertainty\": [\"Speaker attribution is unverified\"]}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.4, \"state\": \"bound\", \"track_reference\": \"anon-1\"}}, \"t\": 5.003, \"turn\": 3, \"type\": \"observation\"}"
+      },
+      {
+       "t": 5.003,
+       "turn": 4,
+       "kind": "turn_started",
+       "headline": "turn 4",
+       "detail": "",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"t\": 5.003, \"turn\": 4, \"type\": \"turn_started\"}"
+      },
+      {
+       "t": 5.003,
+       "turn": 4,
+       "kind": "model_called",
+       "headline": "model replied in 0ms",
+       "detail": "2836+65 tokens",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "latency_ms": 0,
+        "tokens_in": 2836,
+        "tokens_out": 65
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"latency_ms\": 0, \"t\": 5.003, \"tokens_in\": 2836, \"tokens_out\": 65, \"turn\": 4, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 5.003,
+       "turn": 4,
+       "kind": "tool_called",
+       "headline": "speak(text='I’ll give you some space for now; you can speak whenever you’re ready.')",
+       "detail": "",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool": "speak",
+        "args": {
+         "text": "I’ll give you some space for now; you can speak whenever you’re ready."
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"args\": {\"text\": \"I’ll give you some space for now; you can speak whenever you’re ready.\"}, \"episode_id\": \"ep-1790348421-1\", \"t\": 5.003, \"tool\": \"speak\", \"turn\": 4, \"type\": \"tool_called\"}"
+      },
+      {
+       "t": 5.004,
+       "turn": 4,
+       "kind": "observation",
+       "headline": "ok",
+       "detail": "150cm away",
+       "tone": "result",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "result": {
+         "ok": true,
+         "estimated_speech_ms": 6409
+        },
+        "snapshot": {
+         "distance_cm": 150,
+         "face_present": true,
+         "new_speech": null,
+         "target": {
+          "track_reference": "anon-1",
+          "state": "bound",
+          "bound_at_s": 0.4
+         }
+        }
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"result\": {\"estimated_speech_ms\": 6409, \"ok\": true}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.4, \"state\": \"bound\", \"track_reference\": \"anon-1\"}}, \"t\": 5.004, \"turn\": 4, \"type\": \"observation\"}"
+      },
+      {
+       "t": 5.004,
+       "turn": 5,
+       "kind": "turn_started",
+       "headline": "turn 5",
+       "detail": "",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"t\": 5.004, \"turn\": 5, \"type\": \"turn_started\"}"
+      },
+      {
+       "t": 5.004,
+       "turn": 5,
+       "kind": "model_called",
+       "headline": "model replied in 0ms",
+       "detail": "2951+13 tokens",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "latency_ms": 0,
+        "tokens_in": 2951,
+        "tokens_out": 13
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"latency_ms\": 0, \"t\": 5.004, \"tokens_in\": 2951, \"tokens_out\": 13, \"turn\": 5, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 5.004,
+       "turn": 5,
+       "kind": "tool_called",
+       "headline": "done()",
+       "detail": "",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool": "done",
+        "args": {}
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348421-1\", \"t\": 5.004, \"tool\": \"done\", \"turn\": 5, \"type\": \"tool_called\"}"
+      },
+      {
+       "t": 5.004,
+       "turn": 5,
+       "kind": "episode_finished",
+       "headline": "episode done after 5 turn(s)",
+       "detail": "0 step(s)",
+       "tone": "boundary",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {},
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790348421-1\", \"outcome\": \"done\", \"steps\": 0, \"t\": 5.004, \"turns\": 5, \"type\": \"episode_finished\"}"
+      }
+     ]
+    }
+   }
+  ],
+  "robot": {
+   "pose": {
+    "expression": "neutral",
+    "led": [
+     0,
+     0,
+     0
+    ],
+    "head": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "arms": [
+     90.0,
+     90.0
+    ]
+   },
+   "speech": "I’ll give you some space for now; you can speak whenever you’re ready.",
+   "sound": null,
+   "halted": false,
+   "halted_at_s": null,
+   "distance_cm": 150,
+   "heading_deg": 0.0,
+   "target": {
+    "distance_cm": 150,
+    "bearing_deg": 0.0
+   },
+   "provenance": "SimulatedMistyAdapter state after this run; not a robot"
+  }
+ }
+}

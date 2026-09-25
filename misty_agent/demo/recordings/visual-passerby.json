@@ -1,0 +1,505 @@
+{
+ "format": 1,
+ "showcase": {
+  "card": "greeting",
+  "fixture": "visual-passerby",
+  "title": "Someone walks past",
+  "watch_for": "They never look at Misty, so it leaves them alone and the model is never called."
+ },
+ "model": "gpt-5.6-luna",
+ "recorded_on": "2026-09-25",
+ "payload": {
+  "scenario": {
+   "name": "greeting",
+   "title": "Starting a conversation",
+   "subtitle": "A wake phrase, a wave, an invitation to come closer — and people it should leave alone.",
+   "availability": "ready",
+   "ticket": "05",
+   "limitation": "The wake and visual gates analyse synthetic fixtures; the robot is simulated. This is not recognition in a real room or on a real robot.",
+   "preview": [
+    {
+     "kind": "input",
+     "label": "Pick an example",
+     "headline": "A wake recording, a frame timeline or a sentence",
+     "detail": "Every path passes a local gate first."
+    },
+    {
+     "kind": "decision",
+     "label": "Local decision",
+     "headline": "Only bounded Trigger Evidence is kept",
+     "detail": "An empty room or a passer-by never reaches the model."
+    },
+    {
+     "kind": "effect",
+     "label": "Episode",
+     "headline": "Misty answers in simulation",
+     "detail": "The runtime records, decisions and ending all come from this run."
+    }
+   ],
+   "actors": [
+    "person",
+    "person",
+    "person",
+    "person"
+   ],
+   "audio_fixtures": [
+    {
+     "key": "hey-normal",
+     "label": "Hey Misty · normal pace",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hi-slow",
+     "label": "Hi Misty · slow",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-fast",
+     "label": "Hey Misty · fast",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-pause",
+     "label": "Hey … Misty · with a pause",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-greeting-only",
+     "label": "Hey Misty · a single greeting",
+     "input_kind": "audio",
+     "spec_scenario": 3,
+     "situation": "A wake phrase and an ordinary greeting: answer, then finish."
+    }
+   ],
+   "visual_fixtures": [
+    {
+     "key": "visual-empty-room",
+     "label": "Empty room (no interaction)",
+     "input_kind": "visual",
+     "spec_scenario": 1,
+     "situation": "An empty room and no speech: nothing to respond to."
+    },
+    {
+     "key": "visual-passerby",
+     "label": "Walks past without looking at Misty (no interaction)",
+     "input_kind": "visual",
+     "spec_scenario": 2,
+     "situation": "Somebody passes by without looking or speaking: not a cue."
+    },
+    {
+     "key": "visual-gaze-wave",
+     "label": "Keeps looking at Misty and waves",
+     "input_kind": "visual",
+     "spec_scenario": 4,
+     "situation": "Sustained gaze and a wave: a Social Invitation, answered from where it stands rather than by closing in."
+    },
+    {
+     "key": "visual-two-people",
+     "label": "Two people in frame, one keeps waving",
+     "input_kind": "visual"
+    }
+   ],
+   "fixtures": [
+    {
+     "key": "hey-normal",
+     "label": "Hey Misty · normal pace",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hi-slow",
+     "label": "Hi Misty · slow",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-fast",
+     "label": "Hey Misty · fast",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-pause",
+     "label": "Hey … Misty · with a pause",
+     "input_kind": "audio"
+    },
+    {
+     "key": "hey-greeting-only",
+     "label": "Hey Misty · a single greeting",
+     "input_kind": "audio",
+     "spec_scenario": 3,
+     "situation": "A wake phrase and an ordinary greeting: answer, then finish."
+    },
+    {
+     "key": "visual-empty-room",
+     "label": "Empty room (no interaction)",
+     "input_kind": "visual",
+     "spec_scenario": 1,
+     "situation": "An empty room and no speech: nothing to respond to."
+    },
+    {
+     "key": "visual-passerby",
+     "label": "Walks past without looking at Misty (no interaction)",
+     "input_kind": "visual",
+     "spec_scenario": 2,
+     "situation": "Somebody passes by without looking or speaking: not a cue."
+    },
+    {
+     "key": "visual-gaze-wave",
+     "label": "Keeps looking at Misty and waves",
+     "input_kind": "visual",
+     "spec_scenario": 4,
+     "situation": "Sustained gaze and a wave: a Social Invitation, answered from where it stands rather than by closing in."
+    },
+    {
+     "key": "visual-two-people",
+     "label": "Two people in frame, one keeps waving",
+     "input_kind": "visual"
+    },
+    {
+     "key": "come-closer",
+     "label": "Come keep me company · turn, then approach",
+     "input_kind": "text",
+     "spec_scenario": 8,
+     "situation": "Someone invites Misty over: keep the target, align, and close the distance safely before carrying on."
+    },
+    {
+     "key": "come-closer-target-lost",
+     "label": "Come keep me company · they leave midway, so it stops and says so",
+     "input_kind": "text"
+    },
+    {
+     "key": "come-closer-hazard",
+     "label": "Come keep me company · an obstacle appears, so it stops at once",
+     "input_kind": "text",
+     "spec_scenario": 14,
+     "situation": "A hazard appears during an approach: stop driving, report it, and let the model choose what to do instead."
+    },
+    {
+     "key": "good-news",
+     "label": "Sharing good news · words and face agree, no needless movement",
+     "input_kind": "text",
+     "spec_scenario": 5,
+     "situation": "Somebody shares good news: words and expression agree, and nothing unrelated moves."
+    },
+    {
+     "key": "vague-help",
+     "label": "Just \"I need help\" · asks first instead of guessing",
+     "input_kind": "text",
+     "spec_scenario": 9,
+     "situation": "Someone says only that they need help: ask what kind rather than inventing a need."
+    },
+    {
+     "key": "question-no-movement",
+     "label": "A question that needs no movement · just answers",
+     "input_kind": "text",
+     "spec_scenario": 10,
+     "situation": "A question that needs no movement: answer it, and do not drive over to demonstrate that driving exists."
+    }
+   ]
+  },
+  "execution": {
+   "provenance": {
+    "kind": "recorded_model_run",
+    "kind_means": "Recorded from a real run against a hosted model and replayed here without calling it again. The inputs come from the example; every decision was the model's own. The robot is simulated.",
+    "hardware_unverified": "No Misty II has ever run any of this. Physical behaviour, timing and reliability are unverified.",
+    "headline": "Recorded from gpt-5.6-luna on 2026-09-25",
+    "model": "not called",
+    "recorded_on": "2026-09-25",
+    "robot": "Simulated Misty",
+    "detail": "A synthetic frame timeline went through local anonymous tracking and the temporal visual gate; the detector signals are part of the example. No cue formed, so the model was never called. The robot is simulated; no real camera, microphone or Misty II was used.",
+    "audio": null,
+    "fixture": "Walks past without looking at Misty (no interaction)",
+    "input_kind": "visual"
+   },
+   "trigger_evidence": null,
+   "selected_evidence": null,
+   "visual_timeline": [
+    {
+     "frame_index": 0,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "frame_index": 1,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "frame_index": 2,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    }
+   ],
+   "flow": [
+    {
+     "kind": "visual_gate",
+     "label": "Frame 1 · anon-1",
+     "headline": "The person is not looking at Misty",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "kind": "visual_gate",
+     "label": "Frame 2 · anon-1",
+     "headline": "The person is not looking at Misty",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "kind": "visual_gate",
+     "label": "Frame 3 · anon-1",
+     "headline": "The person is not looking at Misty",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "kind": "ending",
+     "label": "Result",
+     "headline": "Stayed quiet: no Episode was opened",
+     "detail": "The whole timeline played, but nothing in it was enough to involve the model or move."
+    }
+   ],
+   "decision_explanation": {
+    "available": false,
+    "headline": "The local gate opened no interaction",
+    "detail": "The evidence never formed a cue, so the model was never called."
+   },
+   "attention": {
+    "active_cue": null,
+    "active_history": [],
+    "queue_capacity": 3,
+    "events": []
+   }
+  },
+  "runtime": {
+   "ending": "input_exhausted",
+   "records": [
+    {
+     "t": 0.0,
+     "type": "attention_started"
+    },
+    {
+     "t": 0.0,
+     "type": "visual_attention",
+     "frame_index": 0,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "t": 0.3,
+     "type": "visual_attention",
+     "frame_index": 1,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "t": 0.6,
+     "type": "visual_attention",
+     "frame_index": 2,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     }
+    },
+    {
+     "t": 0.6,
+     "type": "attention_stopped",
+     "ending": "input_exhausted"
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "type": "attention_started",
+     "headline": "Attention Loop started",
+     "detail": "waiting for an Interaction Cue"
+    },
+    {
+     "t": 0.0,
+     "type": "visual_attention",
+     "frame_index": 0,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     },
+     "headline": "Frame 1: not looking",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "t": 0.3,
+     "type": "visual_attention",
+     "frame_index": 1,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     },
+     "headline": "Frame 2: not looking",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "t": 0.6,
+     "type": "visual_attention",
+     "frame_index": 2,
+     "outcome": "not_looking",
+     "track_reference": "anon-1",
+     "facts": {
+      "person_count": 1,
+      "looking": false,
+      "hand_visible": false,
+      "confidence": 0.92,
+      "gaze_duration_s": 0.0,
+      "wave_span": 0.0,
+      "direction_changes": 0,
+      "eyes_narrowed": false,
+      "mouth_open": false,
+      "head_lowered": false,
+      "mouth_corners_raised": false,
+      "care_duration_s": 0.0
+     },
+     "headline": "Frame 3: not looking",
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
+    },
+    {
+     "t": 0.6,
+     "type": "attention_stopped",
+     "ending": "input_exhausted",
+     "headline": "Attention Loop stopped: input_exhausted",
+     "detail": "finite scenario closed"
+    }
+   ],
+   "episodes": []
+  },
+  "episodes": [],
+  "robot": {
+   "pose": {
+    "expression": "neutral",
+    "led": [
+     0,
+     0,
+     0
+    ],
+    "head": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "arms": [
+     90.0,
+     90.0
+    ]
+   },
+   "speech": null,
+   "sound": null,
+   "halted": false,
+   "halted_at_s": null,
+   "distance_cm": 150,
+   "heading_deg": 0.0,
+   "target": {
+    "distance_cm": 150,
+    "bearing_deg": 0.0
+   },
+   "provenance": "SimulatedMistyAdapter state after this run; not a robot"
+  }
+ }
+}

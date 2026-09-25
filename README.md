@@ -18,15 +18,17 @@ calibration, latency, and safety remain hardware-unverified.
   typed Journal, Tool validation, and simulated Misty effects.
 - Typed Trigger Evidence reaches the first model Turn with source, time,
   selected facts, uncertainty, transcript and an optional bounded image. The
-  hosted adapter preserves native Tool call identity and matching Tool-result
-  roles, rejects multiple calls in one Turn, and records short public Decision
-  Notes without requesting private reasoning. Selected images are strict
+  hosted adapter talks to the Responses API with reasoning on, preserves
+  native Tool call identity and its paired result, rejects multiple calls in
+  one Turn, asks the provider to store nothing, and records short public
+  Decision Notes without requesting private reasoning. Selected images are strict
   base64, capped at 8 MiB decoded, and removed from completed runtime results.
 - Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
   Episode cap all close with observable bounded endings.
-- The local Demo leads with three runnable social-robot stories. The A-to-B
-  case visibly contrasts working context retained inside A's Episode with a
-  clean model context when B's new Episode begins.
+- The local Demo replays recorded hosted-model runs of those social-robot
+  stories on an animated simulated Misty. The A-to-B case visibly contrasts
+  working context retained inside A's Episode with a clean model context
+  when B's new Episode begins.
 - A temporal local visual gate can form an uncertain Care Cue from sustained
   observable eye, mouth and head geometry. The model may choose cheap target
   observation, expensive scene inspection, a question, or no intervention;
@@ -62,27 +64,27 @@ built-in runtime scenario.
 .venv/bin/python -m misty_agent --demo
 ```
 
-The browser page is loopback-only. Choose the greeting or care card and select
-**執行離線模擬**; it needs no API key and shows the input, cue, actual Tool
-choices, Trigger Evidence, Decision Notes, matching Observations and simulated
-speech produced by that run. Its input and model choices are predefined, which
-the page labels directly. The separate **Live AI** panel
-needs `OPENAI_API_KEY` or `OAI_CONFIG_LIST.json` and may use a hosted model.
+The browser page is loopback-only and needs no API key. Its sixteen examples,
+in three groups (starting a conversation, care and boundaries, two people),
+are **recorded runs of a hosted model**: the acceptance fixtures' inputs and
+simulated room, with every decision made by the model, captured once and
+replayed. Each is labelled with the model and the date it was recorded. An
+animated simulated Misty shows every Tool call — the speech bubble and a
+talking mouth, arms, head, face, chest LED, wheels and distance, listening,
+scanning, Skill loading — beside the Decision Note, Observation and a
+scrubbable timeline of every Moment.
 
-In the care card, select **請協助我冷靜 · Skill、聆聽與表達** to inspect
-progressive Skill discovery → activation → reference reading → speak/listen
-→ head expression → completion. Replay displays the active Skill at each
-Moment and clears it when the Episode ends. This is a freshly executed
-**scripted acceptance run**, not a previously recorded model output.
+To record them again with the configured model (needs a key, costs a little):
 
-The third card, **A 聊完後，切換成 B**, runs two scripted anonymous actors:
-A's Episode binds one Interaction Target, B's explicit request is queued and
-announced to the model at a Turn boundary, A is brought to a close, and only
-then does B get a separate Episode and target. A second variant lets B's
-request expire before A finishes. Which actor said what is scripted; the
-runtime has no sound-source direction and no face identity. The actual run
-shows A's Trigger Evidence and later utterance in A's subsequent Turns, then
-shows that B inherits none of A's name, words, Skill instructions, or summary.
+```bash
+.venv/bin/python -m misty_agent.demo.record
+```
+
+The **Try it live** panel runs your own sentence against the hosted model and
+plays it on the same stage; it needs `OPENAI_API_KEY` in the demo's
+environment or `OAI_CONFIG_LIST.json`. Who said what in the two-person
+examples is part of the fixture: the runtime has no sound-source direction
+and no face identity.
 
 Add local Skills as `misty_agent/skills/<name>/SKILL.md` with YAML `name` and
 `description` frontmatter. Only metadata reaches the first Turn; instructions
@@ -191,10 +193,12 @@ mid-conversation, and in a high-risk moment stays, says what it cannot do,
 and points at someone nearby or local emergency services rather than
 diagnosing, promising safety or claiming to have called anyone.
 
-The spec's fifteen social situations run in the default suite and are
-pickable in the Demo, which labels each one with the situation it stands
-for. They are a floor under behaviour, not a benchmark: no score, no
-leaderboard, and every model decision in them is an authored fixture. See
+The spec's fifteen social situations run in the default suite with authored
+model decisions; `/acceptance` serves every contract with its number. They
+are a floor under behaviour, not a benchmark: no score, no leaderboard. The
+Demo shows recorded hosted-model runs over a subset of the same fixtures,
+which are evidence about that model on that day and are not counted as
+passing anything beyond the boundary audit. See
 `.scratch/social-react-runtime/` for the approved spec and tickets.
 
 ---

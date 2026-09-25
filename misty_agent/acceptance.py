@@ -31,6 +31,7 @@ import pathlib
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
+from misty_agent.agent.react import Model
 from misty_agent.app import simulated_session
 from misty_agent.audio_input import LiveInputAdapter, WavAudioFixtureSource
 from misty_agent.config import Settings
@@ -177,9 +178,16 @@ def run_fixture(
     fixture_key: Optional[str] = None,
     *,
     config: Settings = SCENARIO_CONFIG,
+    model: Optional[Model] = None,
 ) -> FixtureRun:
     """Run one built-in fixture through `SocialAgentRuntime` and hand back
-    what happened. The only path a built-in scenario is ever run by."""
+    what happened. The only path a built-in scenario is ever run by.
+
+    `model` replaces the fixture's authored decisions and nothing else: the
+    inputs, timing, people and simulated robot stay the fixture's. That is
+    how the Demo's recordings of a hosted model are made, over exactly the
+    situations the acceptance tests assert on.
+    """
     card = card_named(name)
     available = fixtures_of(card)
     requested = (
@@ -242,7 +250,11 @@ def run_fixture(
     script = selected_text or visual_script
     session = simulated_session(
         None,
-        model=ScenarioModel(script.decisions if script else card.decisions),
+        model=(
+            model
+            if model is not None
+            else ScenarioModel(script.decisions if script else card.decisions)
+        ),
         clock=clock,
         placement=selected_text.placement if selected_text else None,
         ears=(

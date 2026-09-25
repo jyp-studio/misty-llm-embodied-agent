@@ -187,7 +187,7 @@ def test_the_demo_runs_on_the_simulated_adapter_and_its_end_state_matches_the_jo
 
     robot = run["robot"]
     assert "not a robot" in robot["provenance"]
-    assert robot["speech"] == "好，我會尊重你的空間。"
+    assert robot["speech"] == "Okay, I'll respect your space."
     assert robot["halted"] is False
     final = run["episodes"][-1]["storyboard"]["moments"][-1]["robot"]
     assert robot["pose"]["head"] == final["head"] == [0.0, 8.0, 0.0]

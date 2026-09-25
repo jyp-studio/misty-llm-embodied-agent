@@ -1,498 +1,772 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Misty Social Agent — Simulation Demo</title>
+<title>Misty Social Agent</title>
 <style>
+  :root {
+    --ink: #1d1d1f; --muted: #6e6e73; --faint: #86868b; --line: #e3e3e8;
+    --panel: #f5f5f7; --page: #ffffff; --accent: #0071e3; --accent-ink: #0066cc;
+    --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
+    --person: #5e5ce6; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
+      --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
+      --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
+      --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
+    --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
+    --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
+    --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; color: #1d1d1f; background: #fff;
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text",
-      "Helvetica Neue", Arial, sans-serif;
+    margin: 0; color: var(--ink); background: var(--page);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
   }
-  button, input, select { font: inherit; }
-  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
-    outline: 3px solid rgba(0,113,227,.28); outline-offset: 3px;
-  }
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    min-height: 64px; padding: 0 42px; border-bottom: 1px solid #e8e8ed;
-  }
+  button, input { font: inherit; }
+  :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 3px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; padding: 0 32px; border-bottom: 1px solid var(--line); }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-  .brand svg { width: 30px; height: 30px; padding: 5px; background: #f5f5f7; border-radius: 8px; }
-  .mode { display: flex; align-items: center; gap: 8px; color: #6e6e73; font-size: 14px; }
-  .mode::before { width: 8px; height: 8px; content: ""; background: #0071e3; border-radius: 50%; }
-  .hero { padding: 72px 28px 58px; text-align: center; }
-  .eyebrow { color: #6e6e73; font-size: 13px; font-weight: 600; letter-spacing: .09em; }
-  h1 { max-width: 760px; margin: 12px auto 0; font-size: clamp(40px, 6vw, 64px); line-height: 1.05; letter-spacing: -.045em; }
-  .hero p { max-width: 650px; margin: 20px auto 0; color: #6e6e73; font-size: 19px; }
-  main { max-width: 1180px; margin: 0 auto; padding: 0 32px 72px; }
-  .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
-  .section-heading h2 { margin: 0; font-size: 27px; letter-spacing: -.02em; }
-  .section-heading span { color: #86868b; font-size: 14px; }
-  .scenario-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
-  .scenario-card {
-    position: relative; display: grid; grid-template-rows: 190px 1fr;
-    min-width: 0; padding: 0 0 22px; overflow: hidden; text-align: left;
-    color: #1d1d1f; background: #fff; border: 1px solid #dedee3;
-    border-radius: 18px; cursor: pointer;
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  .brand svg { width: 28px; height: 28px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+  .chip::before { width: 8px; height: 8px; content: ""; background: var(--accent); border-radius: 50%; }
+  .hero { max-width: 860px; margin: 0 auto; padding: 56px 24px 36px; text-align: center; }
+  .eyebrow { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  h1 { margin: 10px 0 0; font-size: clamp(34px, 5.4vw, 56px); line-height: 1.06; letter-spacing: -.035em; }
+  .hero p { margin: 18px auto 0; max-width: 680px; color: var(--muted); font-size: 18px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 0 32px 64px; }
+  h2 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 12px; }
+  .tab { padding: 9px 16px; color: var(--ink); background: var(--panel); border: 1px solid transparent; border-radius: 999px; cursor: pointer; }
+  .tab[aria-selected="true"] { color: #fff; background: var(--ink); }
+  :root[data-theme="dark"] .tab[aria-selected="true"] { color: #000; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tab[aria-selected="true"] { color: #000; } }
+  .group-note { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+  .examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .example { display: grid; gap: 4px; min-height: 92px; padding: 14px 16px; color: var(--ink); text-align: left; background: var(--page); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+  .example:hover { border-color: var(--faint); }
+  .example[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .example b { font-size: 15px; }
+  .example span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+  .example[disabled] { cursor: not-allowed; opacity: .55; }
+
+  .theatre { margin-top: 28px; padding: 24px; background: var(--panel); border-radius: 22px; }
+  .theatre-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .theatre-head h2 { font-size: 22px; }
+  .theatre-head p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .badge { padding: 4px 10px; color: var(--muted); background: var(--page); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.kind { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; margin-top: 18px; }
+  .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 10; }
+  .stage svg { display: block; width: 100%; height: 100%; }
+  .tool-pill { position: absolute; bottom: 12px; left: 12px; max-width: calc(100% - 24px); padding: 6px 12px; overflow: hidden; color: #fff; background: rgba(29,29,31,.86); border-radius: 999px; font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; transition: opacity .25s; }
+  .tool-pill[hidden] { display: block; opacity: 0; }
+  .now { display: grid; align-content: start; gap: 10px; padding: 18px; background: var(--page); border: 1px solid var(--line); border-radius: 16px; }
+  .now small { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .now strong { font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
+  .now p { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .now .why { padding: 10px 12px; background: var(--panel); border-radius: 10px; color: var(--ink); font-size: 14px; }
+  .now .why:empty { display: none; }
+  .now .skills { color: var(--faint); font-size: 12px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .controls button { padding: 8px 16px; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+  .controls button.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .controls button[disabled] { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
+  .controls input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
+  .controls span { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .provenance { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+  .timeline { position: relative; max-height: 340px; margin: 16px 0 0; padding: 0; overflow: auto; list-style: none; background: var(--page); border: 1px solid var(--line); border-radius: 14px; }
+  .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; }
+  .timeline li:last-child { border-bottom: 0; }
+  .timeline li.quiet { color: var(--faint); font-size: 12px; }
+  .timeline li.episode { display: block; color: var(--muted); background: var(--panel); cursor: default; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+  .timeline li[aria-current="true"] { background: color-mix(in srgb, var(--accent) 12%, var(--page)); }
+  .timeline li .ico { text-align: center; }
+  .timeline li span { overflow-wrap: anywhere; }
+  .timeline li em { color: var(--muted); font-style: normal; }
+  details.narrative { margin-top: 14px; }
+  details.narrative summary { color: var(--accent-ink); cursor: pointer; font-size: 14px; }
+  .beats { display: grid; gap: 8px; margin-top: 10px; }
+  .beat { padding: 10px 12px; background: var(--page); border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
+  .beat small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+  .beat p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+  .live { margin-top: 28px; padding: 24px; border: 1px solid var(--line); border-radius: 22px; }
+  .live p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+  .live-form { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 16px; }
+  .live-form input[type=text] { min-width: 0; padding: 10px 12px; color: var(--ink); background: var(--page); border: 1px solid var(--line); border-radius: 10px; }
+  .live-form input[type=file] { max-width: 240px; color: var(--muted); font-size: 14px; }
+  .live-form button { padding: 10px 18px; color: #fff; background: var(--accent); border: 0; border-radius: 999px; cursor: pointer; }
+  .live-form button[disabled] { opacity: .5; cursor: progress; }
+  .live-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; white-space: pre-line; }
+  .live-note.error { color: var(--warn); }
+  footer { padding: 20px 32px; color: var(--muted); border-top: 1px solid var(--line); text-align: center; font-size: 13px; }
+
+  /* The robot. Every moving part transitions, so a replay reads as motion. */
+  .misty { transition: transform .9s cubic-bezier(.4,.1,.2,1); }
+  /* fill-box: pivots are fractions of each part's own box, so they follow
+     Misty wherever the chassis has driven to. */
+  .misty .head { transition: transform .45s ease; transform-box: fill-box; transform-origin: 39% 96%; }
+  .misty .arm { transition: transform .45s ease; transform-box: fill-box; transform-origin: 50% 4%; }
+  .misty .face-features { transition: transform .45s ease; }
+  .misty .wheel-spokes { transform-box: fill-box; transform-origin: center; }
+  .misty.driving .wheel-spokes { animation: spin .5s linear infinite; }
+  .misty.talking .mouth { animation: talk .22s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+  .misty.scanning .head { animation: scan 1.6s ease-in-out infinite; }
+  .misty .led-glow { transition: fill .3s, opacity .3s; }
+  .misty.flash .led-glow { animation: flash .35s ease-in-out 3; }
+  .misty .ears { opacity: 0; transition: opacity .2s; }
+  .misty.listening .ears { opacity: 1; }
+  .misty.listening .ears path { animation: ear 1.1s ease-out infinite; }
+  .misty.listening .ears path:nth-child(2) { animation-delay: .35s; }
+  .person { transition: transform .9s ease, opacity .6s ease; }
+  .person .wave-arm { transform-box: fill-box; transform-origin: 0% 100%; }
+  .person.waving .wave-arm { animation: wave .5s ease-in-out infinite alternate; }
+  .person.walking { animation: walk 5s linear infinite; }
+  .bubble { transition: opacity .25s; }
+  .cone { opacity: 0; transition: opacity .25s; }
+  .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+  .badge-float { opacity: 0; transition: opacity .3s; }
+  .badge-float.on { opacity: 1; }
+  .obstacle { opacity: 0; transition: opacity .3s; }
+  .obstacle.on { opacity: 1; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes talk { from { transform: scaleY(.25); } to { transform: scaleY(1.25); } }
+  @keyframes scan { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-9px); } 75% { transform: translateX(9px); } }
+  @keyframes flash { 50% { opacity: .15; } }
+  @keyframes ear { from { opacity: .9; } to { opacity: 0; } }
+  @keyframes wave { from { transform: rotate(-18deg); } to { transform: rotate(22deg); } }
+  @keyframes walk { from { transform: translateX(-560px); } to { transform: translateX(120px); } }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) {
+    .misty, .misty *, .person, .person * { animation: none !important; transition: none !important; }
   }
-  .scenario-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.08); }
-  .scenario-card[aria-pressed="true"] { border-color: #0071e3; box-shadow: 0 0 0 1px #0071e3; }
-  .scenario-card[aria-pressed="true"]::after {
-    position: absolute; top: 14px; right: 14px; display: grid; place-items: center;
-    width: 25px; height: 25px; content: "✓"; color: #fff; background: #0071e3;
-    border-radius: 50%; font-size: 14px; font-weight: 700;
-  }
-  .scene { position: relative; display: flex; align-items: center; justify-content: center; gap: 20px; overflow: hidden; color: #515154; background: #f5f5f7; }
-  .figure { position: relative; display: grid; place-items: center; width: 66px; height: 66px; background: #fff; border-radius: 50%; box-shadow: 0 10px 24px rgba(0,0,0,.10); }
-  .figure svg { width: 36px; height: 36px; }
-  .person-label { position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 23px; height: 23px; color: #fff; background: #1d1d1f; border: 2px solid #f5f5f7; border-radius: 50%; font-size: 12px; }
-  .speech { position: absolute; top: 19px; left: 16px; padding: 7px 11px; background: #fff; border-radius: 12px 12px 12px 3px; box-shadow: 0 5px 15px rgba(0,0,0,.07); font-size: 14px; }
-  .tear { position: absolute; right: 7px; bottom: 9px; color: #0071e3; font-size: 20px; }
-  .handoff { display: flex; align-items: center; gap: 4px; color: #86868b; }
-  .handoff svg { width: 20px; height: 20px; }
-  .card-copy { display: grid; align-content: start; gap: 6px; padding: 19px 20px 0; }
-  .card-copy small { color: #6e6e73; font-size: 12px; font-weight: 600; letter-spacing: .045em; }
-  .card-copy strong { font-size: 20px; letter-spacing: -.015em; }
-  .card-copy span { color: #6e6e73; font-size: 15px; }
-  .result { margin-top: 34px; padding: 34px; background: #f5f5f7; border-radius: 20px; }
-  .result-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
-  .result-header h2 { margin: 5px 0 0; font-size: 30px; letter-spacing: -.025em; }
-  .result-header p { max-width: 690px; margin: 8px 0 0; color: #6e6e73; }
-  .run-button {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    flex: 0 0 auto; padding: 12px 19px; color: #fff; background: #0071e3;
-    border: 0; border-radius: 999px; cursor: pointer; font-weight: 600;
-  }
-  .run-button:hover:not([disabled]) { background: #0077ed; }
-  .run-button[disabled] { color: #6e6e73; background: #e8e8ed; cursor: not-allowed; }
-  .run-button[aria-busy="true"] { color: #fff; background: #0071e3; cursor: wait; opacity: .65; }
-  .run-button svg { width: 17px; height: 17px; fill: currentColor; }
-  .fixture-control { display: grid; gap: 5px; min-width: 215px; }
-  .fixture-control[hidden] { display: none; }
-  .fixture-control label { color: #6e6e73; font-size: 12px; font-weight: 600; }
-  .fixture-control small { color: #86868b; font-size: 12px; }
-  .fixture-control select { width: 100%; padding: 10px 34px 10px 12px; color: #1d1d1f; background: #fff; border: 1px solid #b9b9bf; border-radius: 10px; }
-  .flow-label { display: block; margin-top: 26px; color: #6e6e73; font-size: 13px; font-weight: 600; letter-spacing: .06em; }
-  .flow { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 28px; background: #fff; border-radius: 16px; }
-  .flow article { display: flex; gap: 13px; min-height: 156px; padding: 22px; }
-  .flow article:not(:nth-child(3n+1)) { border-left: 1px solid #e8e8ed; }
-  .flow article:nth-child(n+4) { border-top: 1px solid #e8e8ed; }
-  .flow .number { color: #0071e3; font-weight: 600; }
-  .flow small { display: block; margin-bottom: 5px; color: #86868b; }
-  .flow h3 { margin: 0; font-size: 18px; }
-  .flow p { margin: 7px 0 0; color: #6e6e73; font-size: 14px; }
-  .truth { display: flex; gap: 11px; align-items: start; margin-top: 17px; color: #424245; }
-  .truth svg { flex: 0 0 auto; width: 21px; height: 21px; color: #0071e3; }
-  .truth div { display: grid; gap: 2px; }
-  .truth span { color: #6e6e73; font-size: 14px; }
-  .execution-result { margin-top: 24px; padding: 20px 22px; background: #fff; border: 1px solid #d2d2d7; border-radius: 14px; }
-  .execution-result[hidden] { display: none; }
-  .execution-result h3 { margin: 4px 0 0; font-size: 20px; }
-  .execution-result p { max-width: 790px; margin: 8px 0 0; color: #6e6e73; font-size: 14px; }
-  .execution-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
-  .execution-badges span { padding: 5px 9px; color: #424245; background: #f5f5f7; border-radius: 999px; font-size: 12px; font-weight: 600; }
-  .decision-note { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e8e8ed; color: #6e6e73; font-size: 13px; }
-  .attention-state { margin-top: 16px; padding-top: 15px; border-top: 1px solid #e8e8ed; }
-  .attention-state[hidden] { display: none; }
-  .attention-state h4 { margin: 0; font-size: 16px; }
-  .attention-state > p { margin: 4px 0 11px; }
-  .cue-queue { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .cue-event { padding: 10px 12px; background: #f5f5f7; border-radius: 10px; }
-  .cue-event b { display: block; font-size: 13px; }
-  .cue-event span { color: #6e6e73; font-size: 12px; }
-  .replay { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
-  .replay button { padding: 9px 14px; color: #0066cc; background: #fff; border: 1px solid #b9b9bf; border-radius: 999px; cursor: pointer; }
-  .replay button[disabled] { color: #86868b; background: #f5f5f7; cursor: not-allowed; }
-  .replay span { color: #86868b; font-size: 13px; }
-  .replay input[type=range] { flex: 1; min-width: 120px; accent-color: #0071e3; }
-  .replay input[type=range][disabled] { opacity: .4; }
-  .replay-stage { display: grid; gap: 4px; margin-top: 13px; padding: 16px; background: #f5f5f7; border-radius: 12px; }
-  .replay-stage[hidden] { display: none; }
-  .replay-stage small { color: #6e6e73; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
-  .replay-stage span { color: #6e6e73; font-size: 14px; }
-  .proof { margin-top: 24px; }
-  .proof details { border-top: 1px solid #d2d2d7; border-bottom: 1px solid #d2d2d7; }
-  .proof summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 19px 2px; cursor: pointer; }
-  .proof summary span { display: grid; gap: 3px; }
-  .proof summary small { color: #6e6e73; }
-  .proof pre { max-height: 360px; margin: 0 0 20px; padding: 18px; overflow: auto; color: #333336; background: #f5f5f7; border-radius: 12px; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
-  .live { margin-top: 30px; padding: 22px 0; border-top: 1px solid #e8e8ed; }
-  .live summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; }
-  .live summary span { display: grid; gap: 3px; }
-  .live summary small { color: #6e6e73; }
-  .live-form { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 18px; }
-  .live-form input { min-width: 0; padding: 10px 12px; color: #1d1d1f; background: #fff; border: 1px solid #d2d2d7; border-radius: 10px; }
-  .live-form input[type="file"] { max-width: 250px; color: #6e6e73; }
-  .live-form button { padding: 10px 15px; color: #0066cc; background: #fff; border: 1px solid #b9b9bf; border-radius: 999px; cursor: pointer; }
-  .live-note { margin: 10px 0 0; color: #6e6e73; font-size: 14px; white-space: pre-line; }
-  .live-note.error { color: #b42318; }
-  footer { padding: 20px 32px; color: #6e6e73; background: #fbfbfd; border-top: 1px solid #e8e8ed; text-align: center; font-size: 13px; }
-  @media (max-width: 800px) {
-    .scenario-grid { grid-template-columns: 1fr; }
-    .scenario-card { grid-template-columns: 210px 1fr; grid-template-rows: auto; padding-bottom: 0; }
-    .card-copy { padding: 22px; }
-    .result-header { align-items: stretch; flex-direction: column; }
-    .fixture-control { width: 100%; }
-    .flow { grid-template-columns: 1fr; }
-    .flow article:not(:first-child) { border-top: 1px solid #e8e8ed; border-left: 0; }
+  @media (max-width: 860px) {
+    .stage-wrap { grid-template-columns: 1fr; }
     .live-form { grid-template-columns: 1fr; }
-    .cue-queue { grid-template-columns: 1fr; }
-    .live-form input[type="file"] { max-width: none; }
+    .live-form input[type=file] { max-width: none; }
   }
   @media (max-width: 520px) {
-    .topbar { align-items: flex-start; flex-direction: column; padding: 15px 20px; }
-    .hero { padding: 48px 20px 38px; text-align: left; }
-    h1 { font-size: 42px; }
-    .hero p { font-size: 17px; }
-    main { padding: 0 20px 52px; }
-    .scenario-card { grid-template-columns: 1fr; grid-template-rows: 170px 1fr; padding-bottom: 20px; }
-    .result { padding: 24px 20px; }
-    .section-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+    .topbar { padding: 10px 16px; align-items: flex-start; flex-direction: column; justify-content: center; }
+    .hero { padding: 36px 16px 24px; text-align: left; }
+    .hero p { font-size: 16px; }
+    main { padding: 0 16px 48px; }
+    .theatre, .live { padding: 16px; border-radius: 16px; }
+    .tool-pill { font-size: 11px; }
   }
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="brand">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="12" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9.5" cy="11" r="1.4" fill="currentColor"/><circle cx="14.5" cy="11" r="1.4" fill="currentColor"/><path d="M8 20h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     <span>Misty Social Agent</span>
   </div>
-  <div class="mode">Simulation mode · No API key</div>
+  <span class="chip">Simulated robot · no hardware</span>
 </header>
 
 <section class="hero">
-  <span class="eyebrow">INTERACTIVE DEMO</span>
-  <h1>看見目前完成的能力<br>真的執行到哪裡。</h1>
-  <p>已完成案例可以直接執行；未完成情境會標示對應 ticket，不以腳本假裝解鎖。</p>
+  <span class="eyebrow">Simulation demo</span>
+  <h1>A social robot that decides for itself when, and how, to step in.</h1>
+  <p>Each example is a real run of a hosted language model, recorded and replayed here on a simulated Misty II. Every tool call it chose becomes something you can see: a word, a gesture, a light or a move.</p>
 </section>
 
 <main>
-  <section aria-labelledby="scenario-title">
-    <div class="section-heading"><h2 id="scenario-title">選擇情境</h2><span>3 個示範案例</span></div>
-    <div class="scenario-grid">
-      <button class="scenario-card" type="button" data-scenario="greeting" aria-pressed="true">
-        <span class="scene">
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-          <span class="speech">Misty，你好！</span>
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-        </span>
-        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
-      </button>
-      <button class="scenario-card" type="button" data-scenario="crying-care" aria-pressed="false">
-        <span class="scene">
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="tear">●</span></span>
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-        </span>
-        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
-      </button>
-      <button class="scenario-card" type="button" data-scenario="speaker-handoff" aria-pressed="false">
-        <span class="scene">
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><b class="person-label">A</b></span>
-          <span class="handoff"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M9 16h6M12 3v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-          <span class="figure"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><b class="person-label">B</b></span>
-        </span>
-        <span class="card-copy"><small data-card-status></small><strong data-card-title></strong><span data-card-subtitle></span></span>
-      </button>
-    </div>
+  <section aria-labelledby="examples-title">
+    <h2 id="examples-title">Recorded examples</h2>
+    <div class="tabs" id="groupTabs" role="tablist" aria-label="Example groups"></div>
+    <p class="group-note" id="groupNote"></p>
+    <div class="examples" id="exampleList"></div>
   </section>
 
-  <section class="result" aria-labelledby="result-title">
-    <div class="result-header">
-      <div><span class="eyebrow" id="result-mode">目前可執行 · TICKET 05</span><h2 id="result-title">有人和 Misty 打招呼</h2><p id="scenario-summary">選擇錄音或視覺時間線，查看本機 gate 如何決定是否互動。</p></div>
-      <div class="fixture-control" id="fixtureControl" hidden>
-        <label for="wakeFixture">選擇這次要執行的範例</label>
-        <select id="wakeFixture"></select>
-        <small id="fixtureSituation"></small>
+  <section class="theatre" aria-labelledby="runTitle">
+    <div class="theatre-head">
+      <div>
+        <span class="eyebrow" id="runEyebrow">Recorded run</span>
+        <h2 id="runTitle">Pick an example</h2>
+        <p id="runWatch"></p>
+        <div class="badges" id="provenanceBadges"><span class="badge kind" id="provenanceBadge"></span></div>
       </div>
-      <button class="run-button" id="runScenario" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>執行離線模擬</span></button>
     </div>
-    <div class="execution-result" id="executionResult" aria-live="polite" hidden>
-      <span class="eyebrow">CURRENT RUN</span>
-      <h3 id="executionHeadline"></h3>
-      <div class="execution-badges"><span id="provenanceBadge"></span><span id="audioBadge"></span><span id="modelBadge"></span><span id="robotBadge"></span></div>
-      <p id="provenanceMeans"></p>
-      <p id="executionDetail"></p>
-      <div class="decision-note"><b id="decisionHeadline"></b><br><span id="decisionDetail"></span></div>
-      <section class="attention-state" id="attentionState" hidden>
-        <h4>Attention Loop 與 Cue queue</h4>
-        <p id="activeCue"></p>
-        <div class="cue-queue" id="cueQueue"></div>
-      </section>
-      <div class="replay">
-        <button id="replayJournal" type="button" disabled>播放 Episode Journal</button>
-        <button id="replayRestart" type="button" disabled>從頭</button>
-        <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="拖曳瀏覽每個 Moment">
-        <span id="replayCounter"></span>
+
+    <div class="stage-wrap">
+      <div class="stage" id="stage" aria-label="Animated simulation of Misty and the people it is talking to">
+        <svg viewBox="0 0 640 400" role="img" aria-labelledby="stageText">
+          <title id="stageText">Simulated scene</title>
+          <defs>
+            <radialGradient id="ledGlow"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+          </defs>
+          <rect x="0" y="318" width="640" height="82" fill="var(--floor)"/>
+          <line x1="0" y1="318" x2="640" y2="318" stroke="var(--line)" stroke-width="2"/>
+
+          <!-- Obstacle that appears when the approach reports something in the way -->
+          <g class="obstacle" id="obstacle">
+            <rect x="-24" y="266" width="48" height="52" rx="6" fill="#f2b84b" stroke="#8a5a00" stroke-width="2"/>
+            <path d="M-24 280 L24 300 M-24 300 L24 280" stroke="#8a5a00" stroke-width="3"/>
+            <text x="0" y="258" text-anchor="middle" font-size="13" font-weight="700" fill="var(--warn)">blocked</text>
+          </g>
+
+          <!-- People: B waits at the back, A stands in front of Misty -->
+          <g class="person" id="personB" opacity="0">
+            <g transform="translate(560 0)">
+              <circle cx="0" cy="186" r="20" fill="var(--person)" opacity=".75"/>
+              <rect x="-20" y="210" width="40" height="72" rx="16" fill="var(--person)" opacity=".75"/>
+              <rect x="-13" y="280" width="11" height="38" rx="5" fill="var(--person)" opacity=".75"/>
+              <rect x="2" y="280" width="11" height="38" rx="5" fill="var(--person)" opacity=".75"/>
+              <rect class="wave-arm" x="18" y="178" width="9" height="40" rx="4.5" fill="var(--person)" opacity=".75"/>
+              <text x="0" y="192" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" id="personBLabel">B</text>
+            </g>
+          </g>
+          <g class="person" id="personA">
+            <g transform="translate(470 0)">
+              <circle cx="0" cy="170" r="24" fill="var(--person)" id="personHead"/>
+              <rect x="-24" y="198" width="48" height="84" rx="18" fill="var(--person)"/>
+              <rect x="-16" y="280" width="13" height="38" rx="6" fill="var(--person)"/>
+              <rect x="3" y="280" width="13" height="38" rx="6" fill="var(--person)"/>
+              <rect x="-33" y="206" width="10" height="56" rx="5" fill="var(--person)"/>
+              <rect class="wave-arm" x="23" y="206" width="10" height="56" rx="5" fill="var(--person)" id="personWaveArm"/>
+              <text x="0" y="176" text-anchor="middle" font-size="16" font-weight="700" fill="#fff" id="personALabel"></text>
+            </g>
+          </g>
+
+          <!-- Misty. Translated horizontally by distance; parts move per pose -->
+          <g class="misty" id="misty" transform="translate(170 0)">
+            <!-- camera cone for observe_target / inspect_scene -->
+            <path class="cone" id="cone" d="M22 150 L230 110 L230 230 Z" fill="var(--accent)" opacity=".18"/>
+            <!-- base with wheels -->
+            <rect x="-58" y="282" width="116" height="30" rx="14" fill="var(--robot-edge)"/>
+            <g transform="translate(-34 304)"><circle r="13" fill="#48484a"/><g class="wheel-spokes"><circle r="13" fill="none"/><path d="M-9 0H9M0-9V9" stroke="#c7c7cc" stroke-width="3" stroke-linecap="round"/></g></g>
+            <g transform="translate(34 304)"><circle r="13" fill="#48484a"/><g class="wheel-spokes"><circle r="13" fill="none"/><path d="M-9 0H9M0-9V9" stroke="#c7c7cc" stroke-width="3" stroke-linecap="round"/></g></g>
+            <!-- arms, pivoting at the shoulders -->
+            <g class="arm" id="armRight"><rect x="-56" y="204" width="16" height="64" rx="8" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/></g>
+            <g class="arm" id="armLeft"><rect x="40" y="204" width="16" height="64" rx="8" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/></g>
+            <!-- torso with chest LED -->
+            <path d="M-46 196 Q-46 186 -36 186 H36 Q46 186 46 196 L52 284 H-52 Z" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/>
+            <circle class="led-glow" id="ledGlow" cx="0" cy="234" r="26" fill="url(#ledGlow)" opacity="0"/>
+            <circle id="led" cx="0" cy="234" r="11" fill="#3a3a3c" stroke="var(--robot-edge)" stroke-width="2.5"/>
+            <!-- head -->
+            <g class="head" id="head">
+              <rect x="-10" y="170" width="20" height="18" fill="var(--robot-edge)"/>
+              <rect x="-58" y="96" width="116" height="80" rx="30" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/>
+              <rect x="-44" y="108" width="88" height="56" rx="18" fill="var(--screen)"/>
+              <g class="face-features" id="face"></g>
+              <g class="ears" id="ears">
+                <path d="M66 118 Q76 136 66 154" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+                <path d="M76 110 Q90 136 76 162" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+              </g>
+            </g>
+            <!-- floating badge for Skills and sounds -->
+            <g class="badge-float" id="floatBadge">
+              <rect x="-80" y="52" width="160" height="30" rx="15" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
+              <text id="floatText" x="0" y="72" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)"></text>
+            </g>
+          </g>
+
+          <!-- Speech bubbles (text set from the run) -->
+          <g class="bubble" id="mistyBubble" opacity="0">
+            <rect id="mistyBubbleBox" x="20" y="14" width="300" height="60" rx="16" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
+            <text id="mistyBubbleText" x="36" y="40" font-size="14" fill="var(--ink)"></text>
+          </g>
+          <g class="bubble" id="personBubble" opacity="0">
+            <rect id="personBubbleBox" x="330" y="14" width="290" height="60" rx="16" fill="var(--page)" stroke="var(--person)" stroke-width="1.5"/>
+            <text id="personBubbleText" x="346" y="40" font-size="14" fill="var(--ink)"></text>
+          </g>
+        </svg>
+        <div class="tool-pill" id="toolPill" hidden></div>
       </div>
-      <div class="replay-stage" id="replayStage" hidden><small id="replayKind"></small><strong id="replayHeadline"></strong><span id="replayDetail"></span><span id="replaySkills"></span></div>
+
+      <div class="now" aria-live="polite">
+        <small id="nowKind">Waiting</small>
+        <strong id="nowHeadline">Choose an example to replay it.</strong>
+        <p id="nowDetail"></p>
+        <div class="why" id="nowWhy"></div>
+        <span class="skills" id="nowSkills"></span>
+      </div>
     </div>
-    <span class="flow-label" id="flow-label">執行前預覽</span>
-    <div class="flow" id="flow"></div>
-    <div class="truth"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6m0-10v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><div><b id="truth-title">此案例現在可以執行</b><span id="truth-copy">使用 scripted model 與 simulated robot；不呼叫網路，未連接 Misty II。</span></div></div>
+
+    <div class="controls">
+      <button class="primary" id="replayJournal" type="button" disabled>Play</button>
+      <button id="replayRestart" type="button" disabled>Restart</button>
+      <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every moment">
+      <span id="replayCounter"></span>
+    </div>
+    <p class="provenance" id="provenanceMeans"></p>
+    <ol class="timeline" id="timeline" aria-label="Every moment of the run"></ol>
+    <details class="narrative" id="narrative">
+      <summary>Step-by-step account from the runtime</summary>
+      <div class="beats" id="beats"></div>
+    </details>
   </section>
 
-  <section class="proof">
-    <details id="runtime"><summary><span><b>查看這次修改的工程證據</b><small>Runtime records、Episode Journal 與實際執行結果</small></span><span aria-hidden="true">⌄</span></summary><pre id="evidence">請先執行一個離線模擬。</pre></details>
-  </section>
-
-  <details class="live">
-    <summary><span><b>Live AI 自由輸入</b><small>這是獨立功能，需要 OpenAI API key；上方可執行的問候案例不需要。</small></span><span aria-hidden="true">⌄</span></summary>
+  <section class="live" aria-labelledby="live-title">
+    <h2 id="live-title">Try it live</h2>
+    <p>Say something to Misty and the hosted model decides what to do, right now, on the same simulated robot. It needs <code>OPENAI_API_KEY</code> in the environment the demo was started from, and each run costs a little.</p>
     <div class="live-form">
-      <input id="said" type="text" value="Misty，你好" aria-label="對 Misty 說的話">
-      <input id="picture" type="file" accept="image/*" aria-label="上傳照片">
-      <input id="recording" type="file" accept="audio/wav" aria-label="上傳 WAV 錄音" hidden>
-      <button id="runLive" type="button">執行 Live AI</button>
+      <input id="said" type="text" value="Hi Misty, can you dance?" aria-label="What you say to Misty">
+      <input id="picture" type="file" accept="image/*" aria-label="Optional photo: local face detection estimates how far away you are">
+      <input id="recording" type="file" accept="audio/wav" aria-label="Optional WAV recording" hidden>
+      <button id="runLive" type="button">Run live</button>
     </div>
-    <p class="live-note" id="liveNote">照片會在本機進行 perception；後續模型決策需要 API key。</p>
-  </details>
+    <p class="live-note" id="liveNote">An optional photo is analysed on this machine to place you in the scene. Nothing you send is saved.</p>
+  </section>
 </main>
 
-<footer>所有動作皆為模擬結果。這個專案從未連接或驗證 Misty II 實機。</footer>
+<footer>Everything shown is simulated. This project has never run on, or been verified with, a real Misty II.</footer>
 
 <script>
 "use strict";
 const byId = (id) => document.getElementById(id);
 const state = {
-  selected: "greeting", scenarios: {}, replayMoments: [], replayTimer: null,
-  replayAt: 0,
-  runSerial: 0,
+  catalogue: [], group: null, selected: null,
+  steps: [], replayTimer: null, replayAt: 0, runSerial: 0,
 };
 
+/* ---------- Catalogue ---------- */
+
 async function boot() {
-  const [scenarios, options] = await Promise.all([
-    fetch("/scenarios").then((response) => response.json()),
+  const [catalogue, options] = await Promise.all([
+    fetch("/recordings").then((response) => response.json()),
     fetch("/options").then((response) => response.json()),
   ]);
-  state.scenarios = Object.fromEntries(scenarios.map((scenario) => [scenario.name, scenario]));
-  renderScenarioCards();
+  state.catalogue = catalogue;
   byId("recording").hidden = !options.audio;
-  selectScenario("greeting");
+  const groups = [...new Map(catalogue.map((item) => [item.card, item])).values()];
+  byId("groupTabs").innerHTML = groups.map((item) => `
+    <button class="tab" type="button" role="tab" data-group="${escapeText(item.card)}" aria-selected="false">${escapeText(item.card_title)}</button>`).join("");
+  selectGroup(groups[0]?.card);
+  const first = catalogue.find((item) => item.recorded);
+  if (first && state.selected === null) selectExample(first.key);
 }
 
-function renderScenarioCards() {
-  [...document.querySelectorAll("[data-scenario]")].forEach((card, index) => {
-    const scenario = state.scenarios[card.dataset.scenario];
-    if (!scenario) return;
-    const number = String(index + 1).padStart(2, "0");
-    const status = scenario.availability === "ready"
-      ? `CASE ${number} · 現在可執行`
-      : `CASE ${number} · TICKET ${scenario.ticket} 預覽`;
-    card.querySelector("[data-card-status]").textContent = status;
-    card.querySelector("[data-card-title]").textContent = scenario.title;
-    card.querySelector("[data-card-subtitle]").textContent = scenario.subtitle;
-    card.setAttribute("aria-label", `${scenario.title} — ${status}`);
+function selectGroup(card) {
+  state.group = card;
+  for (const tab of document.querySelectorAll("[data-group]")) {
+    tab.setAttribute("aria-selected", String(tab.dataset.group === card));
+  }
+  const items = state.catalogue.filter((item) => item.card === card);
+  byId("groupNote").textContent = items[0]?.card_subtitle || "";
+  byId("exampleList").innerHTML = items.map((item) => `
+    <button class="example" type="button" data-example="${escapeText(item.key)}" aria-pressed="${item.key === state.selected}" ${item.recorded ? "" : "disabled"}>
+      <b>${escapeText(item.title)}</b>
+      <span>${escapeText(item.recorded ? item.watch_for : "Not recorded yet.")}</span>
+    </button>`).join("");
+}
+
+async function selectExample(key) {
+  const item = state.catalogue.find((entry) => entry.key === key);
+  if (!item) return;
+  if (item.card !== state.group) selectGroup(item.card);
+  state.selected = key;
+  for (const button of document.querySelectorAll("[data-example]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.example === key));
+  }
+  const runId = ++state.runSerial;
+  const response = await fetch(`/recordings/${encodeURIComponent(key)}`);
+  const document_ = await response.json();
+  if (runId !== state.runSerial) return;
+  if (!response.ok) { showError(document_.error || "could not load the recording"); return; }
+  const payload = document_.payload;
+  loadRun({
+    eyebrow: "Recorded run",
+    title: item.title,
+    watch: item.watch_for,
+    provenance: payload.execution.provenance,
+    episodes: payload.episodes,
+    flow: payload.execution.flow,
+    emptyNote: payload.episodes.length ? "" :
+      `${payload.execution.decision_explanation.headline}. ${payload.execution.decision_explanation.detail}`,
   });
 }
 
-function selectScenario(name) {
-  state.runSerial += 1;
-  state.selected = name;
-  for (const card of document.querySelectorAll("[data-scenario]")) {
-    card.setAttribute("aria-pressed", String(card.dataset.scenario === name));
-  }
-  const scenario = state.scenarios[name];
-  if (!scenario) return;
-  resetReplay();
-  byId("result-title").textContent = scenario.title;
-  byId("scenario-summary").textContent = scenario.subtitle;
-  const fixtures = scenario.fixtures || [];
-  byId("fixtureControl").hidden = fixtures.length === 0;
-  byId("wakeFixture").innerHTML = fixtures.map((fixture) => {
-    const spec = fixture.spec_scenario ? `規格情境 ${fixture.spec_scenario} · ` : "";
-    return `<option value="${escapeText(fixture.key)}">${spec}${escapeText(fixture.label)}</option>`;
-  }).join("");
-  showSituation();
-  renderFlow(scenario.preview);
-  const ready = scenario.availability === "ready";
-  byId("result-mode").textContent = ready
-    ? `目前可執行 · TICKET ${scenario.ticket}`
-    : `ROADMAP PREVIEW · TICKET ${scenario.ticket}`;
-  byId("flow-label").textContent = ready ? "執行前預覽" : "未來驗收方向";
-  byId("executionResult").hidden = true;
-  const button = byId("runScenario");
-  button.disabled = !ready;
-  button.setAttribute("aria-busy", "false");
-  button.querySelector("span").textContent = ready
-    ? "執行離線模擬"
-    : `尚未實作 · Ticket ${scenario.ticket}`;
-  byId("truth-title").textContent = ready
-    ? "此案例現在可以執行"
-    : `尚未實作 · Ticket ${scenario.ticket}`;
-  byId("truth-copy").textContent = scenario.limitation;
-  byId("evidence").textContent = ready
-    ? "請先執行一個離線模擬。"
-    : "這是 roadmap preview，尚無執行結果或 Journal。";
-}
+/* ---------- One run on the stage ---------- */
 
-function renderFlow(beats) {
-  byId("flow").innerHTML = beats.map((beat, index) => `
-    <article><span class="number">${String(index + 1).padStart(2, "0")}</span><div><small>${escapeText(beat.label)}</small>
-      <h3>${escapeText(beat.headline)}</h3><p>${escapeText(beat.detail)}</p></div></article>`).join("");
-}
-
-function showSituation() {
-  const scenario = state.scenarios[state.selected];
-  const fixtures = scenario?.fixtures || [];
-  const chosen = fixtures.find((item) => item.key === byId("wakeFixture").value);
-  byId("fixtureSituation").textContent = chosen?.situation || "";
-}
-
-function resetReplay() {
-  if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
-  state.replayTimer = null;
-  state.replayMoments = [];
+function loadRun(run) {
+  pauseReplay();
+  byId("runEyebrow").textContent = run.eyebrow;
+  byId("runTitle").textContent = run.title;
+  byId("runWatch").textContent = run.watch || "";
+  const provenance = run.provenance;
+  const badges = [
+    `<span class="badge kind" id="provenanceBadge">${escapeText(
+      provenance.model === "not called" ? "recorded run · no model call" : provenance.kind.replaceAll("_", " "))}</span>`,
+    provenance.model ? `<span class="badge">model: ${escapeText(provenance.model)}</span>` : "",
+    provenance.recorded_on ? `<span class="badge">recorded ${escapeText(provenance.recorded_on)}</span>` : "",
+    `<span class="badge">${escapeText(provenance.robot || "Simulated Misty")}</span>`,
+  ];
+  byId("provenanceBadges").innerHTML = badges.join("");
+  byId("provenanceMeans").textContent =
+    `${provenance.detail || provenance.kind_means} ${provenance.hardware_unverified}`;
+  state.steps = run.episodes.flatMap((episode, index) =>
+    (episode.storyboard?.moments || []).map((moment) => ({
+      ...moment, episode: index, actor: episode.actor,
+      cueKind: episode.cue_kind, cueText: episode.cue_text,
+    })));
+  state.actors = [...new Set(run.episodes.map((episode) => episode.actor))];
   state.replayAt = 0;
-  byId("replayJournal").disabled = true;
-  byId("replayJournal").textContent = "播放 Episode Journal";
-  byId("replayRestart").disabled = true;
-  byId("replayScrub").disabled = true;
-  byId("replayScrub").max = "0";
-  byId("replayScrub").value = "0";
-  byId("replayCounter").textContent = "";
-  byId("replayStage").hidden = true;
-  byId("attentionState").hidden = true;
-  byId("cueQueue").innerHTML = "";
+  const hasSteps = state.steps.length > 0;
+  byId("replayJournal").disabled = !hasSteps;
+  byId("replayRestart").disabled = !hasSteps;
+  byId("replayScrub").disabled = !hasSteps;
+  byId("replayScrub").max = String(Math.max(0, state.steps.length - 1));
+  byId("replayJournal").textContent = "Play";
+  renderTimeline();
+  byId("beats").innerHTML = (run.flow || []).map((beat) => `
+    <div class="beat"><small>${escapeText(beat.label)}</small>${escapeText(beat.headline)}<p>${escapeText(beat.detail)}</p></div>`).join("");
+  byId("narrative").hidden = !(run.flow || []).length;
+  byId("narrative").open = !hasSteps && (run.flow || []).length > 0;
+  if (hasSteps) {
+    showMoment(0);
+  } else {
+    drawScene(emptyScene(run));
+    setNow("No Episode", run.emptyNote || "Nothing happened.", "", "", "");
+    byId("replayCounter").textContent = "";
+  }
+}
+
+const ICONS = {
+  episode_started: "▶", episode_finished: "■", target_bound: "◎", skills_available: "✦",
+  turn_started: "·", model_called: "·", decision_noted: "✎", tool_called: "⚙",
+  observation: "↩", handoff_requested: "✋", execution_failed: "⚠", tool_refused: "⊘",
+};
+const QUIET = new Set(["turn_started", "model_called"]);
+
+function renderTimeline() {
+  let lastEpisode = -1;
+  const rows = [];
+  state.steps.forEach((step, index) => {
+    if (step.episode !== lastEpisode) {
+      lastEpisode = step.episode;
+      rows.push(`<li class="episode">Episode ${step.episode + 1} · ${escapeText(step.actor)}</li>`);
+    }
+    const text = describeStep(step);
+    rows.push(`<li data-step="${index}" class="${QUIET.has(step.kind) ? "quiet" : ""}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(text.label)}: ${escapeText(text.headline)}${text.detail ? ` <em>${escapeText(text.detail)}</em>` : ""}</span></li>`);
+  });
+  byId("timeline").innerHTML = rows.join("");
+}
+
+function describeStep(step) {
+  const label = {
+    episode_started: "Episode started", episode_finished: "Episode ended",
+    target_bound: "Interaction Target", skills_available: "Skills available",
+    turn_started: "Turn", model_called: "Model", decision_noted: "Why",
+    tool_called: "Tool call", observation: "Result", handoff_requested: "Handoff notice",
+    execution_failed: "Failure", tool_refused: "Refused",
+  }[step.kind] || step.kind.replaceAll("_", " ");
+  if (step.kind === "decision_noted") return { label, headline: step.detail, detail: "" };
+  return { label, headline: step.headline, detail: step.detail || "" };
+}
+
+function keepInView(row) {
+  // Scroll the list, never the page: playback must not move the reader.
+  const list = byId("timeline");
+  const top = row.offsetTop - list.offsetTop;
+  if (top < list.scrollTop) list.scrollTop = top;
+  else if (top + row.offsetHeight > list.scrollTop + list.clientHeight) {
+    list.scrollTop = top + row.offsetHeight - list.clientHeight;
+  }
+}
+
+function setNow(kind, headline, detail, why, skills) {
+  byId("nowKind").textContent = kind;
+  byId("nowHeadline").textContent = headline;
+  byId("nowDetail").textContent = detail;
+  byId("nowWhy").textContent = why;
+  byId("nowSkills").textContent = skills;
 }
 
 function showMoment(index) {
-  const moments = state.replayMoments;
-  if (!moments.length) return;
-  const at = Math.max(0, Math.min(index, moments.length - 1));
-  const moment = moments[at];
+  const steps = state.steps;
+  if (!steps.length) return;
+  const at = Math.max(0, Math.min(index, steps.length - 1));
   state.replayAt = at;
+  const step = steps[at];
   byId("replayScrub").value = String(at);
-  byId("replayCounter").textContent = `${at + 1} / ${moments.length}`;
-  byId("replayStage").hidden = false;
-  byId("replayKind").textContent = moment.kind.replaceAll("_", " ").toUpperCase();
-  byId("replayHeadline").textContent = moment.headline;
-  byId("replayDetail").textContent = moment.detail || "";
-  byId("replaySkills").textContent = moment.skill_status || "";
+  byId("replayCounter").textContent = `${at + 1} / ${steps.length}`;
+  for (const row of document.querySelectorAll("#timeline [data-step]")) {
+    const current = Number(row.dataset.step) === at;
+    row.setAttribute("aria-current", String(current));
+    if (current) keepInView(row);
+  }
+  const scene = sceneAt(at);
+  drawScene(scene);
+  const text = describeStep(step);
+  const why = scene.why && step.kind !== "decision_noted" ? `Why: ${scene.why}` : "";
+  setNow(text.label, text.headline, text.detail, why, step.skill_status || "");
+}
+
+/* ---------- From moments to a scene ---------- */
+
+function startingDistance() {
+  for (let i = 0; i < state.steps.length; i += 1) {
+    const step = state.steps[i];
+    if (step.kind !== "observation") continue;
+    const tool = previousTool(i);
+    if (tool === "approach") {
+      const motions = step.facts?.result?.motions || [];
+      if (motions.length) return motions[0].distance_cm;
+      continue;
+    }
+    const distance = step.facts?.snapshot?.distance_cm;
+    if (typeof distance === "number") return distance;
+  }
+  return 150;
+}
+
+function previousTool(index) {
+  for (let i = index; i >= 0; i -= 1) {
+    if (state.steps[i].kind === "tool_called") return state.steps[i].facts.tool;
+  }
+  return null;
+}
+
+function sceneAt(index) {
+  const scene = {
+    robot: state.steps[index].robot, distance: startingDistance(), present: true,
+    tool: null, args: {}, mistySays: "", personSays: "", personObserved: false,
+    why: "", driving: false, obstacle: false, flash: false, halted: false,
+    actor: state.steps[index].actor, waiting: null, done: false, caption: "",
+    cue: state.steps[index].cueKind, skill: "",
+  };
+  let previousLed = null;
+  for (let i = 0; i <= index; i += 1) {
+    const step = state.steps[i];
+    const last = i === index;
+    if (step.kind === "episode_started") {
+      scene.actor = step.actor; scene.waiting = null; scene.present = true;
+      scene.tool = null; scene.mistySays = ""; scene.done = false; scene.why = "";
+      scene.personObserved = step.cueKind !== "explicit_request";
+      scene.personSays = step.cueText || "";
+      scene.cue = step.cueKind;
+    } else if (step.kind === "turn_started") {
+      scene.tool = null; scene.driving = false; scene.stopped = ""; scene.skill = "";
+    } else if (step.kind === "decision_noted") {
+      scene.why = step.detail;
+    } else if (step.kind === "tool_called") {
+      scene.tool = step.facts.tool; scene.args = step.facts.args || {};
+      scene.driving = false; scene.skill = ""; scene.stopped = "";
+      if (scene.tool === "speak") scene.mistySays = scene.args.text;
+      if (scene.tool === "activate_skill") scene.skill = `Skill: ${scene.args.name}`;
+      if (scene.tool === "read_skill_resource") scene.skill = `Reading ${scene.args.resource}`;
+      if (scene.tool === "play_audio") scene.skill = `♪ ${scene.args.sound}`;
+    } else if (step.kind === "observation") {
+      const result = step.facts.result || {};
+      const snapshot = step.facts.snapshot || {};
+      if (typeof snapshot.distance_cm === "number") {
+        if (scene.tool === "approach" && snapshot.distance_cm !== scene.distance) scene.driving = last;
+        scene.distance = snapshot.distance_cm;
+      }
+      scene.present = snapshot.face_present !== false || scene.tool === "listen";
+      if (scene.tool === "approach") {
+        scene.stopped = result.result === "arrived" ? "" : String(result.result || "").replaceAll("_", " ");
+        if (["blocked", "hazard_unavailable"].includes(result.result)) scene.obstacle = true;
+        if (result.result === "lost_user") scene.present = false;
+      }
+      if (scene.tool === "respect_boundary") scene.halted = true;
+      if (typeof result.transcript === "string" && result.transcript.trim()) {
+        scene.personSays = result.transcript; scene.personObserved = false;
+      }
+    } else if (step.kind === "handoff_requested") {
+      scene.waiting = state.actors.find((actor) => actor !== scene.actor) || "B";
+    } else if (step.kind === "episode_finished") {
+      scene.tool = null; scene.done = true; scene.driving = false;
+    }
+    const led = JSON.stringify(step.robot.led);
+    if (last && previousLed !== null && led !== previousLed) scene.flash = true;
+    previousLed = led;
+  }
+  scene.robot = state.steps[index].robot;
+  scene.caption = captionFor(scene);
+  return scene;
+}
+
+function captionFor(scene) {
+  if (scene.done) return "Episode finished — Misty chose to stop";
+  if (scene.stopped) return `Stopped: ${scene.stopped}`;
+  const words = {
+    speak: "Speaking", listen: "Listening", approach: "Driving closer",
+    look_around: "Looking around", observe_target: "Taking a quick look at the person",
+    inspect_scene: "Inspecting the scene", move_head: "Moving its head",
+    move_arms: "Moving its arms", change_led: "Changing the chest light",
+    display_image: "Changing its face", activate_skill: "Loading a Skill",
+    read_skill_resource: "Reading a Skill reference", respect_boundary: "Stopping and giving space",
+    play_audio: "Playing a sound", done: "Deciding it is done",
+  };
+  return scene.tool ? (words[scene.tool] || scene.tool) : "";
+}
+
+function emptyScene(run) {
+  return {
+    robot: { expression: "neutral", led: [0, 0, 0], head: [0, 0, 0], arms: [90, 90] },
+    distance: 190, present: true, tool: null, args: {}, mistySays: "", personSays: "",
+    personObserved: false, why: "", driving: false, obstacle: false, flash: false,
+    halted: false, actor: "", waiting: null, done: false, skill: "",
+    passing: true, caption: "No cue formed — Misty stays quiet and the model is never called",
+  };
+}
+
+/* ---------- Drawing ---------- */
+
+const FACES = {
+  neutral: '<ellipse cx="-18" cy="136" rx="7" ry="9" fill="var(--eye)"/><ellipse cx="18" cy="136" rx="7" ry="9" fill="var(--eye)"/>',
+  happy: '<path d="M-26 140 Q-18 126 -10 140" fill="none" stroke="var(--eye)" stroke-width="5" stroke-linecap="round"/><path d="M10 140 Q18 126 26 140" fill="none" stroke="var(--eye)" stroke-width="5" stroke-linecap="round"/>',
+  sad: '<ellipse cx="-18" cy="140" rx="7" ry="6" fill="var(--eye)"/><ellipse cx="18" cy="140" rx="7" ry="6" fill="var(--eye)"/><path d="M-28 128 L-10 132 M28 128 L10 132" stroke="var(--eye)" stroke-width="3" stroke-linecap="round"/>',
+  angry: '<ellipse cx="-18" cy="140" rx="7" ry="6" fill="#ff8a7a"/><ellipse cx="18" cy="140" rx="7" ry="6" fill="#ff8a7a"/><path d="M-28 126 L-10 133 M28 126 L10 133" stroke="#ff8a7a" stroke-width="3" stroke-linecap="round"/>',
+  surprised: '<circle cx="-18" cy="136" r="10" fill="none" stroke="var(--eye)" stroke-width="4"/><circle cx="18" cy="136" r="10" fill="none" stroke="var(--eye)" stroke-width="4"/>',
+  love: '<path d="M-18 145 l-9 -9 a5 5 0 0 1 9 -6 a5 5 0 0 1 9 6 z" fill="#ff7aa8"/><path d="M18 145 l-9 -9 a5 5 0 0 1 9 -6 a5 5 0 0 1 9 6 z" fill="#ff7aa8"/>',
+  afraid: '<ellipse cx="-18" cy="138" rx="5" ry="8" fill="var(--eye)"/><ellipse cx="18" cy="138" rx="5" ry="8" fill="var(--eye)"/><path d="M-26 126 L-12 130 M26 126 L12 130" stroke="var(--eye)" stroke-width="3" stroke-linecap="round"/>',
+};
+const MOUTH = '<rect class="mouth" x="-9" y="152" width="18" height="4" rx="2" fill="var(--eye)"/>';
+
+function drawScene(scene) {
+  const misty = byId("misty");
+  const robot = scene.robot;
+  // Where Misty stands: the person is fixed, Misty sits `distance` to their left.
+  const distance = Math.max(30, Math.min(220, Number(scene.distance) || 150));
+  const x = Math.max(80, 470 - (100 + (distance - 50) * 1.25));
+  misty.setAttribute("transform", `translate(${x} 0)`);
+  byId("obstacle").setAttribute("transform", `translate(${Math.min(420, x + 90)} 0)`);
+  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
+  byId("cone").setAttribute("d", `M22 150 L${Math.max(60, 470 - x - 10)} 118 L${Math.max(60, 470 - x - 10)} 250 Z`);
+
+  const [pitch, roll, yaw] = robot.head || [0, 0, 0];
+  byId("head").style.transform = `rotate(${-roll * 0.6}deg)`;
+  byId("face").style.transform = `translate(${(-yaw / 81) * 14}px, ${(pitch / 40) * 8}px)`;
+  byId("face").innerHTML = (FACES[robot.expression] || FACES.neutral) + MOUTH;
+  const [left, right] = robot.arms || [90, 90];
+  // 90° is hanging down and -29° is straight up; drawn face-on, that range
+  // spans almost a half-turn at each shoulder.
+  const raise = (angle) => ((90 - angle) / 119) * 170;
+  byId("armRight").style.transform = `rotate(${raise(right)}deg)`;
+  byId("armLeft").style.transform = `rotate(${-raise(left)}deg)`;
+  const [r, g, b] = robot.led || [0, 0, 0];
+  const lit = r + g + b > 0;
+  byId("led").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "#3a3a3c");
+  byId("ledGlow").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "url(#ledGlow)");
+  byId("ledGlow").setAttribute("opacity", lit ? ".45" : "0");
+
+  misty.classList.toggle("talking", scene.tool === "speak");
+  misty.classList.toggle("listening", scene.tool === "listen");
+  misty.classList.toggle("scanning", scene.tool === "look_around");
+  misty.classList.toggle("driving", Boolean(scene.driving));
+  misty.classList.remove("flash");
+  if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
+  byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
+  byId("floatBadge").classList.toggle("on", Boolean(scene.skill));
+  byId("floatText").textContent = scene.skill || "";
+
+  const personA = byId("personA");
+  personA.style.opacity = scene.present ? "1" : ".18";
+  personA.classList.toggle("waving", scene.cue === "social_invitation" && !scene.done);
+  personA.classList.toggle("walking", Boolean(scene.passing));
+  byId("personHead").setAttribute("cy", scene.cue === "care_cue" ? "178" : "170");
+  byId("personALabel").textContent = scene.actor && scene.actor.length <= 2 ? scene.actor : "";
+  const personB = byId("personB");
+  personB.style.opacity = scene.waiting ? "1" : "0";
+  personB.classList.toggle("waving", Boolean(scene.waiting));
+  byId("personBLabel").textContent = scene.waiting || "";
+
+  setBubble("misty", scene.mistySays, false);
+  setBubble("person", scene.personSays, scene.personObserved);
+  // What Misty is doing, in words, then the exact call that made it happen.
+  const pill = byId("toolPill");
+  const call = scene.tool ? toolLine(scene) : "";
+  pill.hidden = !(scene.caption || call);
+  pill.textContent = [scene.caption, call].filter(Boolean).join("  ·  ");
+}
+
+function toolLine(scene) {
+  const args = Object.entries(scene.args || {})
+    .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value.length > 40 ? value.slice(0, 40) + "…" : value) : JSON.stringify(value)}`)
+    .join(", ");
+  return `${scene.tool}(${args})`;
+}
+
+function setBubble(who, text, observed) {
+  const group = byId(`${who}Bubble`);
+  const box = byId(`${who}BubbleBox`);
+  const node = byId(`${who}BubbleText`);
+  group.setAttribute("opacity", text ? "1" : "0");
+  node.textContent = "";
+  if (!text) return;
+  const shown = observed ? `Observed: ${text}` : text;
+  const lines = wrap(shown, who === "misty" ? 38 : 36).slice(0, 4);
+  const left = Number(box.getAttribute("x")) + 16;
+  lines.forEach((line, index) => {
+    const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    span.setAttribute("x", String(left));
+    span.setAttribute("dy", index === 0 ? "0" : "18");
+    span.textContent = line;
+    if (observed) span.setAttribute("font-style", "italic");
+    node.appendChild(span);
+  });
+  box.setAttribute("height", String(26 + lines.length * 18));
+}
+
+function wrap(text, width) {
+  // Words for spaced languages; characters for scripts written without spaces.
+  const tokens = /\s/.test(text) ? text.split(/(\s+)/) : [...text];
+  const lines = [];
+  let line = "";
+  for (const token of tokens) {
+    if ((line + token).length > width && line.trim()) { lines.push(line.trim()); line = token.trimStart(); }
+    else line += token;
+  }
+  if (line.trim()) lines.push(line.trim());
+  if (lines.length > 4) lines[3] = lines[3].slice(0, width - 1) + "…";
+  return lines;
+}
+
+/* ---------- Replay ---------- */
+
+function delayFor(step) {
+  if (QUIET.has(step.kind)) return 260;
+  if (step.kind === "tool_called" && step.facts.tool === "speak") {
+    return Math.min(4200, 900 + String(step.facts.args?.text || "").length * 45);
+  }
+  if (step.kind === "tool_called") return 1300;
+  if (step.kind === "observation") return 1000;
+  if (step.kind === "decision_noted") return 1300;
+  return 650;
 }
 
 function pauseReplay() {
   if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
   state.replayTimer = null;
-  byId("replayJournal").textContent = "繼續播放";
+  if (state.steps.length) byId("replayJournal").textContent = "Resume";
 }
 
 function playReplay() {
-  if (!state.replayMoments.length) return;
+  if (!state.steps.length) return;
   if (state.replayTimer !== null) { pauseReplay(); return; }
-  if (state.replayAt >= state.replayMoments.length - 1) state.replayAt = -1;
-  byId("replayJournal").textContent = "暫停";
+  if (state.replayAt >= state.steps.length - 1) showMoment(0);
+  byId("replayJournal").textContent = "Pause";
   const step = () => {
-    if (state.replayAt >= state.replayMoments.length - 1) {
+    if (state.replayAt >= state.steps.length - 1) {
       state.replayTimer = null;
-      byId("replayJournal").textContent = "再播一次";
+      byId("replayJournal").textContent = "Play again";
       return;
     }
     showMoment(state.replayAt + 1);
-    state.replayTimer = window.setTimeout(step, 550);
+    state.replayTimer = window.setTimeout(step, delayFor(state.steps[state.replayAt]));
   };
-  step();
+  state.replayTimer = window.setTimeout(step, delayFor(state.steps[state.replayAt]));
 }
 
 function restartReplay() {
   pauseReplay();
   showMoment(0);
-  byId("replayJournal").textContent = "播放 Episode Journal";
+  byId("replayJournal").textContent = "Play";
 }
 
-async function runScenario() {
-  const scenario = state.scenarios[state.selected];
-  if (!scenario || scenario.availability !== "ready") return;
-  const scenarioName = state.selected;
-  const runId = ++state.runSerial;
-  const button = byId("runScenario");
-  button.disabled = true;
-  button.setAttribute("aria-busy", "true");
-  button.querySelector("span").textContent = "執行中…";
-  resetReplay();
-  byId("executionResult").hidden = true;
-  byId("flow-label").textContent = "正在執行";
-  renderFlow(scenario.preview);
-  byId("truth-title").textContent = "正在執行這次模擬";
-  byId("truth-copy").textContent = "正在由目前程式產生 Runtime records 與 Episode Journal。";
-  try {
-    const fixture = scenario.fixtures?.length ? byId("wakeFixture").value : null;
-    const response = await fetch(`/scenarios/${encodeURIComponent(scenarioName)}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fixture ? { fixture } : {}),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "scenario failed");
-    if (state.runSerial !== runId || state.selected !== scenarioName) return;
-    const execution = payload.execution;
-    byId("executionResult").hidden = false;
-    byId("executionHeadline").textContent = execution.provenance.headline;
-    byId("provenanceBadge").textContent = execution.provenance.kind.replaceAll("_", " ");
-    byId("provenanceMeans").textContent =
-      `${execution.provenance.kind_means} ${execution.provenance.hardware_unverified}`;
-    byId("audioBadge").textContent = `輸入：${execution.provenance.fixture}`;
-    byId("modelBadge").textContent = `模型：${execution.provenance.model}`;
-    byId("robotBadge").textContent = `機器人：${execution.provenance.robot}`;
-    byId("executionDetail").textContent = execution.provenance.detail;
-    byId("decisionHeadline").textContent = execution.decision_explanation.headline;
-    byId("decisionDetail").textContent = execution.decision_explanation.detail;
-    const attention = execution.attention;
-    byId("attentionState").hidden = false;
-    const cueHistory = attention.active_history.map((cue) => cue.cue_id).join(" → ") || "沒有 Episode";
-    byId("activeCue").textContent = attention.active_cue
-      ? `目前處理：${attention.active_cue.cue_id} · 優先級 ${attention.active_cue.priority}；queue 上限 ${attention.queue_capacity}`
-      : `執行已結束，目前沒有 active cue。執行歷程：${cueHistory}；queue 上限 ${attention.queue_capacity}`;
-    byId("cueQueue").innerHTML = execution.attention.events.map((event) => `
-      <article class="cue-event"><b>${escapeText(event.headline)}</b><span>${escapeText(event.detail)}</span></article>`).join("");
-    byId("flow-label").textContent = "這次實際執行";
-    renderFlow(execution.flow);
-    const ending = execution.flow.at(-1);
-    byId("truth-title").textContent = ending.headline;
-    byId("truth-copy").textContent = ending.detail;
-    state.replayMoments = payload.episodes.flatMap((episode) => episode.storyboard?.moments || []);
-    state.replayAt = 0;
-    const hasMoments = state.replayMoments.length > 0;
-    byId("replayJournal").disabled = !hasMoments;
-    byId("replayRestart").disabled = !hasMoments;
-    byId("replayScrub").disabled = !hasMoments;
-    byId("replayScrub").max = String(Math.max(0, state.replayMoments.length - 1));
-    if (hasMoments) showMoment(0);
-    byId("evidence").textContent = JSON.stringify({
-      scenario: payload.scenario.name,
-      execution: payload.execution,
-      runtime: payload.runtime,
-      robot: payload.robot,
-      timeline: payload.runtime.timeline,
-      episodes: payload.episodes.map((episode) => ({
-        actor: episode.actor,
-        cue_id: episode.cue_id,
-        cue_kind: episode.cue_kind,
-        episode_id: episode.episode_id,
-        outcome: episode.outcome,
-        journal: episode.storyboard.moments.map((moment) => JSON.parse(moment.line)),
-      })),
-    }, null, 2);
-  } catch (error) {
-    if (state.runSerial === runId && state.selected === scenarioName) {
-      byId("executionResult").hidden = true;
-      byId("flow-label").textContent = "執行前預覽";
-      renderFlow(scenario.preview);
-      byId("truth-title").textContent = "執行失敗";
-      byId("truth-copy").textContent = String(error);
-      byId("evidence").textContent = String(error);
-    }
-  } finally {
-    if (state.runSerial === runId && state.selected === scenarioName) {
-      button.disabled = false;
-      button.setAttribute("aria-busy", "false");
-      button.querySelector("span").textContent = "再次執行離線模擬";
-    }
-  }
-}
+/* ---------- Live ---------- */
 
 async function runLive() {
   const said = byId("said").value.trim();
@@ -505,26 +779,54 @@ async function runLive() {
   }
   if (recording) asked.audio = await asBase64(recording);
   const note = byId("liveNote");
+  const button = byId("runLive");
   note.className = "live-note";
-  note.textContent = "執行中…";
+  note.textContent = "Running — the model is deciding each turn…";
+  button.disabled = true;
   try {
     const response = await fetch("/run", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(asked),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Live AI failed");
-    if (!payload.storyboard) {
+    if (!response.ok) throw new Error(payload.error || "the live run failed");
+    if (!payload.episodes.length) {
       note.className = "live-note error";
-      note.textContent = "沒有 API key，因此只完成本機 perception，沒有執行模型決策。";
+      note.textContent = payload.why_no_episode || "No Episode ran.";
       return;
     }
-    note.textContent = `完成：${payload.storyboard.ending}`;
-    byId("evidence").textContent = JSON.stringify(payload, null, 2);
+    state.runSerial += 1;
+    state.selected = null;
+    for (const item of document.querySelectorAll("[data-example]")) item.setAttribute("aria-pressed", "false");
+    const seen = payload.perception.looked
+      ? (payload.perception.face_present ? ` Your photo placed you about ${payload.perception.distance_cm ?? "?"} cm away.` : " Nobody was found in your photo.")
+      : "";
+    note.textContent = `Done: ${payload.storyboard.ending}.${seen} It is playing above.`;
+    loadRun({
+      eyebrow: "Live run",
+      title: `“${said || "(no words)"}”`,
+      watch: "Decided just now by the hosted model, on a simulated robot.",
+      provenance: {
+        ...payload.provenance,
+        robot: "Simulated Misty",
+        detail: payload.provenance.kind_means,
+      },
+      episodes: payload.episodes,
+      flow: [],
+      emptyNote: "",
+    });
+    byId("stage").scrollIntoView({ behavior: "smooth", block: "center" });
+    playReplay();
   } catch (error) {
     note.className = "live-note error";
     note.textContent = String(error);
+  } finally {
+    button.disabled = false;
   }
+}
+
+function showError(message) {
+  setNow("Error", message, "", "", "");
 }
 
 function asBase64(file) {
@@ -542,12 +844,18 @@ function escapeText(value) {
   return node.innerHTML;
 }
 
-document.querySelector(".scenario-grid").addEventListener("click", (event) => {
-  const card = event.target.closest("[data-scenario]");
-  if (card) selectScenario(card.dataset.scenario);
+byId("groupTabs").addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-group]");
+  if (tab) selectGroup(tab.dataset.group);
 });
-byId("runScenario").addEventListener("click", runScenario);
-byId("wakeFixture").addEventListener("change", showSituation);
+byId("exampleList").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-example]");
+  if (button && !button.disabled) selectExample(button.dataset.example);
+});
+byId("timeline").addEventListener("click", (event) => {
+  const row = event.target.closest("[data-step]");
+  if (row) { pauseReplay(); showMoment(Number(row.dataset.step)); }
+});
 byId("replayJournal").addEventListener("click", playReplay);
 byId("replayRestart").addEventListener("click", restartReplay);
 byId("replayScrub").addEventListener("input", (event) => {
@@ -555,7 +863,7 @@ byId("replayScrub").addEventListener("input", (event) => {
   showMoment(Number(event.target.value));
 });
 byId("runLive").addEventListener("click", runLive);
-boot().catch((error) => { byId("evidence").textContent = String(error); });
+boot().catch((error) => showError(String(error)));
 </script>
 </body>
 </html>

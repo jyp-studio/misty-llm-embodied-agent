@@ -80,8 +80,8 @@ def test_shared_calming_scenario_really_receives_the_listen_result_before_reply(
         source=ScenarioInputAdapter(clock, CALMING_SUPPORT.inputs),
         session=session, clock=clock,
     ).run()
-    assert "安靜陪我就好" not in model.contexts[3]
-    assert "安靜陪我就好" in model.contexts[4]
+    assert "Just stay with me quietly." not in model.contexts[3]
+    assert "Just stay with me quietly." in model.contexts[4]
     assert result.episodes[0].outcome.outcome == "done"
     assert "Follow the person" not in model.contexts[1]
     assert "Follow the person" in model.contexts[2]

@@ -215,16 +215,16 @@ def _said_by(at_s: float, text: str, who: str, **fields) -> ScheduledInput:
 
 COME_CLOSER = TextScenarioScript(
     key="come-closer",
-    label="過來陪我 · 先轉向、再靠近",
-    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    label="Come keep me company · turn, then approach",
+    inputs=(_said_by(0.0, "Misty, come over and keep me company.", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "好，我過去。"}, 20, 4,
-                 note="使用者明確邀請；底盤會先對準再靠近。"),
+        Decision("speak", {"text": "Okay, I'm coming over."}, 20, 4,
+                 note="They invited me explicitly; the chassis aligns before closing in."),
         Decision("approach", {}, 22, 1,
-                 note="只表達接近目前 Interaction Target 的意圖；速度與步幅由 controller 決定。"),
-        Decision("speak", {"text": "我到了，這個距離可以嗎？"}, 26, 8,
-                 note="到達社交距離後確認對方的感受。"),
-        Decision("done", {}, 24, 1, note="陪伴已開始，結束 Episode。"),
+                 note="Express only the intent to approach the current Interaction Target; the controller decides how the chassis gets there."),
+        Decision("speak", {"text": "I'm here. Is this distance okay for you?"}, 26, 8,
+                 note="Arrived at a social distance; check how they feel about it."),
+        Decision("done", {}, 24, 1, note="Company has started; end the Episode."),
     ),
     placement=Placement(distance_cm=150.0, bearing_deg=25.0),
 )
@@ -232,14 +232,14 @@ COME_CLOSER = TextScenarioScript(
 
 COME_CLOSER_TARGET_LOST = TextScenarioScript(
     key="come-closer-target-lost",
-    label="過來陪我 · 途中人離開，停止並改口",
-    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    label="Come keep me company · they leave midway, so it stops and says so",
+    inputs=(_said_by(0.0, "Misty, come over and keep me company.", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "好，我過去。"}, 20, 4, note="使用者明確邀請。"),
-        Decision("approach", {}, 22, 1, note="接近目前 Interaction Target。"),
-        Decision("speak", {"text": "我看不到你了，先停在這裡。"}, 24, 8,
-                 note="controller 回報 target lost；不盲目前進，改用說話。"),
-        Decision("done", {}, 22, 1, note="人不在，結束 Episode。"),
+        Decision("speak", {"text": "Okay, I'm coming over."}, 20, 4, note="They invited me explicitly."),
+        Decision("approach", {}, 22, 1, note="Approach the current Interaction Target."),
+        Decision("speak", {"text": "I can't see you any more, so I'll stop here."}, 24, 8,
+                 note="The controller reported the target lost; speak instead of driving blind."),
+        Decision("done", {}, 22, 1, note="Nobody is there; end the Episode."),
     ),
     placement=Placement(distance_cm=150.0, bearing_deg=0.0, leaves_at_s=1.2),
 )
@@ -247,14 +247,14 @@ COME_CLOSER_TARGET_LOST = TextScenarioScript(
 
 COME_CLOSER_HAZARD = TextScenarioScript(
     key="come-closer-hazard",
-    label="過來陪我 · 途中出現障礙，立即停止",
-    inputs=(_said_by(0.0, "Misty，過來陪我一下", "person-a"),),
+    label="Come keep me company · an obstacle appears, so it stops at once",
+    inputs=(_said_by(0.0, "Misty, come over and keep me company.", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "好，我過去。"}, 20, 4, note="使用者明確邀請。"),
-        Decision("approach", {}, 22, 1, note="接近目前 Interaction Target。"),
-        Decision("speak", {"text": "前面有東西擋住，我先停在這裡，我們用說的。"}, 26, 10,
-                 note="controller 回報 blocked 並已停止底盤；改為遠距對話。"),
-        Decision("done", {}, 22, 1, note="不強行接近，結束 Episode。"),
+        Decision("speak", {"text": "Okay, I'm coming over."}, 20, 4, note="They invited me explicitly."),
+        Decision("approach", {}, 22, 1, note="Approach the current Interaction Target."),
+        Decision("speak", {"text": "Something is in my way, so I'll stay here and we can talk from here."}, 26, 10,
+                 note="The controller reported blocked and halted the chassis; talk from a distance instead."),
+        Decision("done", {}, 22, 1, note="Do not force the approach; end the Episode."),
     ),
     placement=Placement(distance_cm=150.0, bearing_deg=0.0, hazard_at_s=1.2),
 )
@@ -262,93 +262,93 @@ COME_CLOSER_HAZARD = TextScenarioScript(
 
 GOOD_NEWS = TextScenarioScript(
     key="good-news",
-    label="分享好消息 · 語言與表情一致，不亂移動",
-    inputs=(_said_by(0.0, "Misty，我剛剛錄取了！", "person-a"),),
+    label="Sharing good news · words and face agree, no needless movement",
+    inputs=(_said_by(0.0, "Misty, I just got accepted!", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "太好了，恭喜你！"}, 20, 6,
-                 note="回應對方分享的事，語氣與內容一致。"),
+        Decision("speak", {"text": "That's wonderful, congratulations!"}, 20, 6,
+                 note="Answer what they shared, in a matching tone."),
         Decision("display_image", {"expression": "happy"}, 20, 3,
-                 note="表情與話語一致；這是表達，不是移動。"),
-        Decision("done", {}, 18, 1, note="分享已被回應，不多做無關動作。"),
+                 note="The face matches the words; this is expression, not movement."),
+        Decision("done", {}, 18, 1, note="The news was answered; nothing unrelated to add."),
     ),
 )
 
 
 VAGUE_HELP = TextScenarioScript(
     key="vague-help",
-    label="只說需要幫忙 · 先問清楚，不猜需求",
-    inputs=(_said_by(0.0, "Misty，我需要幫忙。", "person-a"),),
+    label="Just \"I need help\" · asks first instead of guessing",
+    inputs=(_said_by(0.0, "Misty, I need help.", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "我在。你需要什麼樣的幫忙？"}, 20, 6,
-                 note="不猜對方要什麼，先問。"),
-        Decision("listen", {}, 20, 3, note="等對方自己說明。"),
-        Decision("speak", {"text": "好，那我陪你一起找找看。"}, 20, 6,
-                 note="回應對方實際說出口的需求。"),
-        Decision("done", {}, 18, 1, note="需求已確認並回應。"),
+        Decision("speak", {"text": "I'm here. What kind of help do you need?"}, 20, 6,
+                 note="Ask rather than guess what they need."),
+        Decision("listen", {}, 20, 3, note="Let them explain in their own words."),
+        Decision("speak", {"text": "Okay, let's look for them together."}, 20, 6,
+                 note="Answer the need they actually said out loud."),
+        Decision("done", {}, 18, 1, note="The need was confirmed and answered."),
     ),
-    speech=(TimedSpeech(1.0, "我找不到我的鑰匙。"),),
+    speech=(TimedSpeech(1.0, "I can't find my keys."),),
 )
 
 
 QUESTION_NO_MOVEMENT = TextScenarioScript(
     key="question-no-movement",
-    label="不需要移動的問題 · 回答就好",
-    inputs=(_said_by(0.0, "Misty，你可以做什麼？", "person-a"),),
+    label="A question that needs no movement · just answers",
+    inputs=(_said_by(0.0, "Misty, what can you do?", "person-a"),),
     decisions=(
-        Decision("speak", {"text": "我可以說話、聽你說，還有轉頭和動手臂。"}, 24, 10,
-                 note="直接回答，不為了展示功能而靠近。"),
-        Decision("done", {}, 18, 1, note="問題已回答，沒有理由移動。"),
+        Decision("speak", {"text": "I can talk, listen to you, turn my head and move my arms."}, 24, 10,
+                 note="Answer directly; do not approach just to show off."),
+        Decision("done", {}, 18, 1, note="The question is answered; no reason to move."),
     ),
 )
 
 
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
-    title="有人和 Misty 打招呼",
-    subtitle="選擇錄音或視覺時間線，查看本機 gate 如何決定是否互動。",
+    title="Starting a conversation",
+    subtitle="A wake phrase, a wave, an invitation to come closer — and people it should leave alone.",
     availability=ScenarioAvailability.READY,
     ticket="05",
     limitation=(
-        "錄音與視覺 gate 都由目前程式分析 synthetic fixtures；ASR 與 model "
-        "使用腳本，robot 為模擬。這不是實機或真實房間的辨識結果。"
+        "The wake and visual gates analyse synthetic fixtures; the robot is "
+        "simulated. This is not recognition in a real room or on a real robot."
     ),
     actors=("person", "person", "person", "person"),
     preview=(
         PresentationBeat(
             "input",
-            "選擇 fixture",
-            "喚醒錄音或視覺時間線",
-            "兩條路徑都先通過本機 gate。",
+            "Pick an example",
+            "A wake recording, a frame timeline or a sentence",
+            "Every path passes a local gate first.",
         ),
         PresentationBeat(
             "decision",
-            "本機判斷",
-            "只保留 bounded Trigger Evidence",
-            "空房與路過者不會呼叫 model。",
+            "Local decision",
+            "Only bounded Trigger Evidence is kept",
+            "An empty room or a passer-by never reaches the model.",
         ),
         PresentationBeat(
             "effect",
             "Episode",
-            "Misty 做出模擬回應",
-            "Runtime、決策與 ending 都由這次執行產生。",
+            "Misty answers in simulation",
+            "The runtime records, decisions and ending all come from this run.",
         ),
     ),
     inputs=(
         ScheduledInput(
             at_s=0.5,
             input=TimedText(
-                text="Misty，你好！",
+                text="Hey Misty, hello!",
                 facts={
                     "addressed_robot": True,
                     "cue_kind": "explicit_request",
                 },
-                uncertainty=("說話者身分未經驗證",),
+                uncertainty=("speaker identity is unverified",),
             ),
         ),
         ScheduledInput(
             at_s=0.6,
             input=TimedText(
-                text="揮手",
+                text="waving",
                 cue_kind=CueKind.SOCIAL_INVITATION,
                 evidence_kind=EvidenceKind.VISUAL,
                 deduplication_key="same-signal",
@@ -358,7 +358,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         ScheduledInput(
             at_s=0.7,
             input=TimedText(
-                text="再次揮手",
+                text="waving again",
                 cue_kind=CueKind.SOCIAL_INVITATION,
                 evidence_kind=EvidenceKind.VISUAL,
                 deduplication_key="same-signal",
@@ -368,7 +368,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         ScheduledInput(
             at_s=0.8,
             input=TimedText(
-                text="Misty，我還有一個問題。",
+                text="Misty, I have one more question.",
                 cue_kind=CueKind.EXPLICIT_REQUEST,
                 deduplication_key="same-signal",
                 facts={"addressed_robot": True},
@@ -377,7 +377,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         ScheduledInput(
             at_s=0.9,
             input=TimedText(
-                text="短暫揮手",
+                text="a brief wave",
                 cue_kind=CueKind.SOCIAL_INVITATION,
                 evidence_kind=EvidenceKind.VISUAL,
                 deduplication_key="brief-wave",
@@ -387,29 +387,29 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         ScheduledInput(
             at_s=1.0,
             input=TimedText(
-                text="聲音突然變小",
+                text="voice suddenly quieter",
                 cue_kind=CueKind.CARE_CUE,
                 evidence_kind=EvidenceKind.VISUAL,
                 deduplication_key="care-one",
                 facts={"voice_volume_changed": True},
-                uncertainty=("原因未知",),
+                uncertainty=("cause unknown",),
             ),
         ),
         ScheduledInput(
             at_s=1.05,
             input=TimedText(
-                text="低頭且沉默",
+                text="head lowered and silent",
                 cue_kind=CueKind.CARE_CUE,
                 evidence_kind=EvidenceKind.VISUAL,
                 deduplication_key="care-two",
                 facts={"head_lowered": True},
-                uncertainty=("不代表特定情緒",),
+                uncertainty=("does not indicate any particular emotion",),
             ),
         ),
         ScheduledInput(
             at_s=1.09,
             input=TimedText(
-                text="已結束的短暫手勢",
+                text="a brief gesture that has already ended",
                 cue_kind=CueKind.SOCIAL_INVITATION,
                 evidence_kind=EvidenceKind.VISUAL,
                 fresh_for_s=0.01,
@@ -424,15 +424,15 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=18,
             tokens_out=4,
             tool_call_id="call-greeting-look",
-            note="先確認問候來自哪個方向。",
+            note="First find which direction the greeting came from.",
         ),
         Decision(
             tool="speak",
-            args={"text": "嗨！很高興見到你。"},
+            args={"text": "Hi! Nice to see you."},
             tokens_in=20,
             tokens_out=8,
             tool_call_id="call-greeting-speak",
-            note="回應對 Misty 的明確問候。",
+            note="Answer a greeting addressed to Misty.",
         ),
         Decision(
             tool="done",
@@ -440,15 +440,15 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=34,
             tokens_out=1,
             tool_call_id="call-greeting-done",
-            note="問候已完成，結束這次互動。",
+            note="The greeting is done; end this interaction.",
         ),
         Decision(
             tool="speak",
-            args={"text": "我在，請說。"},
+            args={"text": "I'm here, go ahead."},
             tokens_in=18,
             tokens_out=5,
             tool_call_id="call-followup-speak",
-            note="先處理等待中的明確請求。",
+            note="Handle the waiting explicit request first.",
         ),
         Decision(
             tool="done",
@@ -456,7 +456,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=24,
             tokens_out=1,
             tool_call_id="call-followup-done",
-            note="這個請求已回應。",
+            note="This request has been answered.",
         ),
         Decision(
             tool="done",
@@ -464,7 +464,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=12,
             tokens_out=1,
             tool_call_id="call-care-one-done",
-            note="線索不明確，不主動打擾。",
+            note="The cue is unclear; do not intrude.",
         ),
         Decision(
             tool="done",
@@ -472,39 +472,39 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=12,
             tokens_out=1,
             tool_call_id="call-care-two-done",
-            note="保留不確定性並結束觀察。",
+            note="Keep the uncertainty and stop observing.",
         ),
     ),
     audio_fixtures=(
         AudioFixture(
             key="hey-normal",
-            label="Hey Misty · 一般語速",
+            label="Hey Misty · normal pace",
             asset="hey_misty_normal.wav",
-            transcript="Misty，你好！",
+            transcript="Hey Misty, hello!",
         ),
         AudioFixture(
             key="hi-slow",
-            label="Hi Misty · 慢速",
+            label="Hi Misty · slow",
             asset="hi_misty_slow.wav",
-            transcript="Misty，你好！",
+            transcript="Hey Misty, hello!",
         ),
         AudioFixture(
             key="hey-fast",
-            label="Hey Misty · 快速",
+            label="Hey Misty · fast",
             asset="hey_misty_fast.wav",
-            transcript="Misty，你好！",
+            transcript="Hey Misty, hello!",
         ),
         AudioFixture(
             key="hey-pause",
-            label="Hey … Misty · 含停頓",
+            label="Hey … Misty · with a pause",
             asset="hey_misty_pause.wav",
-            transcript="Misty，你好！",
+            transcript="Hey Misty, hello!",
         ),
         AudioFixture(
             key="hey-greeting-only",
-            label="Hey Misty · 只有一句問候",
+            label="Hey Misty · a single greeting",
             asset="hey_misty_normal.wav",
-            transcript="Misty，你好！",
+            transcript="Hey Misty, hello!",
             with_other_cues=False,
         ),
     ),
@@ -516,15 +516,15 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=18,
             tokens_out=4,
             tool_call_id="call-visual-look",
-            note="確認匿名互動邀請仍在畫面中，不靠近對方。",
+            note="Check the anonymous invitation is still in view, without approaching.",
         ),
         Decision(
             tool="speak",
-            args={"text": "嗨，需要我嗎？"},
+            args={"text": "Hi, do you need me?"},
             tokens_in=20,
             tokens_out=8,
             tool_call_id="call-visual-speak",
-            note="以簡短問句回應可能的互動邀請。",
+            note="Answer a possible invitation with a short question.",
         ),
         Decision(
             tool="done",
@@ -532,7 +532,7 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
             tokens_in=34,
             tokens_out=1,
             tool_call_id="call-visual-done",
-            note="已做低風險回應，結束這次互動。",
+            note="A low-risk answer is given; end this interaction.",
         ),
     ),
     text_scripts=(
@@ -548,30 +548,30 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
 
 CALMING_SUPPORT = TextScenarioScript(
     key="calming-support",
-    label="請協助我冷靜 · Skill、聆聽與表達",
-    inputs=(ScheduledInput(0, TimedText(text="請協助我冷靜")),),
+    label="Help me calm down · a Skill, listening and expression",
+    inputs=(ScheduledInput(0, TimedText(text="Please help me calm down.")),),
     decisions=(
         Decision("activate_skill", {"name": "supportive-interaction"}, 20, 4,
-                 note="先載入支持性互動指引，不診斷或強迫靠近。"),
+                 note="Load the supportive-interaction guidance first; no diagnosis, no forced approach."),
         Decision("read_skill_resource", {"name": "supportive-interaction", "resource": "references/conversation.md"}, 22, 4,
-                 note="需要時才讀取後續對話參考。"),
-        Decision("speak", {"text": "我在這裡。你希望安靜陪著，還是想說說話？"}, 30, 8,
-                 note="詢問對方希望的陪伴方式。"),
-        Decision("listen", {}, 32, 3, note="等待對方回答，不把沉默當作同意。"),
-        Decision("move_head", {"roll": 8}, 34, 3, note="以輕微歪頭表達留意，底盤不移動。"),
-        Decision("speak", {"text": "好，我會尊重你的空間。"}, 36, 6,
-                 note="回應對方希望安靜陪伴的話，停止追問。"),
-        Decision("done", {}, 40, 1, note="已回應需求，主動結束並釋放技能脈絡。"),
+                 note="Read the conversation reference only when it is needed."),
+        Decision("speak", {"text": "I'm here. Would you like me to stay quietly, or would you like to talk?"}, 30, 8,
+                 note="Ask what kind of company they want."),
+        Decision("listen", {}, 32, 3, note="Wait for their answer; silence is not consent."),
+        Decision("move_head", {"roll": 8}, 34, 3, note="Tilt the head slightly to show attention; the chassis stays put."),
+        Decision("speak", {"text": "Okay, I'll respect your space."}, 36, 6,
+                 note="They asked for quiet company; stop asking questions."),
+        Decision("done", {}, 40, 1, note="The request is answered; finish and release the Skill context."),
     ),
-    speech=(TimedSpeech(1.0, "安靜陪我就好"),),
+    speech=(TimedSpeech(1.0, "Just stay with me quietly."),),
 )
 
 
 RESPECT_BOUNDARY = TextScenarioScript(
     key="respect-boundary",
-    label="想獨處 · 停止移動、短期不再打擾",
+    label="Wants to be alone · stops moving and briefly stops intruding",
     inputs=(
-        _said_by(0.0, "請不要靠近，我想一個人靜一靜", "person-a"),
+        _said_by(0.0, "Please don't come closer. I want to be alone for a while.", "person-a"),
         # Two non-explicit cues: one arrives while the Episode is still
         # running and waits in the queue, one arrives later so the page shows
         # the countdown actually counting down. Both are observable signals,
@@ -579,55 +579,55 @@ RESPECT_BOUNDARY = TextScenarioScript(
         # person said.
         _said_by(
             0.0,
-            "持續低頭、肩膀起伏（可觀察線索）",
+            "head kept lowered, shoulders heaving (observable cue)",
             "person-a",
             cue_kind=CueKind.CARE_CUE,
         ),
         _said_by(
             6.0,
-            "再次持續低頭（可觀察線索）",
+            "head lowered again (observable cue)",
             "person-a",
             cue_kind=CueKind.CARE_CUE,
         ),
-        _said_by(12.0, "Misty，我現在需要你", "person-a"),
+        _said_by(12.0, "Misty, I need you now.", "person-a"),
     ),
     decisions=(
         Decision(
             "speak",
-            {"text": "好的，我會留在這裡。"},
+            {"text": "Okay, I'll stay right here."},
             20,
             6,
-            note="簡短確認明確界線，不繼續追問。",
+            note="Briefly acknowledge the stated boundary; no more questions.",
         ),
         Decision(
             "respect_boundary",
             {},
             22,
             1,
-            note="停止底盤並以尊重界線的結果結束 Episode。",
+            note="Halt the chassis and end the Episode by respecting the boundary.",
         ),
         Decision(
             "speak",
-            {"text": "我在，你現在需要什麼？"},
+            {"text": "I'm here. What do you need right now?"},
             20,
             8,
-            note="對新的明確請求回應；它可以繞過 suppression。",
+            note="Answer the new explicit request; it may bypass suppression.",
         ),
-        Decision("done", {}, 22, 1, note="新的明確互動已回應。"),
+        Decision("done", {}, 22, 1, note="The new explicit request has been answered."),
     ),
 )
 
 
 ZH_EMERGENCY_SUPPORT = TextScenarioScript(
     key="zh-emergency-support",
-    label="中文高風險求助 · 陪伴、界線與真正的求助管道",
+    label="High-risk request in Chinese · stays, states its limits, points to real help",
     inputs=(_said_by(0.0, "我覺得我快撐不下去了", "person-a"),),
     decisions=(
         Decision("speak", {"text": "我在這裡，我聽到你說的話了。"}, 20, 6,
-                 note="先讓對方知道有人在，不急著給建議。"),
+                 note="Let them know someone is here before offering any advice."),
         Decision("activate_skill", {"name": "emergency-boundaries"}, 22, 4,
-                 note="載入高風險情境的界線指引。"),
-        Decision("listen", {}, 22, 3, note="讓對方自己說，沉默不等於答案。"),
+                 note="Load the high-risk boundary guidance."),
+        Decision("listen", {}, 22, 3, note="Let them speak; silence is not an answer."),
         Decision(
             "speak",
             {
@@ -635,11 +635,11 @@ ZH_EMERGENCY_SUPPORT = TextScenarioScript(
                         "如果可以，請找身邊信任的人，或是打給當地的緊急服務。"
             },
             30, 12,
-            note="說清楚能力界線，並指向真的能行動的人；不診斷、不代為聯絡。",
+            note="State the limits plainly and point to people who can act; no diagnosis, no contacting anyone.",
         ),
         Decision("speak", {"text": "在那之前，我會待在這裡陪你。"}, 22, 6,
-                 note="留下來陪伴，但不承諾結果。"),
-        Decision("done", {}, 20, 1, note="已給出能給的陪伴與資訊。"),
+                 note="Stay, without promising an outcome."),
+        Decision("done", {}, 20, 1, note="Gave the company and information it can give."),
     ),
     speech=(TimedSpeech(1.0, "我不知道可以找誰。"),),
 )
@@ -683,26 +683,26 @@ EN_RESCUE_LIMITS = TextScenarioScript(
 
 CRYING_CARE = AcceptanceScenario(
     name="crying-care",
-    title="有人在 Misty 面前哭泣",
-    subtitle="觀察不確定線索，或在明確求助時載入支持性互動 Skill。",
+    title="Care and boundaries",
+    subtitle="Uncertain signs of distress, a request for space, and moments where it must say what it cannot do.",
     availability=ScenarioAvailability.READY,
     ticket="07",
     limitation=(
-        "只以 synthetic detector signals 驗證 temporal Care Cue；模型決策、"
-        "後續聽到的話與 robot 都是腳本／模擬，未使用真實相機或 Misty II。"
+        "The temporal Care Cue is exercised only with synthetic detector "
+        "signals; the robot is simulated. No real camera or Misty II was used."
     ),
     preview=(
         PresentationBeat(
-            "input", "選擇 fixture", "持續可觀察的臉部／姿勢線索", "保留不確定性，不診斷情緒。"
+            "input", "Pick an example", "Sustained observable face and posture cues", "Uncertainty is kept; no emotion is diagnosed."
         ),
         PresentationBeat(
-            "decision", "腳本模型決定", "選擇重新觀察、詢問或結束", "不由 gate 固定映射回應。"
+            "decision", "The model decides", "Look again, ask, or leave them be", "The gate does not map cues to a fixed response."
         ),
         PresentationBeat(
             "effect",
-            "模擬動作",
-            "詢問、觀察或保持距離",
-            "Journal 會顯示實際 Tool、Observation 與 ending。",
+            "Simulated action",
+            "Ask, observe or keep its distance",
+            "The Journal shows the actual Tools, Observations and ending.",
         ),
     ),
     actors=("person",),
@@ -725,15 +725,15 @@ CRYING_CARE = AcceptanceScenario(
                     tokens_in=20,
                     tokens_out=4,
                     tool_call_id="call-care-observe",
-                    note="先重新觀察可見線索，不把它當成情緒診斷。",
+                    note="Look at the visible cues again first; they are not an emotion diagnosis.",
                 ),
                 Decision(
                     tool="speak",
-                    args={"text": "嗨，你希望我留在這裡嗎？"},
+                    args={"text": "Hi, would you like me to stay here?"},
                     tokens_in=28,
                     tokens_out=8,
                     tool_call_id="call-care-ask",
-                    note="以可拒絕的問題詢問，不靠近對方。",
+                    note="Ask a question they can decline, without approaching.",
                 ),
                 Decision(
                     tool="done",
@@ -741,7 +741,7 @@ CRYING_CARE = AcceptanceScenario(
                     tokens_in=32,
                     tokens_out=1,
                     tool_call_id="call-care-done",
-                    note="已低風險詢問，保持距離並結束。",
+                    note="A low-risk question was asked; keep the distance and finish.",
                 ),
             ),
         ),
@@ -754,17 +754,17 @@ CRYING_CARE = AcceptanceScenario(
                     tokens_in=22,
                     tokens_out=4,
                     tool_call_id="call-conflict-inspect",
-                    note="先檢查場景；抬高的嘴角本身不能證明感受。",
+                    note="Inspect the scene first; raised mouth corners prove nothing about feelings.",
                 ),
                 Decision(
                     tool="speak",
                     args={
-                        "text": "謝謝你告訴我你很難過。表情線索可能不準；你希望我陪著嗎？"
+                        "text": "Thank you for telling me you feel sad. Facial cues can be wrong. Would you like me to stay with you?"
                     },
                     tokens_in=34,
                     tokens_out=15,
                     tool_call_id="call-conflict-ask",
-                    note="尊重本人明確說出的感受，並澄清是否需要陪伴。",
+                    note="Believe the feeling they stated, and ask whether they want company.",
                 ),
                 Decision(
                     tool="done",
@@ -772,10 +772,10 @@ CRYING_CARE = AcceptanceScenario(
                     tokens_in=38,
                     tokens_out=1,
                     tool_call_id="call-conflict-done",
-                    note="已詢問且未強迫靠近，結束。",
+                    note="Asked without forcing an approach; finish.",
                 ),
             ),
-            heard_after_first_tool=("我其實很難過",),
+            heard_after_first_tool=("Actually, I feel really sad.",),
         ),
     ),
 )
@@ -786,76 +786,77 @@ DEFAULT_ACTOR = "person"
 
 A_THEN_B = TextScenarioScript(
     key="a-then-b",
-    label="A 互動中記住前文，切換 B 後清除",
+    label="A keeps context, then B starts clean",
     inputs=(
-        _said_by(0.0, "Hi Misty，我是 A", "person-a"),
-        _said_by(0.5, "Hey Misty，換我", "person-b"),
+        _said_by(0.0, "Hi Misty, it's A.", "person-a"),
+        _said_by(0.5, "Hey Misty, my turn.", "person-b"),
     ),
     decisions=(
-        Decision("speak", {"text": "你好 A，今天想聊什麼？"}, 20, 6,
-                 note="回應 A；A 是本次 Episode 唯一的 Interaction Target。"),
-        Decision("listen", {}, 22, 3, note="等待 A 回答。"),
-        Decision("speak", {"text": "B 在等我，我們先聊到這裡，再見。"}, 30, 8,
-                 note="收到交接通知：向 A 說明並收尾，不平行處理 B。"),
-        Decision("done", {}, 24, 1, note="A 的 Episode 結束，釋放 target。"),
-        Decision("speak", {"text": "你好 B，換你了，有什麼想說的？"}, 20, 8,
-                 note="B 的新 Episode 從新的 Trigger Evidence 與新 target 開始。"),
-        Decision("done", {}, 22, 1, note="B 的互動完成。"),
+        Decision("speak", {"text": "Hi A, what would you like to talk about today?"}, 20, 6,
+                 note="Answer A; A is this Episode's only Interaction Target."),
+        Decision("listen", {}, 22, 3, note="Wait for A to answer."),
+        Decision("speak", {"text": "B is waiting for me, so let's stop here. Goodbye!"}, 30, 8,
+                 note="A handoff notice arrived: explain to A and wrap up; B is not handled in parallel."),
+        Decision("done", {}, 24, 1, note="A's Episode ends and the target is released."),
+        Decision("speak", {"text": "Hi B, your turn. What would you like to say?"}, 20, 8,
+                 note="B's new Episode starts from new Trigger Evidence and a new target."),
+        Decision("done", {}, 22, 1, note="B's interaction is done."),
     ),
-    speech=(TimedSpeech(0.6, "今天天氣不錯"),),
+    speech=(TimedSpeech(0.6, "The weather is nice today."),),
 )
 
 
 B_EXPIRES = TextScenarioScript(
     key="b-expires",
-    label="B 呼叫後離開 · 過期 cue 不開 Episode",
+    label="B calls, then leaves · a stale cue opens no Episode",
     inputs=(
-        _said_by(0.0, "Hi Misty，我是 A", "person-a"),
-        _said_by(0.5, "Hey Misty，換我", "person-b", fresh_for_s=0.3),
+        _said_by(0.0, "Hi Misty, it's A.", "person-a"),
+        _said_by(0.5, "Hey Misty, my turn.", "person-b", fresh_for_s=0.3),
     ),
     decisions=(
-        Decision("speak", {"text": "你好 A，今天想聊什麼？"}, 20, 6,
-                 note="回應 A；A 是本次 Episode 唯一的 Interaction Target。"),
-        Decision("listen", {}, 22, 3, note="等待 A 回答。"),
+        Decision("speak", {"text": "Hi A, what would you like to talk about today?"}, 20, 6,
+                 note="Answer A; A is this Episode's only Interaction Target."),
+        Decision("listen", {}, 22, 3, note="Wait for A to answer."),
         Decision("listen", {}, 22, 3,
-                 note="收到交接通知；先聽 A 說完，不中斷。"),
-        Decision("speak", {"text": "剛才有人叫我，不過我們先聊完。"}, 26, 8,
-                 note="B 的 cue 已過期；不依舊資料強行交接。"),
-        Decision("done", {}, 24, 1, note="A 的 Episode 結束。"),
+                 note="A handoff notice arrived; let A finish first without interrupting."),
+        Decision("speak", {"text": "Someone called me just now, but let's finish our chat first."}, 26, 8,
+                 note="B's cue has expired; no forced handoff on stale data."),
+        Decision("done", {}, 24, 1, note="A's Episode ends."),
     ),
-    speech=(TimedSpeech(0.6, "今天天氣不錯"),),
+    speech=(TimedSpeech(0.6, "The weather is nice today."),),
 )
 
 
 SPEAKER_HANDOFF = AcceptanceScenario(
     name="speaker-handoff",
-    title="A 聊完後，切換成 B",
-    subtitle="A 的前文只留在 A 的 Episode；B 排隊交接後，以新的 Trigger Evidence 開始。",
+    title="Two people, one at a time",
+    subtitle="A's context stays in A's Episode; B queues, gets a handoff, and starts from fresh Trigger Evidence.",
     availability=ScenarioAvailability.READY,
     ticket="12",
     limitation=(
-        "兩位 actors 的發言歸屬由腳本指定；系統沒有聲源方向或人臉身分，只用"
-        "匿名 track reference。model 決策與後續話語為腳本，robot 為模擬。"
+        "Who said what is assigned by the example: the runtime has no "
+        "sound-source direction and no face identity, only anonymous track "
+        "references. The robot is simulated."
     ),
     actors=("A", "B"),
     preview=(
         PresentationBeat(
             "input",
-            "收到",
-            "A 互動期間，B 明確呼叫 Misty",
-            "B 的 request 先進入 Cue queue，不平行開 Episode，也不丟棄。",
+            "Heard",
+            "While A is talking, B calls Misty",
+            "B's request waits in the Cue queue: no parallel Episode, and not dropped.",
         ),
         PresentationBeat(
             "decision",
-            "決定",
-            "在 Turn boundary 告知 model，讓 A 得到收尾",
-            "只有 bumper／e-stop 才能立即中止，不必等交接。",
+            "Decide",
+            "The model is told at a Turn boundary, so A gets a proper goodbye",
+            "Only a bumper or e-stop stops it immediately; a handoff waits.",
         ),
         PresentationBeat(
             "effect",
-            "動作",
-            "B 取得新 Episode、新 target 與乾淨脈絡",
-            "A 的名字、話語與 Skill instructions 不被繼承；過期的 B 不會被強行處理。",
+            "Act",
+            "B gets a new Episode, a new target and a clean context",
+            "A's name, words and Skill instructions are not inherited; a stale B is never forced.",
         ),
     ),
     inputs=(),

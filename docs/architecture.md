@@ -132,23 +132,45 @@ total listening budget also caps the ASR timeout. Decoded transcript queues
 report dequeue age, explicitly not an observed capture age. This wiring is
 tested with injected sources only, not a Misty microphone.
 
-The Demo greeting and care cards offer checked-in synthetic WAV fixtures and
-synthetic visual timelines. Each click reruns the selected local gate, then
-uses scripted ASR/detector signals/model decisions and a simulated robot, so it
-needs no API key or network. The page displays the audio stages or per-frame
-visual gate facts, selected Evidence metadata, Episode, Tool effect and ending
-derived from that run. The care card offers sustained face/posture signals and
+The acceptance fixtures include checked-in synthetic WAV files and synthetic
+visual timelines. Run through `run_fixture`, each reruns the selected local
+gate, then uses scripted ASR/detector signals/model decisions and a simulated
+robot, so it needs no API key or network; the scripted route
+`/scenarios/<card>/run` serves that run with its audio stages or per-frame
+visual gate facts, selected Evidence metadata, Episode, Tool effect and ending. The care card offers sustained face/posture signals and
 a visual-versus-verbal conflict. In the latter, `new_speech` carries the
 person's explicit statement after the first Tool, and the scripted next
 response respects those words while acknowledging visual uncertainty. A
 negative visual timeline states that no Episode opened and the model was not
-called. Trigger Evidence reaches the model before any Observation. The
-optional Live AI panel remains a separate hosted path.
+called. Trigger Evidence reaches the model before any Observation.
+
+The Demo page does not show those scripted runs. Its examples are
+recordings: `python -m misty_agent.demo.record` runs a chosen subset of
+the same fixtures with the configured hosted model making every decision,
+and writes each run to `misty_agent/demo/recordings/` in the scripted
+route's shape, labelled `recorded_model_run` with the model name and date.
+The page replays them without a key and animates the simulated Misty from
+each Moment's folded pose plus the Tool call, Observation and Snapshot. A
+recording is evidence about that model on that day, not a test: the
+default suite checks the files' shape and runs the boundary audit over what
+Misty said in them. The optional live panel is a separate hosted path that
+plays on the same stage.
 
 Each model Turn uses a provider-neutral representation of the native function-
-calling protocol. The OpenAI adapter preserves assistant Tool call identity,
-answers it with a matching `tool` result, disables parallel calls and rejects a
-response containing more than one call. A short public Decision Note may be
+calling protocol. The OpenAI adapter speaks it over the Responses API, which
+is the endpoint that accepts function tools and reasoning together — Chat
+Completions refuses the pair for the whole GPT-5.6 family, and a model doing
+no reasoning chose to listen rather than answer. It preserves Tool call
+identity, pairs each call with its `function_call_output`, disables parallel
+calls, rejects a response containing more than one call, asks the provider to
+store nothing, and reads only the public text as the Decision Note.
+
+Because nothing is stored provider-side, a Turn's reasoning would be gone by
+the next one, so it is requested encrypted and handed back up with the Turn
+it belongs to. It travels in the working context, which is where a Turn's
+history already lives and which is discarded with the Episode — so one
+Episode cannot inherit another's — and never in the Journal, which is a
+public record that private reasoning stays out of. A short public Decision Note may be
 recorded in the Journal; it is not private model reasoning and cannot carry
 physical control parameters.
 
@@ -181,10 +203,10 @@ runtime never ends an Episode for a handoff; bumper, e-stop and shutdown
 still abort immediately. Queued requests keep their freshness bound and are
 dropped as expired if the active Episode outlasts them.
 
-The A→B Demo card runs two scripted anonymous actors through this path and
-renders target binding, the queued request, the notice, the dequeue and both
-Episodes in order. Speaker attribution there is scripted: the runtime has no
-sound-source direction and no face identity.
+The A→B fixture runs two anonymous actors through this path and renders
+target binding, the queued request, the notice, the dequeue and both
+Episodes in order. Speaker attribution there is part of the fixture: the
+runtime has no sound-source direction and no face identity.
 
 Tools and the approach controller depend on one `Robot` interface
 (`misty_agent/robot/`): behaviours such as `move_head(pitch, roll, yaw)` or
@@ -292,13 +314,14 @@ runs it, whether an Episode may open at all, the runtime records it must
 make observable, the Tools that would make the outcome unsafe or a boundary
 breach, and whether the base may move. It deliberately fixes no wording and
 no Tool order, because these situations have more than one reasonable
-answer. `run_fixture` is the only way a built-in scenario runs: the Demo
-page and the acceptance tests both call it, so what a visitor watches is the
-execution the tests asserted on rather than a second copy of the wiring.
+answer. `run_fixture` is the only way a built-in scenario runs: the
+acceptance tests, the scripted route and the Demo's recorder all call it,
+so a recording differs from the tested run only in who made the decisions.
 
 That set is not a benchmark. There is no score, no leaderboard and no claim
 of comparability with any published suite; every model decision in it is an
-authored fixture rather than recorded output.
+authored fixture. The Demo's recorded model runs are shown beside it, not
+counted as part of it.
 
 This completes the social-runtime effort in
 `.scratch/social-react-runtime/`. What the system does not do is unchanged

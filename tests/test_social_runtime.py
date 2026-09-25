@@ -408,9 +408,6 @@ def test_the_demo_replays_a_text_case_that_crossed_the_runtime_seam():
     ]
     assert payload["storyboard"]["outcome"] == "done"
     assert payload["storyboard"]["moments"][-1]["kind"] == "episode_finished"
-    page = answer("GET", "/").body.decode()
-    assert 'id="runtime"' in page
-    assert "runtime.timeline" in page
 
 
 def test_text_entered_in_the_demo_also_crosses_the_runtime(monkeypatch):

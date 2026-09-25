@@ -242,9 +242,9 @@ def test_no_product_entry_point_bypasses_the_runtime():
 # What the page tells a visitor
 # ---------------------------------------------------------------------------
 
-def test_the_picker_says_which_spec_situation_a_fixture_stands_for():
+def test_the_scenario_listing_says_which_spec_situation_a_fixture_stands_for():
     """The number comes from the same tuple the tests assert against, so the
-    page cannot claim coverage the tests do not have."""
+    listing cannot claim coverage the tests do not have."""
     import json
 
     from misty_agent.demo import answer
@@ -275,6 +275,7 @@ def test_the_whole_contract_set_is_served_with_its_limits_attached():
     assert set(payload["provenance"]) == {
         "specification_fixture",
         "scripted_run",
+        "recorded_model_run",
         "live_model_run",
     }
     assert "No Misty II" in payload["hardware_unverified"]
@@ -312,7 +313,7 @@ def test_the_page_can_play_pause_restart_and_scrub_every_moment():
     assert 'byId("replayScrub").addEventListener("input"' in page
     assert "pauseReplay();" in page
     # Every Episode's Moments, not just the first.
-    assert "payload.episodes.flatMap" in page
+    assert "run.episodes.flatMap" in page
 
 
 def answer_page() -> str:
@@ -321,14 +322,15 @@ def answer_page() -> str:
     return answer("GET", "/").body.decode("utf-8")
 
 
-def test_the_page_shows_the_situation_and_what_kind_of_run_it_was():
+def test_the_page_shows_what_kind_of_run_it_was():
     """The labels have to reach a visitor, not only the JSON. A route nobody
-    renders is a claim nobody can see."""
+    renders is a claim nobody can see. The spec numbers are not shown: the
+    page is a showcase for visitors, and `/acceptance` still serves every
+    contract with its number."""
     page = answer_page()
 
-    assert 'id="fixtureSituation"' in page
-    assert "規格情境 ${fixture.spec_scenario}" in page
     assert 'id="provenanceBadge"' in page
+    assert "provenance.recorded_on" in page
     assert "provenance.kind_means" in page
     assert "provenance.hardware_unverified" in page
 
@@ -344,3 +346,23 @@ def test_the_live_panel_labels_itself_too():
 
     assert payload["provenance"]["kind"] == "live_model_run"
     assert payload["provenance"]["hardware_unverified"] == HARDWARE_UNVERIFIED
+
+
+def test_a_supplied_model_replaces_the_authored_decisions_and_nothing_else():
+    """How the Demo's recordings are made: same inputs, same simulated room,
+    somebody else deciding. If the fixture's script leaked through, a
+    "recorded model run" would be the script with a different label."""
+    from misty_agent.agent.react import Decision
+
+    asked = []
+
+    class Decides:
+        def decide(self, working_context, tools):
+            asked.append(working_context)
+            return Decision("done", {}, 1, 1, tool_call_id="call-own", note="Nothing to add.")
+
+    run = run_fixture("greeting", "good-news", model=Decides())
+
+    assert tools_called(run) == ["done"]
+    assert asked, "the supplied model was never asked"
+    assert "Misty, I just got accepted!" in str(asked[0])

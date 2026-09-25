@@ -119,7 +119,7 @@ MOVES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
 
 def _skill_status(active: Sequence[str]) -> str:
     """The replay caption for which Skills currently guide the Episode."""
-    return "Active Skills：" + ("、".join(active) or "無（未載入或 Episode 已結束）")
+    return "Active Skills: " + (", ".join(active) or "none (not loaded, or the Episode has ended)")
 
 
 @dataclass(frozen=True)

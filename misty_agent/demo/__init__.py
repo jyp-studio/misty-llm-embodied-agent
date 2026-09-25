@@ -60,11 +60,13 @@ from misty_agent.agent.journal import (
 from misty_agent.acceptance import (
     ACCEPTANCE_CONTRACTS,
     SCENARIO_CONFIG,
+    FixtureRun,
     UnknownFixture,
     contract_for,
     run_fixture,
 )
 from misty_agent.agent.model import MissingApiKey, OpenAIModel
+from misty_agent.config import settings
 from misty_agent.agent.storyboard import storyboard_of
 from misty_agent.agent.tools import STEPS_KEY
 from misty_agent.app import (
@@ -120,6 +122,8 @@ from misty_agent.scenarios import (
     ScenarioCard,
     ScenarioModel,
 )
+
+from misty_agent.demo import recordings  # noqa: E402 — needs the names above
 
 #: The only address this binds. A demo that listened on every interface would
 #: put a Journal — which carries what people said — on whatever network the
@@ -178,7 +182,7 @@ class Example:
     #: * `scenario` — generated through the deterministic runtime seam;
     #: * `live` — something that happened on this machine a moment ago.
     #:
-    #: 「不得讓觀看者搞混哪個是規格、哪個是剛跑的」 is the ticket's line, and
+    #: "Never let a viewer confuse a specification with a fresh run" is the ticket's line, and
     #: it is not a thing to leave to a page's own judgement.
     kind: str
     #: What has happened to it since it was written. Travels beside the claim
@@ -277,6 +281,14 @@ def answer(
         )
     if path == "/scenarios":
         return _json(200, [_scenario_payload(case) for case in DEMO_SCENARIOS])
+    if path == "/recordings":
+        return _json(200, recordings.listing())
+    if path.startswith("/recordings/"):
+        # Matched against the example names, never joined onto a path.
+        try:
+            return _json(200, recordings.load(path[len("/recordings/"):]))
+        except recordings.NoRecording as why:
+            return _json(404, {"error": str(why)})
     if path == "/acceptance":
         return _json(
             200,
@@ -327,6 +339,11 @@ PROVENANCE = {
         "Executed just now by this code. The inputs and the model's decisions "
         "are authored fixtures, and the robot is simulated."
     ),
+    "recorded_model_run": (
+        "Recorded from a real run against a hosted model and replayed here "
+        "without calling it again. The inputs come from the example; every "
+        "decision was the model's own. The robot is simulated."
+    ),
     "live_model_run": (
         "Executed just now against a hosted model, which costs money and "
         "needs a key. The robot is still simulated."
@@ -339,6 +356,89 @@ HARDWARE_UNVERIFIED = (
     "No Misty II has ever run any of this. Physical behaviour, timing and "
     "reliability are unverified."
 )
+
+
+@dataclass(frozen=True)
+class RunSource:
+    """Who made the decisions in a run, said once so no copy can drift.
+
+    `scripted_run` replays authored decisions — what the acceptance tests
+    assert on. `recorded_model_run` is a hosted model's own decisions over
+    the same inputs, captured once and replayed from disk.
+    """
+
+    kind: str
+    model: str
+    recorded_on: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in PROVENANCE:
+            raise ValueError(f"{self.kind!r} is not a kind of run")
+        if (self.kind == "recorded_model_run") != (self.recorded_on is not None):
+            raise ValueError("a recording, and only a recording, has a date")
+
+
+SCRIPTED = RunSource("scripted_run", "authored script")
+
+
+def _provenance(
+    source: RunSource,
+    *,
+    called_model: bool,
+    input_kind: str,
+    fixture_label: str,
+    several_actors: bool,
+) -> dict:
+    """What produced this run, in words a visitor can check."""
+    recorded = source.kind == "recorded_model_run"
+    if input_kind == "audio":
+        inputs = (
+            "A synthetic WAV went through local wake detection; the transcript "
+            "is part of the example."
+        )
+    elif input_kind == "visual":
+        inputs = (
+            "A synthetic frame timeline went through local anonymous tracking "
+            "and the temporal visual gate; the detector signals are part of "
+            "the example."
+        )
+    else:
+        inputs = "What people say, and when, is part of the example."
+    if several_actors:
+        inputs += (
+            " Who said what is assigned by the example: the runtime has no "
+            "sound-source direction and no face identity, only anonymous "
+            "track references."
+        )
+    if not called_model:
+        decisions = "No cue formed, so the model was never called."
+    elif recorded:
+        decisions = (
+            f"Every decision was made by {source.model}; this page replays "
+            "that recording without calling it."
+        )
+    else:
+        decisions = "The model's decisions are authored."
+    return {
+        "kind": source.kind,
+        "kind_means": PROVENANCE[source.kind],
+        "hardware_unverified": HARDWARE_UNVERIFIED,
+        "headline": (
+            f"Recorded from {source.model} on {source.recorded_on}"
+            if recorded
+            else "Executed just now with authored decisions"
+        ),
+        "model": source.model if called_model else "not called",
+        "recorded_on": source.recorded_on,
+        "robot": "Simulated Misty",
+        "detail": (
+            f"{inputs} {decisions} The robot is simulated; no real camera, "
+            "microphone or Misty II was used."
+        ),
+        "audio": fixture_label if input_kind == "audio" else None,
+        "fixture": fixture_label,
+        "input_kind": input_kind,
+    }
 
 
 def _fixture_entry(item, input_kind: str, card: str) -> dict:
@@ -433,49 +533,64 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
         run = run_fixture(name, asked.get("fixture"))
     except UnknownFixture as why:
         return _json(400, {"error": str(why)})
+    return _json(200, fixture_payload(case, run, SCRIPTED))
 
+
+def fixture_payload(
+    case: AcceptanceScenario, run: FixtureRun, source: RunSource
+) -> dict:
+    """One finished fixture run, as the page draws it.
+
+    Shared by the scripted route above and by the recorder in
+    `misty_agent.demo.recordings`, so a recording is the same shape as the
+    run the tests assert on and differs only in who made the decisions.
+    """
     result = run.result
     session = run.session
-    input_kind = run.input_kind
-    scenario_config = SCENARIO_CONFIG
-    selected_fixture = run.fixture
-    if selected_fixture is None:
+    if run.fixture is None:
         raise RuntimeError("an acceptance scenario has no fixture")
+    detected = [
+        record for record in result.records if isinstance(record, CueDetected)
+    ]
+    said_by_cue = {record.cue_id: record for record in detected}
     episodes = []
     for index, episode in enumerate(result.episodes):
         actor = case.actors[min(index, len(case.actors) - 1)]
         storyboard, board = _project_journal(episode.journal.records)
+        cue = said_by_cue.get(episode.cue_id)
         episodes.append(
             {
                 "actor": actor,
                 "cue_id": episode.cue_id,
                 "cue_kind": episode.cue_kind,
+                #: What opened this Episode. Words only for an Explicit
+                #: Request; for any other cue it is an observed signal, and
+                #: the page must not put it in the person's mouth.
+                "cue_text": cue.text if cue is not None else None,
                 "episode_id": episode.journal.records[0].episode_id,
                 "outcome": asdict(episode.outcome),
                 "moves": list(what_moves(storyboard)),
                 "storyboard": board,
             }
         )
-    return _json(
-        200,
-        {
-            "scenario": _scenario_payload(case),
-            "execution": _scenario_execution(
-                result,
-                result.episodes[0] if result.episodes else None,
-                queue_capacity=scenario_config.cue_queue_capacity,
-                fixture_label=selected_fixture.label,
-                input_kind=input_kind,
-                actors=case.actors,
-                robot_state=session.robot.as_facts(),
-            ),
-            "runtime": _runtime_payload(result),
-            "episodes": episodes,
-            # State, not a log: where the simulated Misty ended up. The
-            # storyboard above derives the same pose from the Journal.
-            "robot": _simulated_robot_state(session.robot),
-        },
-    )
+    return {
+        "scenario": _scenario_payload(case),
+        "execution": _scenario_execution(
+            result,
+            result.episodes[0] if result.episodes else None,
+            queue_capacity=SCENARIO_CONFIG.cue_queue_capacity,
+            fixture_label=run.fixture.label,
+            input_kind=run.input_kind,
+            actors=case.actors,
+            robot_state=session.robot.as_facts(),
+            source=source,
+        ),
+        "runtime": _runtime_payload(result),
+        "episodes": episodes,
+        # State, not a log: where the simulated Misty ended up. The
+        # storyboard above derives the same pose from the Journal.
+        "robot": _simulated_robot_state(session.robot),
+    }
 
 
 def _scenario_execution(
@@ -487,6 +602,7 @@ def _scenario_execution(
     input_kind: str,
     actors: Sequence[str] = (DEFAULT_ACTOR,),
     robot_state: Optional[Mapping[str, Any]] = None,
+    source: "RunSource",
 ) -> Mapping[str, Any]:
     """Human-readable evidence derived from this run, not its preview.
 
@@ -531,27 +647,27 @@ def _scenario_execution(
         if isinstance(record, VisualAttentionRecorded)
     )
     audio_labels = {
-        "wake": "本機喚醒辨識",
-        "capture": "喚醒後語音擷取",
-        "asr": "語音轉文字（腳本）",
-        "backlog": "音訊等待佇列",
-        "source": "音訊來源",
+        "wake": "Local wake detection",
+        "capture": "Utterance capture",
+        "asr": "Speech to text (fixture transcript)",
+        "backlog": "Audio backlog",
+        "source": "Audio source",
     }
     audio_headlines = {
-        "matched": "已辨識到喚醒詞",
-        "no_match": "沒有辨識到喚醒詞",
-        "repeated_wake": "收到重複喚醒詞",
-        "captured": "已擷取一段語音",
-        "empty_utterance": "喚醒後沒有語音",
-        "silence_timeout": "等待語音逾時",
-        "max_duration": "語音已達長度上限",
-        "transcribed": "已產生文字",
-        "asr_empty": "沒有可用文字",
-        "asr_timeout": "語音轉文字逾時",
-        "asr_error": "語音轉文字失敗",
-        "backlog_dropped": "部分音訊因佇列已滿而丟棄",
-        "source_ended": "音訊來源已結束",
-        "source_error": "音訊來源失敗",
+        "matched": "Wake phrase recognised",
+        "no_match": "No wake phrase recognised",
+        "repeated_wake": "Repeated wake phrase",
+        "captured": "An utterance was captured",
+        "empty_utterance": "Nothing was said after the wake phrase",
+        "silence_timeout": "Timed out waiting for speech",
+        "max_duration": "The utterance reached its length limit",
+        "transcribed": "Transcribed",
+        "asr_empty": "No usable text",
+        "asr_timeout": "Transcription timed out",
+        "asr_error": "Transcription failed",
+        "backlog_dropped": "Some audio was dropped because the backlog was full",
+        "source_ended": "The audio source ended",
+        "source_error": "The audio source failed",
     }
     flow = [
         PresentationBeat(
@@ -562,30 +678,30 @@ def _scenario_execution(
                 " · ".join(
                     f"{key}: {value}" for key, value in record.facts.items()
                 )
-                or "此階段已留下 typed Runtime record。"
+                or "This stage left a typed runtime record."
             ),
         )
         for record in audio_records
     ]
     visual_headlines = {
-        "empty": "畫面中沒有偵測到人",
-        "not_looking": "人物沒有看向 Misty",
-        "tracking": "開始累積注視時間",
-        "wave_progress": "觀察到手部來回位移",
-        "qualified": "持續注視加揮手已達 gate",
-        "care_progress": "持續累積可觀察的臉部／姿勢線索",
-        "care_qualified": "可觀察線索已形成不確定 Care Cue",
+        "empty": "Nobody detected in frame",
+        "not_looking": "The person is not looking at Misty",
+        "tracking": "Started counting how long they look",
+        "wave_progress": "A hand moving back and forth",
+        "qualified": "Sustained gaze plus a wave passed the gate",
+        "care_progress": "Observable face and posture cues accumulating",
+        "care_qualified": "The cues formed an uncertain Care Cue",
     }
     flow.extend(
         PresentationBeat(
             "visual_gate",
-            f"Frame {record.frame_index + 1} · {record.track_reference or '畫面'}",
+            f"Frame {record.frame_index + 1} · {record.track_reference or 'frame'}",
             visual_headlines[record.outcome.value],
             (
                 " · ".join(
                     f"{key}: {value}" for key, value in record.facts.items()
                 )
-                or "本機 temporal gate 已留下 typed Runtime record。"
+                or "The local temporal gate left a typed runtime record."
             ),
         )
         for record in visual_records
@@ -658,21 +774,21 @@ def _scenario_execution(
     flow.append(
         PresentationBeat(
             "ending",
-            "結果",
+            "Result",
             (
-                "情境執行完成"
+                "The example ran to completion"
                 if completed
                 else (
-                    "保持安靜，沒有開啟 Episode"
+                    "Stayed quiet: no Episode was opened"
                     if quiet
-                    else "情境未正常完成"
+                    else "The example did not complete normally"
                 )
             ),
             (
-                "有限情境已播放完畢，Runtime 正常停止。"
+                "Every input in the example was played and the runtime stopped normally."
                 if completed
                 else (
-                    "視覺時間線已播放完畢，但沒有足夠證據觸發 model 或動作。"
+                    "The whole timeline played, but nothing in it was enough to involve the model or move."
                     if quiet
                     else (
                         f"Episode: "
@@ -684,48 +800,13 @@ def _scenario_execution(
         )
     )
     return {
-        "provenance": {
-            "kind": "scripted_run",
-            "kind_means": PROVENANCE["scripted_run"],
-            "hardware_unverified": HARDWARE_UNVERIFIED,
-            "headline": "這是剛剛執行的模擬結果",
-            "model": (
-                "未呼叫"
-                if episode is None
-                else "預設腳本模型"
-            ),
-            "robot": "模擬 Misty",
-            "detail": (
-                (
-                    "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
-                    "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
-                    "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
-                )
-                if input_kind == "audio"
-                else "文字與後續話語、model 決策為預先定義的腳本；Skill 載入、listen、Runtime、Tools 與 Journal 都在這次重新執行。Robot 為模擬，未呼叫真實 model 或 Misty II。"
-                + (
-                    "多位 actors 的發言歸屬由腳本指定：系統沒有聲源方向或人臉身分，"
-                    "只用匿名 track reference 綁定 Interaction Target。"
-                    if len(actors) > 1
-                    else ""
-                )
-                if input_kind == "text"
-                else (
-                    "選定的 synthetic frame timeline 由目前程式重新執行本機"
-                    "匿名追蹤與 temporal visual gate；detector signals 為預先"
-                    "定義，robot 為模擬。"
-                    + (
-                        "沒有形成 cue，因此 model 沒有被呼叫。"
-                        if episode is None
-                        else "model 決策為預先定義。"
-                    )
-                    + "未使用真實相機或 Misty II。"
-                )
-            ),
-            "audio": fixture_label if input_kind == "audio" else None,
-            "fixture": fixture_label,
-            "input_kind": input_kind,
-        },
+        "provenance": _provenance(
+            source,
+            called_model=episode is not None,
+            input_kind=input_kind,
+            fixture_label=fixture_label,
+            several_actors=len(set(actors)) > 1,
+        ),
         "trigger_evidence": (
             {
                 "source": evidence.source.value,
@@ -765,21 +846,21 @@ def _scenario_execution(
         "decision_explanation": {
             "available": bool(notes),
             "headline": (
-                "Decision Note 已由本次 Journal 記錄"
+                "The Journal recorded a Decision Note"
                 if notes
                 else (
-                    "本機 gate 沒有開啟互動"
+                    "The local gate opened no interaction"
                     if episode is None and input_kind == "visual"
-                    else "本次 model 未提供 Decision Note"
+                    else "The model gave no Decision Note"
                 )
             ),
             "detail": (
                 next(iter(notes.values())).note
                 if notes
                 else (
-                    "沒有足夠的持續注視加揮手證據，因此 model 沒有被呼叫。"
+                    "The evidence never formed a cue, so the model was never called."
                     if episode is None and input_kind == "visual"
-                    else "Tool choice 仍可驗證，但沒有公開目的說明。"
+                    else "The Tool choices can still be checked, but no public purpose was given."
                 )
             ),
         },
@@ -901,15 +982,15 @@ def _runtime_example() -> Reply:
 
 
 _DROP_WORDING = {
-    "expired": "過期，沒有開啟 Episode",
-    "overflow": "因 queue 已滿而被淘汰",
-    "shutdown": "因 runtime 關閉而放棄",
-    "runtime_failure": "因 runtime 失敗而放棄",
-    "episode_error": "因 Episode 錯誤而放棄",
+    "expired": "expired before an Episode could open",
+    "overflow": "was evicted because the queue was full",
+    "shutdown": "was abandoned because the runtime shut down",
+    "runtime_failure": "was abandoned because the runtime failed",
+    "episode_error": "was abandoned because an Episode failed",
 }
 
 
-_MOTION_WORDING = {"rotate": "轉向", "forward": "前進", "back": "後退"}
+_MOTION_WORDING = {"rotate": "turn", "forward": "forward", "back": "back"}
 
 
 def replace_beat(beat: PresentationBeat, **changes: Any) -> PresentationBeat:
@@ -922,17 +1003,18 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
     fresh distance and bearing it was planned from, then where the chassis
     and the head ended up. Simulated only."""
     ending = (
-        f"{result.get('result')} · {result.get(STEPS_KEY, 0)} 個 Step"
-        f"（{result.get('rotations', 0)} 次轉向）"
+        f"{result.get('result')} · {result.get(STEPS_KEY, 0)} step(s)"
+        f" ({result.get('rotations', 0)} turn(s))"
     )
-    caveats = "；".join(result.get("uncertainty") or ()) or "沒有額外不確定性註記"
+    caveats = "; ".join(result.get("uncertainty") or ()) or "no further uncertainty noted"
     beats = [PresentationBeat(
         "approach", "Target-aware approach", ending,
-        f"停止原因：{result.get('reason') or '—'}。最後讀數：距離 "
-        f"{result.get('distance_cm')} cm、bearing {result.get('bearing_deg')}°（{caveats}）。"
-        "底盤先對準再靠近；每個 checkpoint 檢查 stop 與 hazard；"
-        "速度、角速度與時間由 controller 決定，模型只表達意圖；常數為模擬值，"
-        "不是真機安全驗證。",
+        f"Why it stopped: {result.get('reason') or '—'}. Last reading: "
+        f"{result.get('distance_cm')} cm at bearing {result.get('bearing_deg')}° ({caveats}). "
+        "The chassis aligns before closing in, and every checkpoint checks for "
+        "a stop and a hazard. How fast and how long belong to the controller; "
+        "the model only states the intent. The constants are simulated, not "
+        "a safety validation on a real robot.",
     )]
     for index, motion in enumerate(result.get("motions") or [], start=1):
         amount = (
@@ -942,24 +1024,24 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
         )
         beats.append(PresentationBeat(
             "movement_step", f"Step {index}",
-            f"Step {index}：{_MOTION_WORDING.get(motion['kind'], motion['kind'])} {amount}",
-            f"決策時距離 {motion['distance_cm']} cm、bearing {motion['bearing_deg']}°；"
-            "每步後需新的 Reading 才能繼續。模擬，非實機。",
+            f"Step {index}: {_MOTION_WORDING.get(motion['kind'], motion['kind'])} {amount}",
+            f"Planned from {motion['distance_cm']} cm at bearing {motion['bearing_deg']}°; "
+            "each step needs a fresh reading before the next. Simulated.",
         ))
     if robot_state is not None and robot_state.get("halted_at_s") is not None:
         beats[0] = replace_beat(
             beats[0],
-            detail=beats[0].detail + f" 底盤於 {robot_state['halted_at_s']:g} 秒停止。",
+            detail=beats[0].detail + f" The chassis halted at {robot_state['halted_at_s']:g}s.",
         )
     if robot_state is not None:
         target = robot_state.get("target") or {}
         beats.append(PresentationBeat(
-            "chassis", "底盤與頭部",
-            f"底盤 heading {robot_state.get('heading_deg')}°，頭部 yaw "
+            "chassis", "Chassis and head",
+            f"Chassis heading {robot_state.get('heading_deg')}°, head yaw "
             f"{robot_state.get('pose', {}).get('head', [0, 0, 0])[2]}°",
-            f"目前 target：距離 {target.get('distance_cm')} cm、bearing "
-            f"{target.get('bearing_deg')}°。頭部 yaw 不算對準，只有底盤 heading 算。"
-            "模擬狀態，非實機。",
+            f"Current target: {target.get('distance_cm')} cm at bearing "
+            f"{target.get('bearing_deg')}°. Turning the head is not alignment; "
+            "only the chassis heading counts. Simulated state.",
         ))
     return beats
 
@@ -968,7 +1050,7 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
 #: places used to spell the same switch and one of them got it wrong: a
 #: queued Care Cue was announced as an explicit request.
 _CUE_WORDING = {
-    "explicit_request": "明確互動請求",
+    "explicit_request": "Explicit request",
     "care_cue": "Care Cue",
     "social_invitation": "Social Invitation",
 }
@@ -991,69 +1073,69 @@ def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[Pres
             return PresentationBeat(
                 "observed_cue",
                 _cue_wording(record.cue_kind),
-                f"{actor}：{record.text}",
-                "本機 gate 觀察到的線索，不是對方說出口的話；"
-                "這段輸入由案例預先定義。",
+                f"{actor}: {record.text}",
+                "A signal the local gate observed, not something the person "
+                "said. The input comes from the example.",
             )
         return PresentationBeat(
             "input",
-            "人說" if actor == DEFAULT_ACTOR else f"{actor} 說",
-            f"「{record.text}」",
-            "這段輸入由案例預先定義。",
+            "Person says" if actor == DEFAULT_ACTOR else f"{actor} says",
+            f"“{record.text}”",
+            "The input comes from the example.",
         )
     if isinstance(record, CueQueued):
         return PresentationBeat(
             "cue_queued",
             "Cue queue",
-            f"{_cue_wording(record.cue_kind)} 排隊等待（{actor_of(record.cue_id)}）",
-            f"{actor_of(record.active_cue_id)} 的 Episode 進行中；queue 內有 "
-            f"{record.queue_size} 個 cue。不平行開啟 Episode，也不丟棄。",
+            f"{_cue_wording(record.cue_kind)} waits in the queue ({actor_of(record.cue_id)})",
+            f"{actor_of(record.active_cue_id)}'s Episode is running; the queue holds "
+            f"{record.queue_size} cue(s). No parallel Episode, and nothing dropped.",
         )
     if isinstance(record, CueDropped):
         return PresentationBeat(
             "cue_dropped",
-            "Cue 丟棄",
-            f"{actor_of(record.cue_id)} 的 cue 已"
+            "Cue dropped",
+            f"{actor_of(record.cue_id)}'s cue "
             + _DROP_WORDING.get(record.reason.value, record.reason.value),
-            "依 freshness 與 queue 規則處理；不依舊資料強行互動。",
+            "Freshness and queue rules decide; it never acts on stale evidence.",
         )
     if isinstance(record, CueDequeued):
         return PresentationBeat(
             "cue_dequeued",
-            "交接",
-            f"輪到 {actor_of(record.cue_id)}",
-            "前一個 Episode 已在 Turn boundary 結束；從 queue 取出下一個 cue，"
-            "開啟新 Episode 與新的 Interaction Target。",
+            "Handoff",
+            f"{actor_of(record.cue_id)}'s turn",
+            "The previous Episode ended at a Turn boundary; the next cue leaves "
+            "the queue and opens a new Episode with a new Interaction Target.",
         )
     if isinstance(record, CueSuppressionStarted):
         duration = max(0.0, record.expires_at_s - record.t)
         return PresentationBeat(
             "cue_suppression_started",
             "Cue Suppression",
-            f"對這個匿名 track 短期靜音 {duration:g} 秒",
-            f"只保留匿名 token 與截止時間 {record.expires_at_s:g} 秒；"
-            "不是人物身分或跨 session 記憶。",
+            f"Quiet towards this anonymous track for {duration:g}s",
+            f"Only an anonymous token and a deadline ({record.expires_at_s:g}s) "
+            "are kept; no identity, nothing that outlives the run.",
         )
     if isinstance(record, CueSuppressed):
         return PresentationBeat(
             "cue_suppressed",
-            "不再打擾",
-            f"{_cue_wording(record.cue_kind)} 未開啟 Episode",
-            f"同一匿名 track 尚剩 {round(record.remaining_s, 1):g} 秒 suppression。",
+            "Not intruding",
+            f"{_cue_wording(record.cue_kind)} opened no Episode",
+            f"{round(record.remaining_s, 1):g}s of suppression left for this anonymous track.",
         )
     if isinstance(record, CueSuppressionBypassed):
         return PresentationBeat(
             "cue_suppression_bypassed",
-            "明確請求優先",
-            "使用者再次主動叫 Misty，立即開啟新 Episode",
-            "Explicit Request 可繞過並結束本次 suppression。",
+            "Explicit request first",
+            "They called Misty again, so a new Episode opens at once",
+            "An explicit request bypasses and ends the suppression.",
         )
     if isinstance(record, CueSuppressionCleared):
         return PresentationBeat(
             "cue_suppression_cleared",
-            "Suppression 已清除",
+            "Suppression cleared",
             record.reason.value.replace("_", " "),
-            "到期、track 消失或 Runtime 結束都不保留狀態。",
+            "Expiry, a lost track or the runtime ending all leave nothing behind.",
         )
     return None
 
@@ -1084,9 +1166,9 @@ def _episode_beats(
         return [beat for beat in (_cue_beat(r, actor_of, input_kind) for r in chosen) if beat]
     evidence = run.evidence
     uncertainty = (
-        "、".join(evidence.uncertainty)
+        "; ".join(evidence.uncertainty)
         if evidence.uncertainty
-        else "沒有額外不確定性註記"
+        else "no further uncertainty noted"
     )
     observations = {
         record.turn: record
@@ -1102,19 +1184,19 @@ def _episode_beats(
         PresentationBeat(
             "evidence",
             "Trigger Evidence",
-            f"{'文字腳本' if input_kind == 'text' else '語音' if evidence.source.value == 'speech' else '圖片'}證據 · "
-            f"{evidence.observed_at_s:g} 秒",
-            f"{len(evidence.facts)} 個可觀察 facts"
+            f"{'Text' if input_kind == 'text' else 'Speech' if evidence.source.value == 'speech' else 'Image'} evidence · "
+            f"at {evidence.observed_at_s:g}s",
+            f"{len(evidence.facts)} observable fact(s)"
             + (
-                "；選取 1 張 bounded JPEG crop"
+                "; 1 bounded JPEG crop selected"
                 if evidence.selected_image_media_type is not None
                 else ""
             )
-            + f"；不確定性：{uncertainty}",
+            + f"; uncertainty: {uncertainty}",
         ),
         PresentationBeat(
             "cue",
-            "系統判定",
+            "Classified as",
             _cue_wording(cue.cue_kind),
             cue.cue_kind.value,
         ),
@@ -1122,10 +1204,10 @@ def _episode_beats(
     if previous_actor is not None:
         flow.append(PresentationBeat(
             "context_reset",
-            "Episode 間清除",
-            f"{actor} 從新的 Trigger Evidence 開始",
-            f"{actor} 的 model context 只包含這次 Episode；不繼承 "
-            f"{previous_actor} 的名字、話語、Skill instructions 或 model summary。",
+            "Cleared between Episodes",
+            f"{actor} starts from new Trigger Evidence",
+            f"{actor}'s model context holds only this Episode; nothing of "
+            f"{previous_actor}'s name, words, Skill instructions or summary is inherited.",
         ))
     journal_records = run.journal.records
     for record in journal_records:
@@ -1133,22 +1215,24 @@ def _episode_beats(
             flow.append(PresentationBeat(
                 "target_bound",
                 "Interaction Target",
-                f"{actor}：{record.track_reference or '沒有匿名 track（純語音）'}",
-                f"本 Episode 只鎖定這個匿名 target（{record.state}）；更近或更新的臉"
-                "不會靜默取代，下一個 Episode 也不繼承。",
+                f"{actor}: {record.track_reference or 'no anonymous track (speech only)'}",
+                f"This Episode binds only this anonymous target ({record.state}); a "
+                "nearer or newer face never silently replaces it, and the next "
+                "Episode does not inherit it.",
             ))
         if isinstance(record, HandoffRequested):
             flow.extend(collected(record.cue_id))
             flow.append(PresentationBeat(
                 "handoff_requested",
-                "交接通知",
-                f"{actor_of(record.cue_id)} 正在等待（{record.cue_id}）",
-                "在 Turn boundary 告知 model 收尾；不中斷目前 Turn，也不平行開啟 Episode。",
+                "Handoff notice",
+                f"{actor_of(record.cue_id)} is waiting ({record.cue_id})",
+                "The model is told at a Turn boundary to wrap up; the current Turn "
+                "is not interrupted and no parallel Episode opens.",
             ))
         if isinstance(record, SkillsAvailable):
             flow.append(PresentationBeat(
-                "skills_available", "可用 Skills", "可選技能（尚未載入）",
-                " · ".join(f"{item['name']}：{item['description']}" for item in record.skills),
+                "skills_available", "Available Skills", "Skills it may load (none loaded yet)",
+                " · ".join(f"{item['name']}: {item['description']}" for item in record.skills),
             ))
         if not isinstance(record, ToolCalled):
             continue
@@ -1162,7 +1246,7 @@ def _episode_beats(
                     "decision_note",
                     "Decision Note",
                     noted.note,
-                    "公開目的，不是私有推理。",
+                    "A public purpose, not private reasoning.",
                 )
             )
         flow.append(
@@ -1180,11 +1264,11 @@ def _episode_beats(
                 PresentationBeat(
                     "observation",
                     "Observation",
-                    f"「{record.args['text']}」",
+                    f"“{record.args['text']}”",
                     (
-                        "模擬說話成功；Snapshot 已附回下一個 Turn。"
+                        "Spoken in simulation; a Snapshot went back with the next Turn."
                         if succeeded
-                        else "模擬說話未成功；Snapshot 已附回下一個 Turn。"
+                        else "Speaking failed in simulation; a Snapshot went back with the next Turn."
                     ),
                 )
             )
@@ -1193,16 +1277,16 @@ def _episode_beats(
             if observation is not None:
                 returned = observation.result
                 if "refused" in returned:
-                    headline, detail = "請求被拒絕", returned["refused"]
+                    headline, detail = "Refused", returned["refused"]
                 elif record.tool == "activate_skill":
-                    headline, detail = returned["name"], "技能已載入；只引導本次 Episode 後續 Tools。"
+                    headline, detail = returned["name"], "Skill loaded; it guides only this Episode's later Tools."
                 elif record.tool == "read_skill_resource":
-                    headline, detail = returned["resource"], "已按需讀取；沒有執行 script。"
+                    headline, detail = returned["resource"], "Read on demand; no script was run."
                 else:
-                    headline = returned.get("transcript") or "這次沒有收到新話語"
-                    detail = f"聆聽結果：{returned['ending']}；{returned['source']}，說話者未辨識。"
+                    headline = returned.get("transcript") or "Nothing new was heard"
+                    detail = f"Listening ended: {returned['ending']}; {returned['source']}, speaker not identified."
                 flow.append(PresentationBeat(
-                    returned.get("kind", "refused"), "本次 Tool 結果", headline, detail,
+                    returned.get("kind", "refused"), "Tool result", headline, detail,
                 ))
         elif record.tool in {"observe_target", "inspect_scene"}:
             observation = observations.get(record.turn)
@@ -1212,21 +1296,21 @@ def _episode_beats(
                         "observation",
                         "Observation",
                         (
-                            "便宜的目標觀察"
+                            "A cheap look at the target"
                             if record.tool == "observe_target"
-                            else "較昂貴的場景檢查"
+                            else "A more expensive scene inspection"
                         ),
                         f"{observation.result.get('ending')} · "
-                        f"fresh for {observation.result.get('fresh_for_s')} 秒 · "
-                        "保留不確定性",
+                        f"fresh for {observation.result.get('fresh_for_s')}s · "
+                        "uncertainty kept",
                     )
                 )
         elif record.tool in {"move_head", "move_arms", "display_image", "change_led"}:
             observation = observations.get(record.turn)
             if observation is not None and observation.result.get("ok"):
                 flow.append(PresentationBeat(
-                    "simulated_effect", "模擬表達成功", describe(record).headline,
-                    "姿勢由本次成功的 Tool 結果更新；不是實機動作。",
+                    "simulated_effect", "Expressed in simulation", describe(record).headline,
+                    "The pose follows this successful Tool result; no real robot moved.",
                 ))
         elif record.tool == "approach":
             observation = observations.get(record.turn)
@@ -1239,28 +1323,28 @@ def _episode_beats(
                 (
                     PresentationBeat(
                         "boundary_respected",
-                        "尊重界線",
-                        "停止追問並完成 Episode",
-                        "這是 model 透過 typed Tool 做出的決定，不是關鍵字硬編回應。",
+                        "Boundary respected",
+                        "Stops asking and finishes the Episode",
+                        "The model chose this through a typed Tool; it is not a keyword-triggered reply.",
                     ),
                     PresentationBeat(
                         "movement_stopped",
                         "Controller",
                         (
-                            "底盤已發出 halt，不再 approach"
+                            "The chassis was halted; no further approach"
                             if halted
-                            else "halt 未成功，不再 approach"
+                            else "The halt failed; no further approach"
                         ),
                         (
-                            "模擬 adapter 回報已停止；本專案沒有 Misty II 真機驗證。"
+                            "The simulated adapter reports it stopped; no Misty II has verified this."
                             if halted
-                            else "模擬 adapter 回報 halt 失敗："
+                            else "The simulated adapter reports the halt failed: "
                             + str(
                                 (observation.result if observation else {}).get(
-                                    "detail", "沒有細節"
+                                    "detail", "no detail"
                                 )
                             )
-                            + "。Episode 仍然結束，但不宣稱底盤已停止。"
+                            + ". The Episode still ends, without claiming the chassis stopped."
                         ),
                     ),
                 )
@@ -1275,10 +1359,10 @@ def _episode_beats(
     )
     flow.append(PresentationBeat(
         "context_retained",
-        "Episode 內保留",
-        f"{actor} 的 {len(utterances)} 段話語與執行結果供後續 Turn 使用",
-        f"這些話語、Tool calls 與 Observations 只在同一個 Episode 的後續 "
-        "Turns 可用；Episode 結束即清除，不形成個人記憶。",
+        "Kept within the Episode",
+        f"{actor}'s {len(utterances)} utterance(s) and results stay available to later Turns",
+        "Those words, Tool calls and Observations are available only to later "
+        "Turns of the same Episode, and are cleared when it ends: no personal memory.",
     ))
     return flow
 
@@ -1349,36 +1433,36 @@ def _runtime_moment(record: RuntimeRecord) -> dict:
         headline = f"{record.cue_kind.value.replace('_', ' ')} detected"
         detail = f"{record.evidence_kind} evidence: {record.text or '(no words)'}"
     elif isinstance(record, CueQueued):
-        headline = f"排入 {record.cue_id} · 優先級 {record.priority}"
+        headline = f"Queued {record.cue_id} · priority {record.priority}"
         detail = (
-            f"當時正在處理 {record.active_cue_id} · queue 中有 "
-            f"{record.queue_size} 個"
+            f"while handling {record.active_cue_id} · {record.queue_size} "
+            "in the queue"
         )
     elif isinstance(record, CueDeduplicated):
-        headline = f"去重 {record.cue_id}"
+        headline = f"Deduplicated {record.cue_id}"
         detail = (
-            f"保留 {record.retained_cue_id} · key "
+            f"kept {record.retained_cue_id} · key "
             f"{record.deduplication_key}"
         )
     elif isinstance(record, CueReplaced):
-        headline = f"升級 {record.cue_id} → {record.replacement_cue_id}"
-        detail = f"優先級 {record.old_priority} → {record.new_priority}"
+        headline = f"Upgraded {record.cue_id} → {record.replacement_cue_id}"
+        detail = f"priority {record.old_priority} → {record.new_priority}"
     elif isinstance(record, CueDropped):
         reason = {
-            "expired": "已過期",
-            "overflow": "queue 已滿",
-            "shutdown": "Runtime 關閉",
-            "runtime_failure": "Runtime 發生錯誤",
-            "episode_error": "Episode 發生錯誤",
+            "expired": "expired",
+            "overflow": "queue full",
+            "shutdown": "runtime shut down",
+            "runtime_failure": "runtime failed",
+            "episode_error": "Episode failed",
         }[record.reason.value]
-        headline = f"丟棄 {record.cue_id} · {reason}"
+        headline = f"Dropped {record.cue_id} · {reason}"
         detail = (
-            f"優先級 {record.priority} · queue 中剩 "
-            f"{record.queue_size} 個"
+            f"priority {record.priority} · {record.queue_size} left "
+            "in the queue"
         )
     elif isinstance(record, CueDequeued):
-        headline = f"取出 {record.cue_id} · 優先級 {record.priority}"
-        detail = f"queue 中剩 {record.queue_size} 個"
+        headline = f"Dequeued {record.cue_id} · priority {record.priority}"
+        detail = f"{record.queue_size} left in the queue"
     elif isinstance(record, CueSuppressionStarted):
         headline = "Cue Suppression started"
         detail = (
@@ -1577,12 +1661,14 @@ def _run(body: bytes, *, audio: bool) -> Reply:
             "kind": "live_model_run",
             "kind_means": PROVENANCE["live_model_run"],
             "hardware_unverified": HARDWARE_UNVERIFIED,
+            "model": settings.llm_model,
         },
         "perception": perceived,
         "heard": heard,
         "moves": [],
         "runtime": None,
         "storyboard": None,
+        "episodes": [],
         "why_no_episode": None,
     }
 
@@ -1624,6 +1710,20 @@ def _run(body: bytes, *, audio: bool) -> Reply:
     answered["storyboard"] = board
     answered["moves"] = list(what_moves(live))
     answered["runtime"] = _runtime_payload(result)
+    # The same shape a recording's Episodes have, so the page draws a live
+    # run with the same stage rather than a second, thinner one.
+    answered["episodes"] = [
+        {
+            "actor": "you",
+            "cue_id": episode.cue_id,
+            "cue_kind": episode.cue_kind,
+            "cue_text": said,
+            "episode_id": journal.records[0].episode_id,
+            "outcome": asdict(episode.outcome),
+            "moves": answered["moves"],
+            "storyboard": board,
+        }
+    ]
     return _json(200, answered)
 
 

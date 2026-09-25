@@ -198,8 +198,8 @@ def test_the_greeting_card_shows_an_approach_with_turns_steps_and_distance_chang
     assert approach_beats and approach_beats[0]["headline"].startswith("arrived")
     step_beats = [beat for beat in beats if beat["kind"] == "movement_step"]
     assert step_beats[0]["headline"].startswith("Step 1")
-    assert "轉" in step_beats[0]["headline"]
-    assert any("前進" in beat["headline"] for beat in step_beats)
+    assert "turn" in step_beats[0]["headline"]
+    assert any("forward" in beat["headline"] for beat in step_beats)
     robot = run["robot"]
     assert robot["heading_deg"] > 0
     assert abs(robot["target"]["bearing_deg"]) <= CONFIG.align_tolerance_deg

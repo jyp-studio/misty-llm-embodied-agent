@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import base64
 import json
+import re
 import pathlib
 import sys
 
@@ -91,31 +92,33 @@ def test_the_page_is_served_at_the_root():
     assert b"<!doctype html>" in reply.body.lower()
 
 
-def test_the_page_leads_with_three_readable_social_scenarios():
-    """The portfolio Demo starts with situations, not ReAct failure modes."""
+def test_the_page_is_an_english_showcase_of_recorded_runs():
+    """It is shown to other people now: English throughout, the recordings
+    as its examples, and no engineering-evidence dump."""
     page = answer("GET", "/").body.decode("utf-8")
 
-    assert '<html lang="zh-Hant">' in page
-    assert page.count('class="scenario-card') == 3
-    assert page.count('<strong data-card-title>') == 3
-    assert page.count('<small data-card-status>') == 3
-    assert page.count('<span data-card-subtitle>') == 3
-    assert "執行離線模擬" in page
-    assert 'id="executionResult"' in page
-    assert 'id="replayJournal"' in page
-    assert 'id="wakeFixture"' in page
-    assert 'id="audioBadge"' in page
-    assert "JSON.stringify(fixture ? { fixture } : {})" in page
+    assert '<html lang="en">' in page
+    assert not re.search(r"[\u4e00-\u9fff]", page), "the page still has Chinese in it"
+    assert 'fetch("/recordings")' in page
+    assert "/scenarios/" not in page, "the page runs scripted fixtures again"
+    assert 'id="evidence"' not in page and 'id="runtime"' not in page
     assert "storyboard?.moments" in page
-    assert "runSerial" in page
-    assert "state.runSerial !== runId" in page
-    assert 'id="runFacts"' not in page
-    assert "SCRIPTED CUE" not in page
-    assert "SCRIPTED HANDOFF" not in page
-    assert 'textContent = "這次情境執行完成"' not in page
-    assert "Live AI" in page and "需要 API key" in page
-    assert "#16151a" not in page
-    assert "opacity: .18" not in page
+    assert "state.runSerial" in page
+    assert "Try it live" in page and "OPENAI_API_KEY" in page
+
+
+def test_every_tool_the_model_can_call_has_something_to_draw():
+    """A tool call the stage cannot show is a tool call a visitor never sees.
+    Each one has a caption; the body parts it moves are drawn from the pose
+    the Storyboard folds, so a new Tool without a caption here goes red."""
+    from misty_agent.agent.tools import build_registry
+
+    page = answer("GET", "/").body.decode("utf-8")
+    captions = page[page.index("function captionFor"):page.index("function emptyScene")]
+    for schema in build_registry().schemas():
+        assert f"{schema['function']['name']}:" in captions, schema["function"]["name"]
+    for part in ('id="armLeft"', 'id="armRight"', 'id="head"', 'id="led"', "wheel-spokes", 'id="face"'):
+        assert part in page
 
 
 def test_the_three_social_scenarios_are_the_only_primary_choices():
@@ -127,9 +130,9 @@ def test_the_three_social_scenarios_are_the_only_primary_choices():
         "speaker-handoff",
     ]
     assert [scenario["title"] for scenario in listed] == [
-        "有人和 Misty 打招呼",
-        "有人在 Misty 面前哭泣",
-        "A 聊完後，切換成 B",
+        "Starting a conversation",
+        "Care and boundaries",
+        "Two people, one at a time",
     ]
     assert all(len(scenario["preview"]) == 3 for scenario in listed)
     assert listed[0]["availability"] == "ready"
@@ -191,7 +194,7 @@ def test_the_selected_fixture_runs_local_wake_before_the_episode():
     ]
     assert audio[0]["facts"]["wake_phrase"] == "hi misty"
     assert payload["execution"]["provenance"]["audio"] == (
-        "Hi Misty · 慢速"
+        "Hi Misty · slow"
     )
     assert [beat["kind"] for beat in payload["execution"]["flow"][:3]] == [
         "wake",
@@ -224,7 +227,7 @@ def test_the_visual_fixture_runs_the_temporal_gate_and_one_episode():
     assert payload["episodes"][0]["cue_kind"] == "social_invitation"
     execution = payload["execution"]
     assert execution["provenance"]["input_kind"] == "visual"
-    assert execution["provenance"]["fixture"] == "持續看向 Misty 並揮手"
+    assert execution["provenance"]["fixture"] == "Keeps looking at Misty and waves"
     assert execution["trigger_evidence"]["transcript"] == ""
     assert execution["trigger_evidence"]["selected_image"] is True
     assert execution["selected_evidence"] == {
@@ -241,7 +244,7 @@ def test_the_visual_fixture_runs_the_temporal_gate_and_one_episode():
     speak = next(
         beat for beat in execution["flow"] if beat["kind"] == "observation"
     )
-    assert speak["headline"] == "「嗨，需要我嗎？」"
+    assert speak["headline"] == "“Hi, do you need me?”"
     assert "data_base64" not in json.dumps(payload)
     assert all(beat["kind"] != "approach" for beat in execution["flow"])
 
@@ -270,14 +273,14 @@ def test_a_visual_negative_fixture_explains_why_no_episode_opened(
         item["outcome"] for item in payload["execution"]["visual_timeline"]
     ] == outcomes
     assert payload["execution"]["trigger_evidence"] is None
-    assert payload["execution"]["provenance"]["model"] == "未呼叫"
+    assert payload["execution"]["provenance"]["model"] == "not called"
     assert payload["execution"]["decision_explanation"] == {
         "available": False,
-        "headline": "本機 gate 沒有開啟互動",
-        "detail": "沒有足夠的持續注視加揮手證據，因此 model 沒有被呼叫。",
+        "headline": "The local gate opened no interaction",
+        "detail": "The evidence never formed a cue, so the model was never called.",
     }
     assert payload["execution"]["flow"][-1]["headline"] == (
-        "保持安靜，沒有開啟 Episode"
+        "Stayed quiet: no Episode was opened"
     )
 
 
@@ -334,11 +337,6 @@ def test_the_current_run_explains_active_and_queued_cues_in_plain_language():
         "expired",
         None,
     }
-    page = answer("GET", "/").body.decode("utf-8")
-    assert 'id="attentionState"' in page
-    assert 'id="activeCue"' in page
-    assert 'id="cueQueue"' in page
-    assert "execution.attention.events" in page
 
 
 def test_the_greeting_result_says_what_the_current_run_actually_did():
@@ -349,21 +347,22 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
         "kind": "scripted_run",
         "kind_means": PROVENANCE["scripted_run"],
         "hardware_unverified": HARDWARE_UNVERIFIED,
-        "headline": "這是剛剛執行的模擬結果",
-        "model": "預設腳本模型",
-        "robot": "模擬 Misty",
+        "headline": "Executed just now with authored decisions",
+        "model": "authored script",
+        "recorded_on": None,
+        "robot": "Simulated Misty",
         "detail": (
-            "選定的 synthetic WAV 由目前程式執行本機 wake detection；"
-            "ASR、模型決策與其餘 Cue 時間為預先定義，robot 為模擬。"
-            "Runtime、queue、Tool 與 Journal 都在這次重新執行。"
+            "A synthetic WAV went through local wake detection; the transcript "
+            "is part of the example. The model's decisions are authored. The "
+            "robot is simulated; no real camera, microphone or Misty II was used."
         ),
-        "audio": "Hey Misty · 一般語速",
-        "fixture": "Hey Misty · 一般語速",
+        "audio": "Hey Misty · normal pace",
+        "fixture": "Hey Misty · normal pace",
         "input_kind": "audio",
     }
     evidence = execution["trigger_evidence"]
     assert evidence["source"] == "speech"
-    assert evidence["transcript"] == "Misty，你好！"
+    assert evidence["transcript"] == "Hey Misty, hello!"
     assert evidence["facts"]["wake_phrase"] == "hey misty"
     assert evidence["facts"]["confidence"] >= 0.78
     assert evidence["facts"]["detector"] == "pocketsphinx-local"
@@ -394,14 +393,14 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
     assert kinds[-1] == "ending"
     assert execution["flow"][-1] == {
         "kind": "ending",
-        "label": "結果",
-        "headline": "情境執行完成",
-        "detail": "有限情境已播放完畢，Runtime 正常停止。",
+        "label": "Result",
+        "headline": "The example ran to completion",
+        "detail": "Every input in the example was played and the runtime stopped normally.",
     }
     assert execution["decision_explanation"] == {
         "available": True,
-        "headline": "Decision Note 已由本次 Journal 記錄",
-        "detail": "先確認問候來自哪個方向。",
+        "headline": "The Journal recorded a Decision Note",
+        "detail": "First find which direction the greeting came from.",
     }
     moments = payload["episodes"][0]["storyboard"]["moments"]
     assert [moment["kind"] for moment in moments].count("decision_noted") == 3
@@ -423,8 +422,8 @@ def test_the_human_ending_is_derived_from_an_abnormal_current_run(monkeypatch):
 
     assert payload["execution"]["flow"][-1] == {
         "kind": "ending",
-        "label": "結果",
-        "headline": "情境未正常完成",
+        "label": "Result",
+        "headline": "The example did not complete normally",
         "detail": "Episode: turn_limit; Runtime: input_exhausted",
     }
 
@@ -455,7 +454,7 @@ def test_both_care_cases_run_and_show_evidence_choice_and_ending():
             for beat in flow
         )
         assert flow[-1]["kind"] == "ending"
-        assert flow[-1]["headline"] == "情境執行完成"
+        assert flow[-1]["headline"] == "The example ran to completion"
         called = [
             record["facts"]["tool"]
             for record in payload["episodes"][0]["storyboard"]["moments"]
@@ -1277,25 +1276,28 @@ def test_a_non_explicit_cue_is_never_presented_as_something_the_person_said():
 
     observed = next(beat for beat in beats if beat["kind"] == "observed_cue")
     assert observed["label"] == "Care Cue"
-    assert "「" not in observed["headline"], "an observed cue was quoted as speech"
-    assert "不是對方說出口的話" in observed["detail"]
+    assert "“" not in observed["headline"], "an observed cue was quoted as speech"
+    assert "not something the person said" in observed["detail"]
 
     spoken = [beat["headline"] for beat in beats if beat["kind"] == "input"]
     assert observed["headline"] not in spoken
-    assert spoken == ["「請不要靠近，我想一個人靜一靜」", "「Misty，我現在需要你」"]
+    assert spoken == [
+        "“Please don't come closer. I want to be alone for a while.”",
+        "“Misty, I need you now.”",
+    ]
 
     # A queued non-explicit cue used to be announced as an explicit request.
     queued = [beat["headline"] for beat in beats if beat["kind"] == "cue_queued"]
-    assert queued == ["Care Cue 排隊等待（person）"]
+    assert queued == ["Care Cue waits in the queue (person)"]
 
     suppressed = [beat for beat in beats if beat["kind"] == "cue_suppressed"]
     assert [beat["headline"] for beat in suppressed] == [
-        "Care Cue 未開啟 Episode",
-        "Care Cue 未開啟 Episode",
+        "Care Cue opened no Episode",
+        "Care Cue opened no Episode",
     ]
     # The countdown counts down: a second cue later in the same throttle has
     # visibly less time left, rather than repeating the opening number.
     remaining = [
-        float(beat["detail"].split("尚剩 ")[1].split(" 秒")[0]) for beat in suppressed
+        float(beat["detail"].split("s of suppression")[0]) for beat in suppressed
     ]
     assert remaining[0] == 30 and 0 < remaining[1] < 30

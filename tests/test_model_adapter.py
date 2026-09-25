@@ -21,12 +21,13 @@ from misty_agent.agent.model import (
     ModelSaidNothing,
     OpenAIModel,
     _as_arguments,
-    _as_message,
+    _as_input_items,
     api_key_available,
 )
+from misty_agent.config import settings
 
 
-class FakeCompletions:
+class FakeResponses:
     def __init__(self, response):
         self._response = response
         self.calls = []
@@ -38,7 +39,7 @@ class FakeCompletions:
 
 class FakeClient:
     def __init__(self, response):
-        self.chat = type("Chat", (), {"completions": FakeCompletions(response)})()
+        self.responses = FakeResponses(response)
 
 
 def a_response(
@@ -50,14 +51,41 @@ def a_response(
     call_id="call-provider-1",
     note="Finish this bounded interaction.",
 ):
-    function = type("Function", (), {"name": tool, "arguments": arguments})()
-    call = type("Call", (), {"id": call_id, "function": function})()
-    message = type(
-        "Message", (), {"content": note, "tool_calls": [call] if calls else []}
-    )()
-    choice = type("Choice", (), {"message": message})()
-    usage = type("Usage", (), {"prompt_tokens": prompt, "completion_tokens": completion})()
-    return type("Response", (), {"choices": [choice], "usage": usage})()
+    """The Responses API's shape: a list of output items, in the order the
+    provider emits them — reasoning first, then anything it said, then the
+    call."""
+    output = [
+        type(
+            "Reasoning",
+            (),
+            {
+                "type": "reasoning",
+                "id": "rs-1",
+                "summary": [],
+                "encrypted_content": "sealed-blob",
+            },
+        )()
+    ]
+    if note:
+        part = type("Part", (), {"type": "output_text", "text": note})()
+        output.append(
+            type("Message", (), {"type": "message", "content": [part]})()
+        )
+    if calls:
+        output.append(
+            type(
+                "Call",
+                (),
+                {
+                    "type": "function_call",
+                    "name": tool,
+                    "arguments": arguments,
+                    "call_id": call_id,
+                },
+            )()
+        )
+    usage = type("Usage", (), {"input_tokens": prompt, "output_tokens": completion})()
+    return type("Response", (), {"output": output, "usage": usage})()
 
 
 def a_model(response=None):
@@ -103,8 +131,7 @@ def test_a_response_with_no_tool_call_is_an_error_not_a_guess():
 
 def test_multiple_tool_calls_are_rejected_instead_of_silently_truncated():
     response = a_response()
-    first = response.choices[0].message.tool_calls[0]
-    response.choices[0].message.tool_calls = [first, first]
+    response.output = [*response.output, response.output[-1]]
     model, _ = a_model(response)
 
     with pytest.raises(ModelProtocolError, match="2 Tool calls"):
@@ -145,6 +172,75 @@ def test_a_decision_note_cannot_expand_into_a_reasoning_transcript():
 
 
 # ---------------------------------------------------------------------------
+# Reasoning that survives the Turn without the provider keeping anything
+# ---------------------------------------------------------------------------
+
+def test_the_reasoning_comes_back_sealed_and_rides_on_the_decision():
+    """Reasoning is worth carrying between Turns — it is what stopped the
+    model listening at somebody instead of answering — but `store=False`
+    means the provider has not kept it. So it is asked for encrypted, and
+    handed to the loop, which is the only thing that knows where an Episode
+    begins and ends."""
+    model, client = a_model()
+
+    decision = model.decide([], [])
+
+    assert client.responses.calls[0]["include"] == ["reasoning.encrypted_content"]
+    assert decision.provider_items == (
+        {
+            "type": "reasoning",
+            "id": "rs-1",
+            # Required on the way back even when there is nothing in it.
+            "summary": [],
+            "encrypted_content": "sealed-blob",
+        },
+    )
+
+
+def test_nothing_encrypted_is_asked_for_when_there_is_no_reasoning():
+    model, client = a_model()
+    model._reasoning_effort = "none"
+
+    model.decide([], [])
+
+    assert "include" not in client.responses.calls[0]
+
+
+def test_a_carried_turn_goes_back_before_the_call_it_belongs_to():
+    """Order is the contract: the provider reads a Turn as its reasoning,
+    then what it said, then the call it made."""
+    model, client = a_model()
+
+    model.decide(
+        [
+            {
+                "role": "assistant",
+                "content": "Say hello back.",
+                "provider_items": [
+                    {"type": "reasoning", "id": "rs-1", "encrypted_content": "sealed"}
+                ],
+                "tool_calls": [
+                    {"id": "call-one", "function": {"name": "speak", "arguments": {}}}
+                ],
+            }
+        ],
+        [],
+    )
+
+    assert [
+        item.get("type") or item.get("role")
+        for item in client.responses.calls[0]["input"]
+    ] == ["reasoning", "assistant", "function_call"]
+
+
+def test_sealed_reasoning_is_never_read_as_the_decision_note():
+    """It is the private reasoning the Journal exists not to hold."""
+    model, _ = a_model(a_response(note=""))
+
+    assert model.decide([], []).note == ""
+
+
+# ---------------------------------------------------------------------------
 # What goes out
 # ---------------------------------------------------------------------------
 
@@ -153,7 +249,7 @@ def test_the_model_is_required_to_choose_a_tool():
 
     model.decide([], [{"type": "function", "function": {"name": "done"}}])
 
-    assert client.chat.completions.calls[0]["tool_choice"] == "required"
+    assert client.responses.calls[0]["tool_choice"] == "required"
 
 
 def test_parallel_tool_calls_are_disabled_at_the_provider_boundary():
@@ -161,18 +257,48 @@ def test_parallel_tool_calls_are_disabled_at_the_provider_boundary():
 
     model.decide([], [])
 
-    assert client.chat.completions.calls[0]["parallel_tool_calls"] is False
+    assert client.responses.calls[0]["parallel_tool_calls"] is False
 
 
-def test_the_tool_schemas_are_passed_through_untouched():
-    """They are generated from the argument types (`PLAN.md` §15.2). An
-    adapter that rewrote them would be a second schema."""
-    schemas = [{"type": "function", "function": {"name": "done", "parameters": {}}}]
+def test_the_tool_schemas_reach_the_provider_with_nothing_of_them_changed():
+    """They are generated from the argument types (`PLAN.md` §15.2), in the
+    nested shape Chat Completions reads. The Responses API takes the same
+    three fields flat, so this flattens and must not edit anything: an
+    adapter that rewrote a description or a parameter would be a second
+    schema."""
+    schemas = [
+        {
+            "type": "function",
+            "function": {
+                "name": "done",
+                "description": "Finish.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
     model, client = a_model()
 
     model.decide([], schemas)
 
-    assert client.chat.completions.calls[0]["tools"] == schemas
+    assert client.responses.calls[0]["tools"] == [
+        {
+            "type": "function",
+            "name": "done",
+            "description": "Finish.",
+            "parameters": {"type": "object", "properties": {}},
+        }
+    ]
+
+
+def test_nothing_the_provider_could_retain_is_asked_for():
+    """The Responses API stores a conversation server-side unless told not
+    to. What people said to this robot is not something to leave on somebody
+    else's disk as a side effect of an adapter default."""
+    model, client = a_model()
+
+    model.decide([], [])
+
+    assert client.responses.calls[0]["store"] is False
 
 
 def test_structured_content_is_serialised_rather_than_stringified():
@@ -180,7 +306,7 @@ def test_structured_content_is_serialised_rather_than_stringified():
     summary beside them. `str(dict)` would send Python's repr — single quotes
     and `None` — which is not JSON and not what the model was trained on.
     """
-    message = _as_message(
+    (item,) = _as_input_items(
         {
             "role": "tool",
             "tool_call_id": "call-one",
@@ -188,17 +314,20 @@ def test_structured_content_is_serialised_rather_than_stringified():
         }
     )
 
-    assert json.loads(message["content"]) == {"result": {"ok": True}, "n": None}
+    assert json.loads(item["output"]) == {"result": {"ok": True}, "n": None}
 
 
 def test_a_string_content_is_left_alone():
-    assert _as_message({"role": "system", "content": "remember this"})[
-        "content"
-    ] == "remember this"
+    (item,) = _as_input_items({"role": "system", "content": "remember this"})
+
+    assert item == {"role": "system", "content": "remember this"}
 
 
 def test_native_assistant_and_tool_roles_keep_their_call_identity():
-    assistant = _as_message(
+    """One Turn is two items here: what it said, and the call it made. The
+    call identity is what pairs the result with the call, and the loop's
+    `tool_call_id` has to survive as the provider's `call_id`."""
+    assistant = _as_input_items(
         {
             "role": "assistant",
             "content": "Acknowledge the greeting.",
@@ -214,7 +343,7 @@ def test_native_assistant_and_tool_roles_keep_their_call_identity():
             ],
         }
     )
-    tool_result = _as_message(
+    tool_result = _as_input_items(
         {
             "role": "tool",
             "tool_call_id": "call-one",
@@ -222,30 +351,42 @@ def test_native_assistant_and_tool_roles_keep_their_call_identity():
         }
     )
 
-    assert _as_message({"role": "system", "content": "x"})["role"] == "system"
-    assert assistant == {
-        "role": "assistant",
-        "content": "Acknowledge the greeting.",
-        "tool_calls": [
-            {
-                "id": "call-one",
-                "type": "function",
-                "function": {
-                    "name": "speak",
-                    "arguments": '{"text": "hello"}',
-                },
-            }
-        ],
-    }
-    assert tool_result == {
-        "role": "tool",
-        "tool_call_id": "call-one",
-        "content": '{"result": {"ok": true}}',
-    }
+    assert assistant == [
+        {"role": "assistant", "content": "Acknowledge the greeting."},
+        {
+            "type": "function_call",
+            "call_id": "call-one",
+            "name": "speak",
+            "arguments": '{"text": "hello"}',
+        },
+    ]
+    assert tool_result == [
+        {
+            "type": "function_call_output",
+            "call_id": "call-one",
+            "output": '{"result": {"ok": true}}',
+        }
+    ]
+
+
+def test_an_assistant_turn_that_said_nothing_is_only_its_call():
+    """Every Turn has a call; a Decision Note is optional. An empty
+    assistant message would be an item saying nothing."""
+    items = _as_input_items(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call-two", "function": {"name": "done", "arguments": {}}}
+            ],
+        }
+    )
+
+    assert [item.get("type") for item in items] == ["function_call"]
 
 
 def test_provider_neutral_image_evidence_becomes_openai_image_content():
-    message = _as_message(
+    (item,) = _as_input_items(
         {
             "role": "user",
             "content": [
@@ -259,13 +400,13 @@ def test_provider_neutral_image_evidence_becomes_openai_image_content():
         }
     )
 
-    assert message == {
+    assert item == {
         "role": "user",
         "content": [
-            {"type": "text", "text": '{"face_present": true}'},
+            {"type": "input_text", "text": '{"face_present": true}'},
             {
-                "type": "image_url",
-                "image_url": {"url": "data:image/png;base64,cGljdHVyZQ=="},
+                "type": "input_image",
+                "image_url": "data:image/png;base64,cGljdHVyZQ==",
             },
         ],
     }
@@ -387,7 +528,7 @@ def test_the_configured_model_is_the_one_that_is_asked():
 
     model.decide([], [])
 
-    assert client.chat.completions.calls[0]["model"] == "gpt-4o-mini"
+    assert client.responses.calls[0]["model"] == "gpt-4o-mini"
 
 
 def test_the_model_comes_from_settings_by_default():
@@ -397,7 +538,7 @@ def test_the_model_comes_from_settings_by_default():
 
     model.decide([], [])
 
-    assert client.chat.completions.calls[0]["model"] == settings.llm_model
+    assert client.responses.calls[0]["model"] == settings.llm_model
 
 
 def test_the_default_model_is_gpt_5_6_luna():
@@ -414,7 +555,7 @@ def test_no_temperature_is_sent_unless_one_is_configured():
 
     model.decide([], [])
 
-    assert "temperature" not in client.chat.completions.calls[0]
+    assert "temperature" not in client.responses.calls[0]
 
 
 def test_a_configured_temperature_is_still_sent():
@@ -425,18 +566,36 @@ def test_a_configured_temperature_is_still_sent():
 
     model.decide([], [])
 
-    assert client.chat.completions.calls[0]["temperature"] == 0.25
+    assert client.responses.calls[0]["temperature"] == 0.25
 
 
-def test_reasoning_effort_none_is_sent_by_default():
-    """Chat Completions refuses function tools alongside any other reasoning
-    effort for the GPT-5.6 family; `none` is the documented way to keep the
-    tools on this endpoint."""
+def test_the_configured_reasoning_effort_is_asked_for():
+    """The whole reason this adapter is on the Responses API: Chat
+    Completions refuses function tools alongside any reasoning at all for
+    the GPT-5.6 family, and a model that does no reasoning chose `listen`
+    over answering a person who had asked it for help."""
     model, client = a_model()
 
     model.decide([], [])
 
-    assert client.chat.completions.calls[0]["reasoning_effort"] == "none"
+    assert client.responses.calls[0]["reasoning"] == {"effort": settings.llm_reasoning_effort}
+
+
+def test_no_reasoning_is_asked_for_when_it_is_turned_off():
+    """`none` is not an effort the provider takes; it is the absence of the
+    parameter, and sending it would fail the call."""
+    model, client = a_model()
+    model._reasoning_effort = "none"
+
+    model.decide([], [])
+
+    assert "reasoning" not in client.responses.calls[0]
+
+
+def test_the_default_reasoning_effort_is_low():
+    from misty_agent.config import Settings
+
+    assert Settings().llm_reasoning_effort == "low"
 
 
 def test_reasoning_effort_values_outside_the_documented_set_are_refused():

@@ -940,6 +940,7 @@ def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
     assert assistant == {
         "role": "assistant",
         "content": "Acknowledge the greeting.",
+        "provider_items": [],
         "tool_calls": [
             {
                 "id": "call-one",
@@ -959,6 +960,52 @@ def test_the_next_turn_preserves_native_tool_call_identity_and_roles():
         "face_present": True,
         "new_speech": None,
     }
+
+
+def test_what_a_turn_carries_for_the_provider_reaches_the_next_turn_only():
+    """Sealed reasoning is worth handing back so the next Turn continues the
+    last one's thinking. It belongs in the working context and nowhere else:
+    the context is cleared with the Episode, so no Episode can inherit
+    another's, and the Journal is a public record that private reasoning has
+    no business being in."""
+    sealed = {"type": "reasoning", "id": "rs-1", "encrypted_content": "sealed"}
+
+    class Thinks:
+        def __init__(self):
+            self.contexts = []
+            self.decisions = [
+                Decision("speak", {"text": "hello"}, 10, 2,
+                         tool_call_id="call-one", note="Say hello back.",
+                         provider_items=(sealed,)),
+                Decision("done", {}, 8, 1, tool_call_id="call-two", note="Done."),
+            ]
+
+        def decide(self, working_context, tools):
+            self.contexts.append(tuple(working_context))
+            return self.decisions.pop(0)
+
+    clock = FakeClock()
+    model = Thinks()
+    journal = Journal(episode_id="ep-carried", clock=clock)
+    run_episode(
+        evidence(transcript="hello"),
+        model=model,
+        registry=build_registry(),
+        ctx=ToolContext(
+            robot=RealMistyAdapter(RecordingCommands()),
+            readings=ScriptedReadings(),
+            config=Settings(),
+            clock=clock, hazards=ALWAYS_CLEAR
+        ),
+        journal=journal,
+        perception=ScriptedPerception(a_snapshot(142)),
+    )
+
+    assistant = next(
+        entry for entry in model.contexts[1] if entry["role"] == "assistant"
+    )
+    assert assistant["provider_items"] == [sealed]
+    assert "sealed" not in to_jsonl(journal.records)
 
 
 def test_the_context_grows_by_the_turn_and_keeps_its_order():

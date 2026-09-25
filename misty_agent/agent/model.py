@@ -7,6 +7,20 @@ API key, a network, or anybody's SDK mocked.
 
 This is the only file in the package that knows OpenAI exists.
 
+## Why the Responses API and not Chat Completions
+
+Chat Completions refuses function tools alongside any reasoning at all for
+the GPT-5.6 family — `reasoning_effort` must be `none`, which the provider
+says in the 400 itself: *"To use function tools, use /v1/responses or set
+reasoning_effort to 'none'."* A model doing no reasoning is not a detail: the
+first recorded Demo runs had it load a Skill and then `listen` eleven times
+at somebody who had said they were trapped, without answering them once.
+
+So the request is a Responses call, `store=False` because what people say to
+this robot is not something to leave on a provider's disk as a side effect,
+and the whole working context goes up each Turn — the loop already holds it,
+and nothing here depends on the provider remembering the last Turn.
+
 ## Why it always returns a Tool call
 
 `tool_choice="required"`. The loop's `Decision` has no "the model said some
@@ -114,21 +128,30 @@ class OpenAIModel:
         tools: Sequence[Mapping[str, Any]],
     ) -> Decision:
         # A temperature only when one is configured: reasoning models reject
-        # a custom one, so the default is to send nothing.
-        optional = {}
+        # a custom one, so the default is to send nothing. `none` is not an
+        # effort the provider takes either — it is the parameter's absence.
+        optional: Dict[str, Any] = {}
         if self._temperature is not None:
             optional["temperature"] = self._temperature
-        response = self._connection().chat.completions.create(
+        if self._reasoning_effort != "none":
+            optional["reasoning"] = {"effort": self._reasoning_effort}
+            # Nothing is stored provider-side, so reasoning would be gone by
+            # the next Turn unless it comes back sealed and goes up again.
+            optional["include"] = ["reasoning.encrypted_content"]
+        items: list = []
+        for entry in working_context:
+            items.extend(_as_input_items(entry))
+        response = self._connection().responses.create(
             model=self._model,
-            messages=[_as_message(entry) for entry in working_context],
-            tools=list(tools),
+            input=items,
+            tools=[_as_tool(schema) for schema in tools],
             tool_choice="required",
             parallel_tool_calls=False,
-            reasoning_effort=self._reasoning_effort,
+            store=False,
             **optional,
         )
-        choice = response.choices[0].message
-        calls = getattr(choice, "tool_calls", None) or []
+        output = list(getattr(response, "output", None) or [])
+        calls = [item for item in output if _kind(item) == "function_call"]
         if not calls:
             raise ModelSaidNothing(
                 "the model answered without calling a Tool, which "
@@ -139,20 +162,21 @@ class OpenAIModel:
                 f"the provider returned {len(calls)} Tool calls for one Turn"
             )
         call = calls[0]
-        call_id = getattr(call, "id", "") or ""
+        call_id = str(getattr(call, "call_id", "") or "")
         if not call_id:
             raise ModelProtocolError("the provider Tool call has no identity")
         usage = getattr(response, "usage", None)
-        note = _without_own_label(str(getattr(choice, "content", "") or ""))
+        note = _without_own_label(_said_by(output))
         if len(note) > MAX_DECISION_NOTE_CHARS:
             raise ModelProtocolError(
                 f"Decision Note exceeds {MAX_DECISION_NOTE_CHARS} characters"
             )
         return Decision(
-            tool=call.function.name,
-            args=_as_arguments(call.function.arguments),
-            tokens_in=getattr(usage, "prompt_tokens", 0) or 0,
-            tokens_out=getattr(usage, "completion_tokens", 0) or 0,
+            provider_items=_sealed_reasoning(output),
+            tool=getattr(call, "name", ""),
+            args=_as_arguments(getattr(call, "arguments", "")),
+            tokens_in=getattr(usage, "input_tokens", 0) or 0,
+            tokens_out=getattr(usage, "output_tokens", 0) or 0,
             tool_call_id=call_id,
             note=note,
         )
@@ -166,31 +190,101 @@ class ModelProtocolError(RuntimeError):
     """The provider returned a shape that cannot represent one Turn."""
 
 
-def _as_message(entry: Mapping[str, Any]) -> Dict[str, Any]:
-    """Translate provider-neutral context without changing its protocol."""
+def _kind(item: Any) -> str:
+    """An output item's type, whether it arrived as an object or a mapping."""
+    if isinstance(item, Mapping):
+        return str(item.get("type") or "")
+    return str(getattr(item, "type", "") or "")
+
+
+def _said_by(output: Sequence[Any]) -> str:
+    """The public text of the Turn: the Decision Note, and nothing else.
+
+    Reasoning items are deliberately not read. The Journal is a public record
+    (`PLAN.md` §4), and a summary of private reasoning copied into it is the
+    thing the Decision Note exists instead of.
+    """
+    said = []
+    for item in output:
+        if _kind(item) != "message":
+            continue
+        for part in getattr(item, "content", None) or []:
+            if _kind(part) == "output_text":
+                said.append(str(getattr(part, "text", "") or ""))
+    return " ".join(text for text in said if text).strip()
+
+
+def _sealed_reasoning(output: Sequence[Any]) -> tuple:
+    """This Turn's reasoning, exactly as much of it as can be handed back.
+
+    Only the identity and the sealed blob: a summary is prose about the
+    model's private reasoning, and nothing in this project keeps that. The
+    field itself is still required on the way back — a reasoning item
+    without it is a 400 — so it goes back empty, which is also what comes
+    back when no summary was asked for.
+    """
+    carried = []
+    for item in output:
+        if _kind(item) != "reasoning":
+            continue
+        sealed = getattr(item, "encrypted_content", None)
+        if not sealed:
+            continue
+        carried.append(
+            {
+                "type": "reasoning",
+                "id": str(getattr(item, "id", "") or ""),
+                "summary": [],
+                "encrypted_content": str(sealed),
+            }
+        )
+    return tuple(carried)
+
+
+def _as_tool(schema: Mapping[str, Any]) -> Dict[str, Any]:
+    """One registry schema in the shape this endpoint reads.
+
+    The same three fields, one level flatter. Copied rather than edited: the
+    schemas come from the argument types (`PLAN.md` §15.2), and an adapter
+    that rewrote a description would be a second schema.
+    """
+    function = schema.get("function")
+    if not isinstance(function, Mapping):
+        raise ModelProtocolError("a Tool schema has no function")
+    return {"type": "function", **{str(k): v for k, v in function.items()}}
+
+
+def _as_input_items(entry: Mapping[str, Any]) -> list:
+    """Translate provider-neutral context without changing its protocol.
+
+    A list, because one entry is not always one item: an assistant Turn is
+    what it said *and* the call it made, which this endpoint keeps apart.
+    """
     role = str(entry.get("role") or "")
     if role == "assistant":
-        calls = []
+        # Its reasoning first, then what it said, then the call it made:
+        # the order the provider reads a Turn in.
+        items = [dict(item) for item in entry.get("provider_items", ())]
+        said = str(entry.get("content") or "")
+        if said:
+            items.append({"role": "assistant", "content": said})
         for call in entry.get("tool_calls", ()):
             function = call.get("function", {})
             arguments = function.get("arguments", {})
             if not isinstance(arguments, str):
                 arguments = json.dumps(arguments, ensure_ascii=False)
-            calls.append(
+            call_id = str(call.get("id") or "")
+            if not call_id:
+                raise ModelProtocolError("a Tool call has no identity")
+            items.append(
                 {
-                    "id": call.get("id"),
-                    "type": "function",
-                    "function": {
-                        "name": function.get("name"),
-                        "arguments": arguments,
-                    },
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": function.get("name"),
+                    "arguments": arguments,
                 }
             )
-        return {
-            "role": "assistant",
-            "content": str(entry.get("content") or ""),
-            "tool_calls": calls,
-        }
+        return items
 
     if role == "tool":
         call_id = str(entry.get("tool_call_id") or "")
@@ -199,11 +293,13 @@ def _as_message(entry: Mapping[str, Any]) -> Dict[str, Any]:
         content = entry.get("content", "")
         if not isinstance(content, str):
             content = json.dumps(content, ensure_ascii=False, sort_keys=True)
-        return {
-            "role": "tool",
-            "tool_call_id": call_id,
-            "content": content,
-        }
+        return [
+            {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": content,
+            }
+        ]
 
     if role not in ("system", "user"):
         raise ModelProtocolError(f"{role!r} is not a model message role")
@@ -215,26 +311,24 @@ def _as_message(entry: Mapping[str, Any]) -> Dict[str, Any]:
                 text = part.get("text", "")
                 if not isinstance(text, str):
                     text = json.dumps(text, ensure_ascii=False, sort_keys=True)
-                parts.append({"type": "text", "text": text})
+                parts.append({"type": "input_text", "text": text})
             elif part.get("type") == "image":
                 media_type = part.get("media_type", "")
                 data = part.get("data_base64", "")
                 parts.append(
                     {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{media_type};base64,{data}"
-                        },
+                        "type": "input_image",
+                        "image_url": f"data:{media_type};base64,{data}",
                     }
                 )
             else:
                 raise ModelProtocolError(
                     f"unknown model content part {part.get('type')!r}"
                 )
-        return {"role": "user", "content": parts}
+        return [{"role": "user", "content": parts}]
     if not isinstance(content, str):
         content = json.dumps(content, ensure_ascii=False, sort_keys=True)
-    return {"role": role, "content": content}
+    return [{"role": role, "content": content}]
 
 
 def _as_arguments(raw: Any) -> Dict[str, Any]:

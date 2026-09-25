@@ -199,12 +199,14 @@ class Settings(BaseSettings):
     llm_reasoning_effort: Literal[
         "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = Field(
-        default="none",
+        default="low",
         description=(
-            "Reasoning effort sent with every decision call. 'none' because "
-            "Chat Completions refuses function tools with any other effort "
-            "for the GPT-5.6 family: confirmed for gpt-5.6-sol, assumed for "
-            "gpt-5.6-luna. Reasoning would need the Responses API."
+            "Reasoning effort sent with every decision call, over the "
+            "Responses API, which is the endpoint that takes function tools "
+            "and reasoning together — Chat Completions refuses the pair for "
+            "the whole GPT-5.6 family (confirmed for sol and luna). 'none' "
+            "sends no reasoning parameter at all; it made the model load a "
+            "Skill and listen repeatedly instead of answering anyone."
         ),
     )
 

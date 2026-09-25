@@ -54,7 +54,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+)
 
 from misty_agent.agent.evidence import TriggerEvidence
 from misty_agent.agent.handoff import HandoffNotice
@@ -98,6 +108,13 @@ class Decision:
     tokens_out: int
     tool_call_id: str = ""
     note: str = ""
+    #: Opaque provider items belonging to this Turn — sealed reasoning the
+    #: provider will read back, and nothing this loop interprets. They live
+    #: in the working context, which is where a Turn's history already
+    #: lives, so they are discarded with the Episode like everything else
+    #: and no Episode can inherit another's (ticket 12). They never reach
+    #: the Journal: it is a public record, and this is private reasoning.
+    provider_items: Tuple[Mapping[str, Any], ...] = ()
 
 
 class Model(Protocol):
@@ -336,6 +353,7 @@ def _asked_for(decision: Decision, tool_call_id: str) -> Dict[str, Any]:
     return {
         "role": "assistant",
         "content": decision.note,
+        "provider_items": [dict(item) for item in decision.provider_items],
         "tool_calls": [
             {
                 "id": tool_call_id,

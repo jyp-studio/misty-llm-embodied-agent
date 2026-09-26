@@ -304,11 +304,16 @@ def test_the_page_can_play_pause_restart_and_scrub_every_moment():
     page = answer_page()
 
     assert 'id="replayScrub"' in page and 'type="range"' in page
-    assert 'id="replayRestart"' in page
     assert "function playReplay()" in page
     assert "function pauseReplay()" in page
     assert "function restartReplay()" in page
     assert "function showMoment(" in page
+    # Restarting is the play button once the run has finished, rather than a
+    # second control sitting there greyed out for the whole replay.
+    assert 'setPlayButton("restart")' in page
+    # A run can also be walked a step at a time, in either direction.
+    assert 'id="replayBack"' in page and 'id="replayForward"' in page
+    assert "function stepBy(" in page
     # Scrubbing pauses rather than fighting the timer.
     assert 'byId("replayScrub").addEventListener("input"' in page
     assert "pauseReplay();" in page

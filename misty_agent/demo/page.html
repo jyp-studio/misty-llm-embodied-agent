@@ -76,8 +76,9 @@
   .now .why:empty { display: none; }
   .now .skills { color: var(--faint); font-size: 12px; }
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
-  .controls button { padding: 8px 16px; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
-  .controls button.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .controls button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
+  .controls button svg { width: 20px; height: 20px; fill: currentColor; }
+  .controls button.primary { width: 46px; height: 46px; color: #fff; background: var(--accent); border-color: var(--accent); }
   .controls button[disabled] { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
   .controls input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
   .controls span { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -168,9 +169,8 @@
 </header>
 
 <section class="hero">
-  <span class="eyebrow">Simulation demo</span>
-  <h1>A social robot that decides for itself when, and how, to step in.</h1>
-  <p>Real runs of a hosted model, recorded and replayed on a simulated Misty II — every tool call it chose, drawn as it happens.</p>
+  <h1>Misty, an LLM-driven social robot</h1>
+  <p>A language model decides what this robot does — when to speak, when to come closer, when to leave somebody alone. Every example below is one of those runs, recorded in simulation: pick one, press play, and step through what Misty perceived and what it chose to do about it. No robot was involved.</p>
 </section>
 
 <main>
@@ -285,9 +285,16 @@
     </div>
 
     <div class="controls">
-      <button class="primary" id="replayJournal" type="button" disabled>Play</button>
-      <button id="replayRestart" type="button" disabled>Restart</button>
-      <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every moment">
+      <button id="replayBack" type="button" title="Previous step" aria-label="Previous step" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="primary" id="replayJournal" type="button" title="Play" aria-label="Play" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
+      </button>
+      <button id="replayForward" type="button" title="Next step" aria-label="Next step" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every step">
       <span id="replayCounter"></span>
     </div>
     <ol class="timeline" id="timeline" aria-label="Everything this run perceived and did"></ol>
@@ -395,10 +402,9 @@ function loadRun(run) {
   state.replayAt = 0;
   const hasSteps = state.steps.length > 0;
   byId("replayJournal").disabled = !hasSteps;
-  byId("replayRestart").disabled = !hasSteps;
   byId("replayScrub").disabled = !hasSteps;
   byId("replayScrub").max = String(Math.max(0, state.steps.length - 1));
-  byId("replayJournal").textContent = "Play";
+  setPlayButton("play");
   renderTimeline();
   if (hasSteps) {
     showMoment(0);
@@ -406,6 +412,7 @@ function loadRun(run) {
     drawScene(emptyScene());
     setNow("Nothing to play", "This example has not been recorded yet.", "", "", "");
     byId("replayCounter").textContent = "";
+    stepButtons();
   }
 }
 
@@ -493,6 +500,7 @@ function showMoment(index) {
     row.setAttribute("aria-current", String(current));
     if (current) keepInView(row);
   }
+  stepButtons();
   const scene = sceneAt(at);
   drawScene(scene);
   const text = describeStep(step);
@@ -763,21 +771,49 @@ function delayFor(step) {
   return 650;
 }
 
+//: The three things the main button can be, drawn rather than spelled.
+const BUTTONS = {
+  play: { label: "Play", icon: '<path d="m8 5 11 7-11 7z"/>' },
+  pause: { label: "Pause", icon: '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>' },
+  restart: {
+    label: "Play again from the start",
+    icon: '<path d="M12 5V2L7 6l5 4V7a5.5 5.5 0 1 1-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>',
+  },
+};
+
+function setPlayButton(which) {
+  const button = byId("replayJournal");
+  const shape = BUTTONS[which];
+  button.dataset.state = which;
+  button.title = shape.label;
+  button.setAttribute("aria-label", shape.label);
+  button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${shape.icon}</svg>`;
+}
+
+function atEnd() {
+  return state.replayAt >= state.steps.length - 1;
+}
+
+function stepButtons() {
+  byId("replayBack").disabled = !state.steps.length || state.replayAt === 0;
+  byId("replayForward").disabled = !state.steps.length || atEnd();
+}
+
 function pauseReplay() {
   if (state.replayTimer !== null) window.clearTimeout(state.replayTimer);
   state.replayTimer = null;
-  if (state.steps.length) byId("replayJournal").textContent = "Resume";
+  if (state.steps.length) setPlayButton(atEnd() ? "restart" : "play");
 }
 
 function playReplay() {
   if (!state.steps.length) return;
   if (state.replayTimer !== null) { pauseReplay(); return; }
-  if (state.replayAt >= state.steps.length - 1) showMoment(0);
-  byId("replayJournal").textContent = "Pause";
+  if (atEnd()) showMoment(0);
+  setPlayButton("pause");
   const step = () => {
-    if (state.replayAt >= state.steps.length - 1) {
+    if (atEnd()) {
       state.replayTimer = null;
-      byId("replayJournal").textContent = "Play again";
+      setPlayButton("restart");
       return;
     }
     showMoment(state.replayAt + 1);
@@ -789,7 +825,12 @@ function playReplay() {
 function restartReplay() {
   pauseReplay();
   showMoment(0);
-  byId("replayJournal").textContent = "Play";
+  setPlayButton("play");
+}
+
+function stepBy(direction) {
+  pauseReplay();
+  showMoment(state.replayAt + direction);
 }
 
 /* ---------- Live ---------- */
@@ -880,7 +921,8 @@ byId("timeline").addEventListener("click", (event) => {
   if (row) { pauseReplay(); showMoment(Number(row.dataset.step)); }
 });
 byId("replayJournal").addEventListener("click", playReplay);
-byId("replayRestart").addEventListener("click", restartReplay);
+byId("replayBack").addEventListener("click", () => stepBy(-1));
+byId("replayForward").addEventListener("click", () => stepBy(1));
 byId("replayScrub").addEventListener("input", (event) => {
   pauseReplay();
   showMoment(Number(event.target.value));

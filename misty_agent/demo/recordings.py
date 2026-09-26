@@ -88,7 +88,7 @@ SHOWCASES: Tuple[Showcase, ...] = (
     ),
     Showcase(
         "greeting", "good-news", "Sharing good news",
-        "Face, arms and words should agree — and there is no reason to drive anywhere.",
+        "Face, arms and words should agree, and there is no reason to drive anywhere.",
     ),
     Showcase(
         "greeting", "vague-help", "“I need help”",
@@ -100,7 +100,7 @@ SHOWCASES: Tuple[Showcase, ...] = (
     ),
     Showcase(
         "crying-care", "care-sustained-signals", "Signs that someone may be upset",
-        "An uncertain Care Cue from face and posture — never a diagnosis.",
+        "An uncertain Care Cue from face and posture, and never a diagnosis.",
     ),
     Showcase(
         "crying-care", "care-expression-words-conflict", "A smile, but they say they are sad",
@@ -116,7 +116,7 @@ SHOWCASES: Tuple[Showcase, ...] = (
     ),
     Showcase(
         "crying-care", "en-rescue-limits", "“Can you lift this shelf off me?”",
-        "It cannot, and must say so — and point at help that can act.",
+        "It cannot, and it has to say so and point at help that can act.",
     ),
     Showcase(
         "crying-care", "zh-emergency-support", "A high-risk moment, in Chinese",

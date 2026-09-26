@@ -1154,7 +1154,7 @@ def _approach_beats(result: Mapping[str, Any], robot_state: Optional[Mapping[str
     caveats = "; ".join(result.get("uncertainty") or ()) or "no further uncertainty noted"
     beats = [PresentationBeat(
         "approach", "Target-aware approach", ending,
-        f"Why it stopped: {result.get('reason') or '—'}. Last reading: "
+        f"Why it stopped: {result.get('reason') or 'not stated'}. Last reading: "
         f"{result.get('distance_cm')} cm at bearing {result.get('bearing_deg')}° ({caveats}). "
         "The chassis aligns before closing in, and every checkpoint checks for "
         "a stop and a hazard. How fast and how long belong to the controller; "
@@ -1703,7 +1703,7 @@ MOST_ONE_REQUEST_MAY_CARRY = 24 * 1024 * 1024
 ONLY_ONE_REACHES_A_PAGE = (
     "Two ways, and only one of them reaches a demo that is already running: "
     "the file is read again on every run, so putting it there is enough. An "
-    "`export` sets the variable in your shell and not in this process — for "
+    "`export` sets the variable in your shell and not in this process, so for "
     "that one, stop the demo and start it again."
 )
 

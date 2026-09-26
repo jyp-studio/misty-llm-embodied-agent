@@ -150,7 +150,12 @@ the same fixtures with the configured hosted model making every decision,
 and writes each run to `misty_agent/demo/recordings/` in the scripted
 route's shape, labelled `recorded_model_run` with the model name and date.
 The page replays them without a key and animates the simulated Misty from
-each Moment's folded pose plus the Tool call, Observation and Snapshot. A
+each Moment's folded pose plus the Tool call, Observation and Snapshot. It
+plays one list per run — `playback_of` — which interleaves what the local
+gates perceived with the Moments of each Episode where it opened, so a run
+that never opened one still has its reasoning to show. That projection is
+applied when a recording is served rather than when it is made, so the page
+can change without re-running anything against a paid model. A
 recording is evidence about that model on that day, not a test: the
 default suite checks the files' shape and runs the boundary audit over what
 Misty said in them. The optional live panel is a separate hosted path that

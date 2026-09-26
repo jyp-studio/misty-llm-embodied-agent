@@ -286,9 +286,10 @@ def answer(
     if path.startswith("/recordings/"):
         # Matched against the example names, never joined onto a path.
         try:
-            return _json(200, recordings.load(path[len("/recordings/"):]))
+            document = recordings.load(path[len("/recordings/"):])
         except recordings.NoRecording as why:
             return _json(404, {"error": str(why)})
+        return _json(200, {**document, "payload": _played(document["payload"])})
     if path == "/acceptance":
         return _json(
             200,
@@ -441,6 +442,190 @@ def _provenance(
     }
 
 
+#: What each local-audio stage and outcome is called on the page.
+AUDIO_STAGES = {
+    "wake": "Local wake detection",
+    "capture": "Utterance capture",
+    "asr": "Speech to text (fixture transcript)",
+    "backlog": "Audio backlog",
+    "source": "Audio source",
+}
+AUDIO_OUTCOMES = {
+    "matched": "Wake phrase recognised",
+    "no_match": "No wake phrase recognised",
+    "repeated_wake": "Repeated wake phrase",
+    "captured": "An utterance was captured",
+    "empty_utterance": "Nothing was said after the wake phrase",
+    "silence_timeout": "Timed out waiting for speech",
+    "max_duration": "The utterance reached its length limit",
+    "transcribed": "Transcribed",
+    "asr_empty": "No usable text",
+    "asr_timeout": "Transcription timed out",
+    "asr_error": "Transcription failed",
+    "backlog_dropped": "Some audio was dropped because the backlog was full",
+    "source_ended": "The audio source ended",
+    "source_error": "The audio source failed",
+}
+#: The same for each frame the local temporal visual gate judged.
+VISUAL_OUTCOMES = {
+    "empty": "Nobody detected in frame",
+    "not_looking": "The person is not looking at Misty",
+    "tracking": "Started counting how long they look",
+    "wave_progress": "A hand moving back and forth",
+    "qualified": "Sustained gaze plus a wave passed the gate",
+    "care_progress": "Observable face and posture cues accumulating",
+    "care_qualified": "The cues formed an uncertain Care Cue",
+}
+
+
+def _facts_line(record: Mapping[str, Any], fallback: str) -> str:
+    """The facts behind one perception step, as a line somebody reads.
+
+    Only what is actually there: a gate frame carries every signal it looks
+    at, and printing `eyes_narrowed: False · mouth_open: False · …` after
+    each one buried the two fields that had anything in them.
+    """
+    shown = []
+    for key, value in (record.get("facts") or {}).items():
+        name, unit = _named(key)
+        if isinstance(value, bool):
+            if value:
+                shown.append(name)
+        elif isinstance(value, (int, float)):
+            if value:
+                shown.append(f"{name} {value:g}{unit}")
+        elif value:
+            shown.append(f"{name}: {value}")
+    return " · ".join(shown) or fallback
+
+
+#: Suffixes that are a unit rather than part of the name: `gaze_duration_s`
+#: reads as "gaze duration 0.6s", not "gaze duration s 0.6".
+_UNITS = {"_s": "s", "_ms": "ms", "_cm": "cm", "_deg": "°"}
+
+
+def _named(key: str) -> Tuple[str, str]:
+    for suffix, unit in _UNITS.items():
+        if key.endswith(suffix):
+            return key[: -len(suffix)].replace("_", " "), unit
+    return key.replace("_", " "), ""
+
+
+def _perception_beat(record: Mapping[str, Any]) -> Optional[PresentationBeat]:
+    """One thing Misty heard or saw before any Episode existed.
+
+    This is the half of a run that the Journal has no record of, because it
+    happens before — and often instead of — an Episode. A page that started
+    at the first Turn would be showing a robot that had already decided to
+    interrupt somebody, with nothing about how it decided.
+    """
+    kind = _text(record.get("type"))
+    if kind == "audio_attention":
+        stage = _text(record["stage"])
+        return PresentationBeat(
+            stage,
+            AUDIO_STAGES[stage],
+            AUDIO_OUTCOMES[_text(record["outcome"])],
+            _facts_line(record, "This stage left a typed runtime record."),
+        )
+    if kind == "visual_attention":
+        return PresentationBeat(
+            "visual_gate",
+            f"Frame {record['frame_index'] + 1} · "
+            f"{record.get('track_reference') or 'frame'}",
+            VISUAL_OUTCOMES[_text(record["outcome"])],
+            _facts_line(
+                record, "The local temporal gate left a typed runtime record."
+            ),
+        )
+    return None
+
+
+def playback_of(
+    payload: Mapping[str, Any],
+    actors: Sequence[str] = (DEFAULT_ACTOR,),
+    *,
+    input_kind: str = "text",
+) -> list:
+    """The whole run as one ordered list: perceiving, deciding, acting.
+
+    The page had two lists — the Episode's Moments, and a prose account of
+    the runtime beside it — which said the same thing twice and still left
+    out the half that happens before any Episode exists. This is the single
+    sequence it plays instead, in the order the runtime recorded, with each
+    Episode's Moments spliced in where it opened.
+
+    Built from the finished payload rather than from the run, so a recording
+    made months ago plays through today's projection: what the page shows can
+    change without asking anybody to pay for fifteen model runs again.
+
+    Perception entries carry no robot pose. Nothing moved, and a page drawing
+    one would be inventing it.
+    """
+    records = list(payload.get("runtime", {}).get("records") or ())
+    episodes = list(payload.get("episodes") or ())
+    by_cue = {
+        str(episode.get("cue_id")): (index, episode)
+        for index, episode in enumerate(episodes)
+    }
+    detected = [
+        str(record.get("cue_id"))
+        for record in records
+        if _text(record.get("type")) == "cue_detected"
+    ]
+
+    def actor_of(cue_id: str) -> str:
+        cue_id = str(cue_id)
+        index = detected.index(cue_id) if cue_id in detected else 0
+        return actors[min(index, len(actors) - 1)]
+
+    steps: list = []
+    for record in records:
+        if _text(record.get("type")) == "episode_opened":
+            found = by_cue.get(str(record.get("cue_id")))
+            if found is None:
+                continue
+            index, episode = found
+            for moment in episode["storyboard"]["moments"]:
+                steps.append(
+                    {
+                        **moment,
+                        "source": "episode",
+                        "episode": index,
+                        "actor": episode["actor"],
+                        "cue_kind": _text(episode["cue_kind"]),
+                        "cue_text": episode.get("cue_text"),
+                    }
+                )
+            continue
+        beat = _perception_beat(record) or _cue_beat(record, actor_of, input_kind)
+        if beat is None:
+            continue
+        steps.append(
+            {
+                "source": "perception",
+                "t": record.get("t"),
+                "kind": beat.kind,
+                "label": beat.label,
+                "headline": beat.headline,
+                "detail": beat.detail,
+                "facts": dict(record.get("facts") or {}),
+                # What the person said, or what was observed about them,
+                # unquoted: the stage puts it in a bubble, and the wording
+                # around it belongs to the caption rather than the bubble.
+                "text": record.get("text"),
+            }
+        )
+    return steps
+
+
+def with_playback(
+    payload: Mapping[str, Any], actors: Sequence[str] = (DEFAULT_ACTOR,), **how
+) -> dict:
+    """`payload` with the merged list the page plays attached to it."""
+    return {**payload, "playback": playback_of(payload, actors, **how)}
+
+
 def _fixture_entry(item, input_kind: str, card: str) -> dict:
     """One pickable fixture, carrying the spec situation it stands for.
 
@@ -533,7 +718,25 @@ def _run_scenario(name: str, body: bytes = b"") -> Reply:
         run = run_fixture(name, asked.get("fixture"))
     except UnknownFixture as why:
         return _json(400, {"error": str(why)})
-    return _json(200, fixture_payload(case, run, SCRIPTED))
+    return _json(200, _played(fixture_payload(case, run, SCRIPTED)))
+
+
+def _played(payload: Mapping[str, Any]) -> dict:
+    """A finished run with the list the page plays attached.
+
+    One place, so a recording, a scripted run and a live one are played from
+    the same projection rather than three that can disagree.
+    """
+    return with_playback(
+        payload,
+        tuple(payload.get("scenario", {}).get("actors") or (DEFAULT_ACTOR,)),
+        input_kind=str(
+            payload.get("execution", {})
+            .get("provenance", {})
+            .get("input_kind")
+            or "text"
+        ),
+    )
 
 
 def fixture_payload(
@@ -646,66 +849,8 @@ def _scenario_execution(
         for record in result.records
         if isinstance(record, VisualAttentionRecorded)
     )
-    audio_labels = {
-        "wake": "Local wake detection",
-        "capture": "Utterance capture",
-        "asr": "Speech to text (fixture transcript)",
-        "backlog": "Audio backlog",
-        "source": "Audio source",
-    }
-    audio_headlines = {
-        "matched": "Wake phrase recognised",
-        "no_match": "No wake phrase recognised",
-        "repeated_wake": "Repeated wake phrase",
-        "captured": "An utterance was captured",
-        "empty_utterance": "Nothing was said after the wake phrase",
-        "silence_timeout": "Timed out waiting for speech",
-        "max_duration": "The utterance reached its length limit",
-        "transcribed": "Transcribed",
-        "asr_empty": "No usable text",
-        "asr_timeout": "Transcription timed out",
-        "asr_error": "Transcription failed",
-        "backlog_dropped": "Some audio was dropped because the backlog was full",
-        "source_ended": "The audio source ended",
-        "source_error": "The audio source failed",
-    }
-    flow = [
-        PresentationBeat(
-            record.stage.value,
-            audio_labels[record.stage.value],
-            audio_headlines[record.outcome.value],
-            (
-                " · ".join(
-                    f"{key}: {value}" for key, value in record.facts.items()
-                )
-                or "This stage left a typed runtime record."
-            ),
-        )
-        for record in audio_records
-    ]
-    visual_headlines = {
-        "empty": "Nobody detected in frame",
-        "not_looking": "The person is not looking at Misty",
-        "tracking": "Started counting how long they look",
-        "wave_progress": "A hand moving back and forth",
-        "qualified": "Sustained gaze plus a wave passed the gate",
-        "care_progress": "Observable face and posture cues accumulating",
-        "care_qualified": "The cues formed an uncertain Care Cue",
-    }
-    flow.extend(
-        PresentationBeat(
-            "visual_gate",
-            f"Frame {record.frame_index + 1} · {record.track_reference or 'frame'}",
-            visual_headlines[record.outcome.value],
-            (
-                " · ".join(
-                    f"{key}: {value}" for key, value in record.facts.items()
-                )
-                or "The local temporal gate left a typed runtime record."
-            ),
-        )
-        for record in visual_records
-    )
+    flow = [_perception_beat(asdict(record)) for record in audio_records]
+    flow.extend(_perception_beat(asdict(record)) for record in visual_records)
     runs_by_cue = {run.cue_id: run for run in result.episodes}
     detected_by_cue = {
         record.cue_id: record
@@ -762,7 +907,7 @@ def _scenario_execution(
                 ),
             ))
         else:
-            beat = _cue_beat(record, actor_of, input_kind)
+            beat = _cue_beat(asdict(record), actor_of, input_kind)
             if beat is not None:
                 flow.append(beat)
     completed = bool(
@@ -1056,85 +1201,102 @@ _CUE_WORDING = {
 }
 
 
-def _cue_wording(kind: CueKind) -> str:
-    return _CUE_WORDING.get(kind.value, kind.value)
+def _cue_wording(kind: Any) -> str:
+    return _CUE_WORDING.get(_text(kind), _text(kind))
 
 
-def _cue_beat(record: RuntimeRecord, actor_of, input_kind: str) -> Optional[PresentationBeat]:
-    """One cue lifecycle record as display copy, or nothing to show."""
-    if isinstance(record, CueDetected):
+def _text(value: Any) -> str:
+    """An enum's value, or whatever a replayed record already holds.
+
+    The same record reaches this module twice: as a dataclass on the way out
+    of a run, and as the plain JSON a recording was saved as. One of them
+    has `CueKind.CARE_CUE` where the other has `"care_cue"`, and an f-string
+    is the place that difference would show up on the page.
+    """
+    return str(getattr(value, "value", value) or "")
+
+
+def _cue_beat(record: Mapping[str, Any], actor_of, input_kind: str) -> Optional[PresentationBeat]:
+    """One cue lifecycle record as display copy, or nothing to show.
+
+    Takes the record as a mapping, because a recording replays the same
+    records after a round trip through JSON.
+    """
+    kind = _text(record.get("type"))
+    if kind == "cue_detected":
         if input_kind not in {"audio", "text"}:
             return None
-        actor = actor_of(record.cue_id)
-        if record.cue_kind is not CueKind.EXPLICIT_REQUEST:
+        actor = actor_of(record["cue_id"])
+        if _text(record["cue_kind"]) != CueKind.EXPLICIT_REQUEST.value:
             # Only an Explicit Request is words the person said. A Care Cue or
             # a Social Invitation is an observable signal, and quoting it as
             # speech would put words in the person's mouth (ticket 06).
             return PresentationBeat(
                 "observed_cue",
-                _cue_wording(record.cue_kind),
-                f"{actor}: {record.text}",
+                _cue_wording(record["cue_kind"]),
+                f"{actor}: {record['text']}",
                 "A signal the local gate observed, not something the person "
                 "said. The input comes from the example.",
             )
         return PresentationBeat(
             "input",
             "Person says" if actor == DEFAULT_ACTOR else f"{actor} says",
-            f"“{record.text}”",
+            f"“{record['text']}”",
             "The input comes from the example.",
         )
-    if isinstance(record, CueQueued):
+    if kind == "cue_queued":
         return PresentationBeat(
             "cue_queued",
             "Cue queue",
-            f"{_cue_wording(record.cue_kind)} waits in the queue ({actor_of(record.cue_id)})",
-            f"{actor_of(record.active_cue_id)}'s Episode is running; the queue holds "
-            f"{record.queue_size} cue(s). No parallel Episode, and nothing dropped.",
+            f"{_cue_wording(record['cue_kind'])} waits in the queue ({actor_of(record['cue_id'])})",
+            f"{actor_of(record['active_cue_id'])}'s Episode is running; the queue holds "
+            f"{record['queue_size']} cue(s). No parallel Episode, and nothing dropped.",
         )
-    if isinstance(record, CueDropped):
+    if kind == "cue_dropped":
+        reason = _text(record["reason"])
         return PresentationBeat(
             "cue_dropped",
             "Cue dropped",
-            f"{actor_of(record.cue_id)}'s cue "
-            + _DROP_WORDING.get(record.reason.value, record.reason.value),
+            f"{actor_of(record['cue_id'])}'s cue "
+            + _DROP_WORDING.get(reason, reason),
             "Freshness and queue rules decide; it never acts on stale evidence.",
         )
-    if isinstance(record, CueDequeued):
+    if kind == "cue_dequeued":
         return PresentationBeat(
             "cue_dequeued",
             "Handoff",
-            f"{actor_of(record.cue_id)}'s turn",
+            f"{actor_of(record['cue_id'])}'s turn",
             "The previous Episode ended at a Turn boundary; the next cue leaves "
             "the queue and opens a new Episode with a new Interaction Target.",
         )
-    if isinstance(record, CueSuppressionStarted):
-        duration = max(0.0, record.expires_at_s - record.t)
+    if kind == "cue_suppression_started":
+        duration = max(0.0, record["expires_at_s"] - record["t"])
         return PresentationBeat(
             "cue_suppression_started",
             "Cue Suppression",
             f"Quiet towards this anonymous track for {duration:g}s",
-            f"Only an anonymous token and a deadline ({record.expires_at_s:g}s) "
+            f"Only an anonymous token and a deadline ({record['expires_at_s']:g}s) "
             "are kept; no identity, nothing that outlives the run.",
         )
-    if isinstance(record, CueSuppressed):
+    if kind == "cue_suppressed":
         return PresentationBeat(
             "cue_suppressed",
             "Not intruding",
-            f"{_cue_wording(record.cue_kind)} opened no Episode",
-            f"{round(record.remaining_s, 1):g}s of suppression left for this anonymous track.",
+            f"{_cue_wording(record['cue_kind'])} opened no Episode",
+            f"{round(record['remaining_s'], 1):g}s of suppression left for this anonymous track.",
         )
-    if isinstance(record, CueSuppressionBypassed):
+    if kind == "cue_suppression_bypassed":
         return PresentationBeat(
             "cue_suppression_bypassed",
             "Explicit request first",
             "They called Misty again, so a new Episode opens at once",
             "An explicit request bypasses and ends the suppression.",
         )
-    if isinstance(record, CueSuppressionCleared):
+    if kind == "cue_suppression_cleared":
         return PresentationBeat(
             "cue_suppression_cleared",
             "Suppression cleared",
-            record.reason.value.replace("_", " "),
+            _text(record["reason"]).replace("_", " "),
             "Expiry, a lost track or the runtime ending all leave nothing behind.",
         )
     return None
@@ -1163,7 +1325,11 @@ def _episode_beats(
         chosen = [r for r in waiting if cue_id is None or getattr(r, "cue_id", None) == cue_id]
         for record in chosen:
             waiting.remove(record)
-        return [beat for beat in (_cue_beat(r, actor_of, input_kind) for r in chosen) if beat]
+        return [
+            beat
+            for beat in (_cue_beat(asdict(r), actor_of, input_kind) for r in chosen)
+            if beat
+        ]
     evidence = run.evidence
     uncertainty = (
         "; ".join(evidence.uncertainty)
@@ -1669,6 +1835,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
         "runtime": None,
         "storyboard": None,
         "episodes": [],
+        "playback": [],
         "why_no_episode": None,
     }
 
@@ -1724,6 +1891,7 @@ def _run(body: bytes, *, audio: bool) -> Reply:
             "storyboard": board,
         }
     ]
+    answered["playback"] = playback_of(answered, ("you",))
     return _json(200, answered)
 
 

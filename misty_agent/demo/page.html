@@ -48,7 +48,6 @@
   .tab[aria-selected="true"] { color: #fff; background: var(--ink); }
   :root[data-theme="dark"] .tab[aria-selected="true"] { color: #000; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tab[aria-selected="true"] { color: #000; } }
-  .group-note { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
   .examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .example { display: grid; gap: 4px; min-height: 92px; padding: 14px 16px; color: var(--ink); text-align: left; background: var(--page); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
   .example:hover { border-color: var(--faint); }
@@ -82,7 +81,7 @@
   .controls button[disabled] { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
   .controls input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
   .controls span { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
-  .provenance { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+  .provenance { margin: 12px 0 0; color: var(--faint); font-size: 12px; }
   .timeline { position: relative; max-height: 340px; margin: 16px 0 0; padding: 0; overflow: auto; list-style: none; background: var(--page); border: 1px solid var(--line); border-radius: 14px; }
   .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; }
   .timeline li:last-child { border-bottom: 0; }
@@ -92,12 +91,7 @@
   .timeline li .ico { text-align: center; }
   .timeline li span { overflow-wrap: anywhere; }
   .timeline li em { color: var(--muted); font-style: normal; }
-  details.narrative { margin-top: 14px; }
-  details.narrative summary { color: var(--accent-ink); cursor: pointer; font-size: 14px; }
-  .beats { display: grid; gap: 8px; margin-top: 10px; }
-  .beat { padding: 10px 12px; background: var(--page); border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
-  .beat small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
-  .beat p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .timeline li.perception { color: var(--muted); background: color-mix(in srgb, var(--panel) 55%, var(--page)); }
 
   .live { margin-top: 28px; padding: 24px; border: 1px solid var(--line); border-radius: 22px; }
   .live p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
@@ -176,14 +170,13 @@
 <section class="hero">
   <span class="eyebrow">Simulation demo</span>
   <h1>A social robot that decides for itself when, and how, to step in.</h1>
-  <p>Each example is a real run of a hosted language model, recorded and replayed here on a simulated Misty II. Every tool call it chose becomes something you can see: a word, a gesture, a light or a move.</p>
+  <p>Real runs of a hosted model, recorded and replayed on a simulated Misty II — every tool call it chose, drawn as it happens.</p>
 </section>
 
 <main>
   <section aria-labelledby="examples-title">
     <h2 id="examples-title">Recorded examples</h2>
     <div class="tabs" id="groupTabs" role="tablist" aria-label="Example groups"></div>
-    <p class="group-note" id="groupNote"></p>
     <div class="examples" id="exampleList"></div>
   </section>
 
@@ -192,7 +185,6 @@
       <div>
         <span class="eyebrow" id="runEyebrow">Recorded run</span>
         <h2 id="runTitle">Pick an example</h2>
-        <p id="runWatch"></p>
         <div class="badges" id="provenanceBadges"><span class="badge kind" id="provenanceBadge"></span></div>
       </div>
     </div>
@@ -298,12 +290,8 @@
       <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every moment">
       <span id="replayCounter"></span>
     </div>
+    <ol class="timeline" id="timeline" aria-label="Everything this run perceived and did"></ol>
     <p class="provenance" id="provenanceMeans"></p>
-    <ol class="timeline" id="timeline" aria-label="Every moment of the run"></ol>
-    <details class="narrative" id="narrative">
-      <summary>Step-by-step account from the runtime</summary>
-      <div class="beats" id="beats"></div>
-    </details>
   </section>
 
   <section class="live" aria-labelledby="live-title">
@@ -352,7 +340,6 @@ function selectGroup(card) {
     tab.setAttribute("aria-selected", String(tab.dataset.group === card));
   }
   const items = state.catalogue.filter((item) => item.card === card);
-  byId("groupNote").textContent = items[0]?.card_subtitle || "";
   byId("exampleList").innerHTML = items.map((item) => `
     <button class="example" type="button" data-example="${escapeText(item.key)}" aria-pressed="${item.key === state.selected}" ${item.recorded ? "" : "disabled"}>
       <b>${escapeText(item.title)}</b>
@@ -377,12 +364,8 @@ async function selectExample(key) {
   loadRun({
     eyebrow: "Recorded run",
     title: item.title,
-    watch: item.watch_for,
     provenance: payload.execution.provenance,
-    episodes: payload.episodes,
-    flow: payload.execution.flow,
-    emptyNote: payload.episodes.length ? "" :
-      `${payload.execution.decision_explanation.headline}. ${payload.execution.decision_explanation.detail}`,
+    steps: payload.playback,
   });
 }
 
@@ -392,7 +375,6 @@ function loadRun(run) {
   pauseReplay();
   byId("runEyebrow").textContent = run.eyebrow;
   byId("runTitle").textContent = run.title;
-  byId("runWatch").textContent = run.watch || "";
   const provenance = run.provenance;
   const badges = [
     `<span class="badge kind" id="provenanceBadge">${escapeText(
@@ -402,14 +384,14 @@ function loadRun(run) {
     `<span class="badge">${escapeText(provenance.robot || "Simulated Misty")}</span>`,
   ];
   byId("provenanceBadges").innerHTML = badges.join("");
-  byId("provenanceMeans").textContent =
-    `${provenance.detail || provenance.kind_means} ${provenance.hardware_unverified}`;
-  state.steps = run.episodes.flatMap((episode, index) =>
-    (episode.storyboard?.moments || []).map((moment) => ({
-      ...moment, episode: index, actor: episode.actor,
-      cueKind: episode.cue_kind, cueText: episode.cue_text,
-    })));
-  state.actors = [...new Set(run.episodes.map((episode) => episode.actor))];
+  // The long version is one hover away; the short one is the part nobody
+  // should be able to miss.
+  byId("provenanceBadges").title = provenance.detail || provenance.kind_means;
+  byId("provenanceMeans").textContent = provenance.hardware_unverified;
+  state.steps = run.steps || [];
+  state.actors = [...new Set(
+    state.steps.filter((step) => step.actor).map((step) => step.actor)
+  )];
   state.replayAt = 0;
   const hasSteps = state.steps.length > 0;
   byId("replayJournal").disabled = !hasSteps;
@@ -418,15 +400,11 @@ function loadRun(run) {
   byId("replayScrub").max = String(Math.max(0, state.steps.length - 1));
   byId("replayJournal").textContent = "Play";
   renderTimeline();
-  byId("beats").innerHTML = (run.flow || []).map((beat) => `
-    <div class="beat"><small>${escapeText(beat.label)}</small>${escapeText(beat.headline)}<p>${escapeText(beat.detail)}</p></div>`).join("");
-  byId("narrative").hidden = !(run.flow || []).length;
-  byId("narrative").open = !hasSteps && (run.flow || []).length > 0;
   if (hasSteps) {
     showMoment(0);
   } else {
-    drawScene(emptyScene(run));
-    setNow("No Episode", run.emptyNote || "Nothing happened.", "", "", "");
+    drawScene(emptyScene());
+    setNow("Nothing to play", "This example has not been recorded yet.", "", "", "");
     byId("replayCounter").textContent = "";
   }
 }
@@ -435,24 +413,44 @@ const ICONS = {
   episode_started: "▶", episode_finished: "■", target_bound: "◎", skills_available: "✦",
   turn_started: "·", model_called: "·", decision_noted: "✎", tool_called: "⚙",
   observation: "↩", handoff_requested: "✋", execution_failed: "⚠", tool_refused: "⊘",
+  visual_gate: "👁", wake: "👂", capture: "👂", asr: "👂", input: "💬",
+  observed_cue: "👁", cue_queued: "⏳", cue_dequeued: "⇄", cue_dropped: "✕",
+  cue_suppressed: "🤫", cue_suppression_started: "🤫", cue_suppression_cleared: "🤫",
+  cue_suppression_bypassed: "⇡",
 };
 const QUIET = new Set(["turn_started", "model_called"]);
+const SAYS_ITSELF = new Set([
+  "episode_started", "episode_finished", "target_bound", "skills_available",
+  "turn_started", "model_called", "visual_gate",
+]);
 
 function renderTimeline() {
-  let lastEpisode = -1;
+  let episode = -1;
   const rows = [];
   state.steps.forEach((step, index) => {
-    if (step.episode !== lastEpisode) {
-      lastEpisode = step.episode;
-      rows.push(`<li class="episode">Episode ${step.episode + 1} · ${escapeText(step.actor)}</li>`);
+    if (step.source === "episode" && step.episode !== episode) {
+      episode = step.episode;
+      rows.push(`<li class="episode">Episode ${episode + 1} · ${escapeText(step.actor)}</li>`);
     }
     const text = describeStep(step);
-    rows.push(`<li data-step="${index}" class="${QUIET.has(step.kind) ? "quiet" : ""}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(text.label)}: ${escapeText(text.headline)}${text.detail ? ` <em>${escapeText(text.detail)}</em>` : ""}</span></li>`);
+    const classes = [
+      step.source === "perception" ? "perception" : "",
+      QUIET.has(step.kind) ? "quiet" : "",
+    ].filter(Boolean).join(" ");
+    // "Interaction Target: Interaction Target bound" — a label in front of a
+    // sentence that already says it is the same text twice.
+    const said = SAYS_ITSELF.has(step.kind)
+      ? text.headline
+      : `${text.label}: ${text.headline}`;
+    rows.push(`<li data-step="${index}" class="${classes}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(said)}</span></li>`);
   });
   byId("timeline").innerHTML = rows.join("");
 }
 
 function describeStep(step) {
+  if (step.source === "perception") {
+    return { label: step.label, headline: step.headline, detail: step.detail || "" };
+  }
   const label = {
     episode_started: "Episode started", episode_finished: "Episode ended",
     target_bound: "Interaction Target", skills_available: "Skills available",
@@ -499,7 +497,8 @@ function showMoment(index) {
   drawScene(scene);
   const text = describeStep(step);
   const why = scene.why && step.kind !== "decision_noted" ? `Why: ${scene.why}` : "";
-  setNow(text.label, text.headline, text.detail, why, step.skill_status || "");
+  const skills = step.active_skills?.length ? step.skill_status : "";
+  setNow(text.label, text.headline, text.detail, why, skills || "");
 }
 
 /* ---------- From moments to a scene ---------- */
@@ -507,7 +506,7 @@ function showMoment(index) {
 function startingDistance() {
   for (let i = 0; i < state.steps.length; i += 1) {
     const step = state.steps[i];
-    if (step.kind !== "observation") continue;
+    if (step.source !== "episode" || step.kind !== "observation") continue;
     const tool = previousTool(i);
     if (tool === "approach") {
       const motions = step.facts?.result?.motions || [];
@@ -522,29 +521,54 @@ function startingDistance() {
 
 function previousTool(index) {
   for (let i = index; i >= 0; i -= 1) {
-    if (state.steps[i].kind === "tool_called") return state.steps[i].facts.tool;
+    const step = state.steps[i];
+    if (step.source === "episode" && step.kind === "tool_called") return step.facts.tool;
   }
   return null;
 }
 
 function sceneAt(index) {
   const scene = {
-    robot: state.steps[index].robot, distance: startingDistance(), present: true,
+    robot: POSE_AT_REST, distance: startingDistance(), present: true,
     tool: null, args: {}, mistySays: "", personSays: "", personObserved: false,
     why: "", driving: false, obstacle: false, flash: false, halted: false,
-    actor: state.steps[index].actor, waiting: null, done: false, caption: "",
-    cue: state.steps[index].cueKind, skill: "",
+    actor: "", waiting: null, done: false, caption: "", cue: null, skill: "",
+    looking: false, waving: false, sensing: "",
   };
   let previousLed = null;
   for (let i = 0; i <= index; i += 1) {
     const step = state.steps[i];
     const last = i === index;
+    if (step.source === "perception") {
+      // Before any Episode — and sometimes instead of one. Nothing here
+      // moves the robot; it is what the robot is making of the room.
+      // The caption says which sense this is; the panel beside it says what
+      // that sense made of the room. Saying both in both places is how the
+      // page ended up repeating itself.
+      scene.sensing = last ? step.label : scene.sensing;
+      if (step.kind === "visual_gate") {
+        const facts = step.facts || {};
+        scene.present = (facts.person_count ?? 1) > 0;
+        scene.looking = Boolean(facts.looking);
+        scene.waving = Boolean(facts.hand_visible) && Boolean(facts.looking);
+      }
+      if (step.kind === "input" || step.kind === "observed_cue") {
+        scene.personSays = step.text || step.headline;
+        scene.personObserved = step.kind === "observed_cue";
+      }
+      if (step.kind === "asr" && step.text) scene.personSays = step.text;
+      continue;
+    }
+    scene.robot = step.robot || scene.robot;
     if (step.kind === "episode_started") {
       scene.actor = step.actor; scene.waiting = null; scene.present = true;
       scene.tool = null; scene.mistySays = ""; scene.done = false; scene.why = "";
-      scene.personObserved = step.cueKind !== "explicit_request";
-      scene.personSays = step.cueText || "";
-      scene.cue = step.cueKind;
+      scene.sensing = ""; scene.waving = false;
+      if (step.cue_text) {
+        scene.personObserved = step.cue_kind !== "explicit_request";
+        scene.personSays = step.cue_text;
+      }
+      scene.cue = step.cue_kind;
     } else if (step.kind === "turn_started") {
       scene.tool = null; scene.driving = false; scene.stopped = ""; scene.skill = "";
     } else if (step.kind === "decision_noted") {
@@ -578,16 +602,16 @@ function sceneAt(index) {
     } else if (step.kind === "episode_finished") {
       scene.tool = null; scene.done = true; scene.driving = false;
     }
-    const led = JSON.stringify(step.robot.led);
+    const led = JSON.stringify(scene.robot.led);
     if (last && previousLed !== null && led !== previousLed) scene.flash = true;
     previousLed = led;
   }
-  scene.robot = state.steps[index].robot;
   scene.caption = captionFor(scene);
   return scene;
 }
 
 function captionFor(scene) {
+  if (scene.sensing) return scene.sensing;
   if (scene.done) return "Episode finished — Misty chose to stop";
   if (scene.stopped) return `Stopped: ${scene.stopped}`;
   const words = {
@@ -599,16 +623,21 @@ function captionFor(scene) {
     read_skill_resource: "Reading a Skill reference", respect_boundary: "Stopping and giving space",
     play_audio: "Playing a sound", done: "Deciding it is done",
   };
-  return scene.tool ? (words[scene.tool] || scene.tool) : "";
+  if (!scene.tool) return "";
+  const said = words[scene.tool] || scene.tool.replaceAll("_", " ");
+  // The one argument worth naming on the stage: which face, which Skill.
+  const named = scene.args?.expression || scene.args?.name || scene.args?.sound;
+  return named ? `${said}: ${named}` : said;
 }
 
-function emptyScene(run) {
+const POSE_AT_REST = { expression: "neutral", led: [0, 0, 0], head: [0, 0, 0], arms: [90, 90] };
+
+function emptyScene() {
   return {
-    robot: { expression: "neutral", led: [0, 0, 0], head: [0, 0, 0], arms: [90, 90] },
-    distance: 190, present: true, tool: null, args: {}, mistySays: "", personSays: "",
-    personObserved: false, why: "", driving: false, obstacle: false, flash: false,
-    halted: false, actor: "", waiting: null, done: false, skill: "",
-    passing: true, caption: "No cue formed — Misty stays quiet and the model is never called",
+    robot: POSE_AT_REST, distance: 190, present: true, tool: null, args: {},
+    mistySays: "", personSays: "", personObserved: false, why: "", driving: false,
+    obstacle: false, flash: false, halted: false, actor: "", waiting: null,
+    done: false, skill: "", caption: "",
   };
 }
 
@@ -664,8 +693,10 @@ function drawScene(scene) {
 
   const personA = byId("personA");
   personA.style.opacity = scene.present ? "1" : ".18";
-  personA.classList.toggle("waving", scene.cue === "social_invitation" && !scene.done);
-  personA.classList.toggle("walking", Boolean(scene.passing));
+  personA.classList.toggle(
+    "waving",
+    (scene.waving || scene.cue === "social_invitation") && !scene.done
+  );
   byId("personHead").setAttribute("cy", scene.cue === "care_cue" ? "178" : "170");
   byId("personALabel").textContent = scene.actor && scene.actor.length <= 2 ? scene.actor : "";
   const personB = byId("personB");
@@ -675,18 +706,12 @@ function drawScene(scene) {
 
   setBubble("misty", scene.mistySays, false);
   setBubble("person", scene.personSays, scene.personObserved);
-  // What Misty is doing, in words, then the exact call that made it happen.
+  // What Misty is doing, in words. The exact call is in the panel beside
+  // the stage and in the list below it; the words it spoke are in the
+  // bubble. Putting all three here is how one sentence got said three times.
   const pill = byId("toolPill");
-  const call = scene.tool ? toolLine(scene) : "";
-  pill.hidden = !(scene.caption || call);
-  pill.textContent = [scene.caption, call].filter(Boolean).join("  ·  ");
-}
-
-function toolLine(scene) {
-  const args = Object.entries(scene.args || {})
-    .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value.length > 40 ? value.slice(0, 40) + "…" : value) : JSON.stringify(value)}`)
-    .join(", ");
-  return `${scene.tool}(${args})`;
+  pill.hidden = !scene.caption;
+  pill.textContent = scene.caption || "";
 }
 
 function setBubble(who, text, observed) {
@@ -727,6 +752,7 @@ function wrap(text, width) {
 /* ---------- Replay ---------- */
 
 function delayFor(step) {
+  if (step.source === "perception") return step.kind === "visual_gate" ? 520 : 700;
   if (QUIET.has(step.kind)) return 260;
   if (step.kind === "tool_called" && step.facts.tool === "speak") {
     return Math.min(4200, 900 + String(step.facts.args?.text || "").length * 45);
@@ -805,15 +831,12 @@ async function runLive() {
     loadRun({
       eyebrow: "Live run",
       title: `“${said || "(no words)"}”`,
-      watch: "Decided just now by the hosted model, on a simulated robot.",
       provenance: {
         ...payload.provenance,
         robot: "Simulated Misty",
         detail: payload.provenance.kind_means,
       },
-      episodes: payload.episodes,
-      flow: [],
-      emptyNote: "",
+      steps: payload.playback,
     });
     byId("stage").scrollIntoView({ behavior: "smooth", block: "center" });
     playReplay();

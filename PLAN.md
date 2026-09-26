@@ -2971,6 +2971,13 @@ Chat Completions 都只能 `none`，在 Responses API 則 low/medium 都可以�
 `reasoning={"effort": ...}` 只在不是 `none` 時送。不讀 reasoning item：Journal 是公開紀錄，
 把推理摘要抄進去正是 Decision Note 存在的理由。`llm_reasoning_effort` 預設改為 `low`。
 
+後續 UI 調整：頁面原本有兩份內容——Episode 的 Moments 與旁邊那份 runtime 散文——說同一件事，
+而且都沒有包含「開 Episode 之前」的感知。改成 `playback_of` 產生單一序列：喚醒各階段、視覺
+gate 每一格、cue 排隊與 suppression，與各 Episode 的 Moments 按時間穿插。它在「服務錄音時」
+計算而不是「錄製時」寫死，所以呈現方式可以改而不必重跑付費模型。同時砍掉重複文字：標題下的
+watch-for、provenance 長段落（收進 title 提示，只留 hardware-unverified 一句）、時間軸每列的
+細節、以及膠囊與面板互相重複的那一句；感知的 facts 只顯示有值的欄位並帶單位。
+
 `store=false` 表示 provider 不保留任何東西，因此 Turn 的推理到下一個 Turn 就沒了。改成
 `include=["reasoning.encrypted_content"]` 要回加密的 reasoning item，經由 `Decision.provider_items`
 交給 loop，寫進該 Turn 的 working context，下一個 Turn 原封不動送回去。放在 context 而不是

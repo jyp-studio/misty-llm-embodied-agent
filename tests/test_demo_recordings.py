@@ -154,3 +154,92 @@ def test_the_page_is_served_the_list_and_each_recording():
     assert first["showcase"]["fixture"] == listed[0]["fixture"]
     assert answer("GET", "/recordings/nope").status == 404
     assert answer("GET", "/recordings/..%2Fpage.html").status == 404
+
+
+# ---------------------------------------------------------------------------
+# One list: perceiving, deciding, acting
+# ---------------------------------------------------------------------------
+
+def playback(key):
+    """As the page gets it: a recording is stored data, and the list it
+    plays is projected when it is served, so a rendering change never means
+    paying for fifteen model runs again."""
+    served = json.loads(answer("GET", f"/recordings/{key}").body)
+    assert "playback" not in load(key)["payload"], "the projection was frozen into the file"
+    return served["payload"]["playback"]
+
+
+def test_the_playback_starts_with_what_misty_perceived():
+    """The page used to begin at the first Turn, with the local gates in a
+    separate prose panel underneath. That showed a robot which had already
+    decided to interrupt somebody, and said nothing about how it decided."""
+    heard = playback("hey-greeting-only")
+    seen = playback("visual-gaze-wave")
+
+    assert [step["headline"] for step in heard[:3]] == [
+        "Wake phrase recognised",
+        "An utterance was captured",
+        "Transcribed",
+    ]
+    assert heard[0]["source"] == "perception"
+    assert "hey misty" in heard[0]["detail"]
+    assert [step["kind"] for step in seen[:4]] == ["visual_gate"] * 4
+    assert seen[3]["headline"] == "Sustained gaze plus a wave passed the gate"
+    assert "gaze_duration_s" in seen[3]["facts"]
+
+
+def test_a_run_that_opened_no_episode_still_has_something_to_play():
+    """The strongest example on the page is the one where nothing happens,
+    and it is the one an Episode-only timeline left blank."""
+    steps = playback("visual-passerby")
+
+    assert steps, "the quiet example plays nothing at all"
+    assert {step["source"] for step in steps} == {"perception"}
+    assert all(step["headline"] == "The person is not looking at Misty" for step in steps)
+
+
+def test_the_moments_of_each_episode_are_spliced_in_where_it_opened():
+    steps = playback("respect-boundary")
+    sources = [step["source"] for step in steps]
+    episodes = [step["episode"] for step in steps if step["source"] == "episode"]
+
+    assert sources[0] == "perception", "the request Misty heard comes first"
+    assert episodes == sorted(episodes) and set(episodes) == {0, 1}
+    # Suppression happens between the two Episodes, and is Misty deciding
+    # not to intrude — the part of this example worth watching.
+    between = [
+        step["headline"]
+        for step in steps
+        if step["source"] == "perception" and step["kind"] == "cue_suppressed"
+    ]
+    assert between == ["Care Cue opened no Episode"] * 2
+
+
+def test_the_playback_leaves_none_of_the_journal_out():
+    """It replaced a list that was every Moment of every Episode, so it has
+    to still be that, plus what came before."""
+    for showcase in SHOWCASES:
+        document = load(showcase.key)
+        recorded = [
+            moment["headline"]
+            for episode in document["payload"]["episodes"]
+            for moment in episode["storyboard"]["moments"]
+        ]
+        played = [
+            step["headline"]
+            for step in playback(showcase.key)
+            if step["source"] == "episode"
+        ]
+
+        assert played == recorded, showcase.key
+
+
+def test_every_step_carries_what_the_page_draws_it_with():
+    for showcase in SHOWCASES:
+        for step in playback(showcase.key):
+            assert step["headline"]
+            assert step["source"] in {"perception", "episode"}
+            if step["source"] == "episode":
+                assert step["robot"], "an Episode Moment with no pose to draw"
+            else:
+                assert "robot" not in step, "perception invented a pose"

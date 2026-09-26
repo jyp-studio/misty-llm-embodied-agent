@@ -312,8 +312,11 @@ def test_the_page_can_play_pause_restart_and_scrub_every_moment():
     # Scrubbing pauses rather than fighting the timer.
     assert 'byId("replayScrub").addEventListener("input"' in page
     assert "pauseReplay();" in page
-    # Every Episode's Moments, not just the first.
-    assert "run.episodes.flatMap" in page
+    # Over one list covering the whole run — every Episode's Moments, and
+    # the perception before them. `tests/test_demo_recordings.py` holds the
+    # server side of that: nothing the Journal recorded is left out of it.
+    assert "state.steps = run.steps" in page
+    assert "steps: payload.playback" in page
 
 
 def answer_page() -> str:

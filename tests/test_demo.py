@@ -102,7 +102,8 @@ def test_the_page_is_an_english_showcase_of_recorded_runs():
     assert 'fetch("/recordings")' in page
     assert "/scenarios/" not in page, "the page runs scripted fixtures again"
     assert 'id="evidence"' not in page and 'id="runtime"' not in page
-    assert "storyboard?.moments" in page
+    assert "steps: payload.playback" in page
+    assert 'id="beats"' not in page, "the second, duplicate account is back"
     assert "state.runSerial" in page
     assert "Try it live" in page and "OPENAI_API_KEY" in page
 

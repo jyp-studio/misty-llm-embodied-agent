@@ -83,6 +83,8 @@
   .controls input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
   .controls span { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
   .provenance { margin: 12px 0 0; color: var(--faint); font-size: 12px; }
+  .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 8px; color: var(--muted); font-size: 13px; }
+  .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
   .timeline { position: relative; max-height: 340px; margin: 16px 0 0; padding: 0; overflow: auto; list-style: none; background: var(--page); border: 1px solid var(--line); border-radius: 14px; }
   .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; }
   .timeline li:last-child { border-bottom: 0; }
@@ -298,6 +300,10 @@
       <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every step">
       <span id="replayCounter"></span>
     </div>
+    <div class="list-head">
+      <span id="stepCount"></span>
+      <label class="switch"><input type="checkbox" id="showEverything"> Show every record</label>
+    </div>
     <ol class="timeline" id="timeline" aria-label="Everything this run perceived and did"></ol>
     <p class="provenance" id="provenanceMeans"></p>
   </section>
@@ -322,7 +328,9 @@
 const byId = (id) => document.getElementById(id);
 const state = {
   catalogue: [], group: null, selected: null,
-  steps: [], replayTimer: null, replayAt: 0, runSerial: 0,
+  // `steps` is the whole run; `shown` is the plain telling of it, which is
+  // what the controls walk. Everything is still there behind the switch.
+  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0,
 };
 
 /* ---------- Catalogue ---------- */
@@ -400,11 +408,10 @@ function loadRun(run) {
   state.actors = [...new Set(
     state.steps.filter((step) => step.actor).map((step) => step.actor)
   )];
-  state.replayAt = 0;
-  const hasSteps = state.steps.length > 0;
+  chooseShown();
+  const hasSteps = state.shown.length > 0;
   byId("replayJournal").disabled = !hasSteps;
   byId("replayScrub").disabled = !hasSteps;
-  byId("replayScrub").max = String(Math.max(0, state.steps.length - 1));
   setPlayButton("play");
   renderTimeline();
   if (hasSteps) {
@@ -432,32 +439,39 @@ const SAYS_ITSELF = new Set([
   "turn_started", "model_called", "visual_gate",
 ]);
 
+function chooseShown() {
+  const everything = byId("showEverything").checked;
+  state.shown = state.steps
+    .map((step, index) => index)
+    .filter((index) => everything || state.steps[index].tells_the_story);
+  state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
+  byId("replayScrub").max = String(Math.max(0, state.shown.length - 1));
+  byId("stepCount").textContent = everything
+    ? `${state.steps.length} records`
+    : `${state.shown.length} steps, out of ${state.steps.length} records`;
+}
+
 function renderTimeline() {
   let episode = -1;
   const rows = [];
-  state.steps.forEach((step, index) => {
+  state.shown.map((index) => state.steps[index]).forEach((step, index) => {
     if (step.source === "episode" && step.episode !== episode) {
       episode = step.episode;
       rows.push(`<li class="episode">Episode ${episode + 1} · ${escapeText(step.actor)}</li>`);
     }
-    const text = describeStep(step);
     const classes = [
       step.source === "perception" ? "perception" : "",
       QUIET.has(step.kind) ? "quiet" : "",
     ].filter(Boolean).join(" ");
-    // "Interaction Target: Interaction Target bound" — a label in front of a
-    // sentence that already says it is the same text twice.
-    const said = SAYS_ITSELF.has(step.kind)
-      ? text.headline
-      : `${text.label}: ${text.headline}`;
-    rows.push(`<li data-step="${index}" class="${classes}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(said)}</span></li>`);
+    const why = step.why ? ` <em>${escapeText(step.why)}</em>` : "";
+    rows.push(`<li data-step="${index}" class="${classes}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(step.summary)}${why}</span></li>`);
   });
   byId("timeline").innerHTML = rows.join("");
 }
 
 function describeStep(step) {
   if (step.source === "perception") {
-    return { label: step.label, headline: step.headline, detail: step.detail || "" };
+    return { label: step.label, headline: step.summary, detail: step.detail || "" };
   }
   const label = {
     episode_started: "Episode started", episode_finished: "Episode ended",
@@ -466,8 +480,8 @@ function describeStep(step) {
     tool_called: "Tool call", observation: "Result", handoff_requested: "Handoff notice",
     execution_failed: "Failure", tool_refused: "Refused",
   }[step.kind] || step.kind.replaceAll("_", " ");
-  if (step.kind === "decision_noted") return { label, headline: step.detail, detail: "" };
-  return { label, headline: step.headline, detail: step.detail || "" };
+  // The exact record stays in the detail line, under the plain sentence.
+  return { label, headline: step.summary, detail: step.headline === step.summary ? (step.detail || "") : step.headline };
 }
 
 function keepInView(row) {
@@ -489,23 +503,23 @@ function setNow(kind, headline, detail, why, skills) {
 }
 
 function showMoment(index) {
-  const steps = state.steps;
-  if (!steps.length) return;
-  const at = Math.max(0, Math.min(index, steps.length - 1));
+  if (!state.shown.length) return;
+  const at = Math.max(0, Math.min(index, state.shown.length - 1));
   state.replayAt = at;
-  const step = steps[at];
+  const absolute = state.shown[at];
+  const step = state.steps[absolute];
   byId("replayScrub").value = String(at);
-  byId("replayCounter").textContent = `${at + 1} / ${steps.length}`;
+  byId("replayCounter").textContent = `${at + 1} / ${state.shown.length}`;
   for (const row of document.querySelectorAll("#timeline [data-step]")) {
     const current = Number(row.dataset.step) === at;
     row.setAttribute("aria-current", String(current));
     if (current) keepInView(row);
   }
   stepButtons();
-  const scene = sceneAt(at);
+  const scene = sceneAt(absolute);
   drawScene(scene);
   const text = describeStep(step);
-  const why = scene.why && step.kind !== "decision_noted" ? `Why: ${scene.why}` : "";
+  const why = step.why || (scene.why && step.kind !== "decision_noted" ? scene.why : "");
   const skills = step.active_skills?.length ? step.skill_status : "";
   setNow(text.label, text.headline, text.detail, why, skills || "");
 }
@@ -760,6 +774,10 @@ function wrap(text, width) {
 
 /* ---------- Replay ---------- */
 
+function atShown(index) {
+  return state.steps[state.shown[index]] || {};
+}
+
 function delayFor(step) {
   if (step.source === "perception") return step.kind === "visual_gate" ? 520 : 700;
   if (QUIET.has(step.kind)) return 260;
@@ -792,12 +810,12 @@ function setPlayButton(which) {
 }
 
 function atEnd() {
-  return state.replayAt >= state.steps.length - 1;
+  return state.replayAt >= state.shown.length - 1;
 }
 
 function stepButtons() {
-  byId("replayBack").disabled = !state.steps.length || state.replayAt === 0;
-  byId("replayForward").disabled = !state.steps.length || atEnd();
+  byId("replayBack").disabled = !state.shown.length || state.replayAt === 0;
+  byId("replayForward").disabled = !state.shown.length || atEnd();
 }
 
 function pauseReplay() {
@@ -818,9 +836,9 @@ function playReplay() {
       return;
     }
     showMoment(state.replayAt + 1);
-    state.replayTimer = window.setTimeout(step, delayFor(state.steps[state.replayAt]));
+    state.replayTimer = window.setTimeout(step, delayFor(atShown(state.replayAt)));
   };
-  state.replayTimer = window.setTimeout(step, delayFor(state.steps[state.replayAt]));
+  state.replayTimer = window.setTimeout(step, delayFor(atShown(state.replayAt)));
 }
 
 function restartReplay() {
@@ -924,6 +942,15 @@ byId("timeline").addEventListener("click", (event) => {
 byId("replayJournal").addEventListener("click", playReplay);
 byId("replayBack").addEventListener("click", () => stepBy(-1));
 byId("replayForward").addEventListener("click", () => stepBy(1));
+byId("showEverything").addEventListener("change", () => {
+  pauseReplay();
+  const absolute = state.shown[state.replayAt];
+  chooseShown();
+  renderTimeline();
+  // Stay where the reader was: the nearest shown step at or before it.
+  const at = state.shown.findIndex((index) => index >= absolute);
+  showMoment(at === -1 ? state.shown.length - 1 : at);
+});
 byId("replayScrub").addEventListener("input", (event) => {
   pauseReplay();
   showMoment(Number(event.target.value));

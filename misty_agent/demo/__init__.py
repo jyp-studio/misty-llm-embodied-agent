@@ -541,6 +541,108 @@ def _perception_beat(record: Mapping[str, Any]) -> Optional[PresentationBeat]:
     return None
 
 
+#: Each Tool as one plain sentence. The page used to print the Journal's
+#: own `speak(text='…')` beside the bubble that already held the words, and
+#: a visitor had to read the argument list to find out what happened.
+_ACTIONS = {
+    "speak": lambda args: f"Says “{args.get('text', '')}”",
+    "listen": lambda args: "Listens for an answer",
+    "approach": lambda args: "Comes closer",
+    "look_around": lambda args: "Looks around the room",
+    "observe_target": lambda args: "Takes another look at the person",
+    "inspect_scene": lambda args: "Inspects the whole scene",
+    "move_head": lambda args: "Moves its head",
+    "move_arms": lambda args: "Moves its arms",
+    "change_led": lambda args: "Changes its chest light",
+    "display_image": lambda args: f"Shows a {args.get('expression', 'neutral')} face",
+    "activate_skill": lambda args: f"Loads the {args.get('name')} Skill",
+    "read_skill_resource": lambda args: f"Reads {args.get('resource')} from the {args.get('name')} Skill",
+    "play_audio": lambda args: f"Plays the {args.get('sound')} sound",
+    "respect_boundary": lambda args: "Stops and gives them space",
+    "done": lambda args: "Decides it is finished",
+}
+
+#: Why an approach ended, for somebody who has not read the controller.
+_APPROACH_ENDINGS = {
+    "arrived": "Arrives and stops",
+    "blocked": "Stops: something is in the way",
+    "lost_user": "Stops: it cannot see them any more",
+    "stale_reading": "Stops: its last reading is too old to trust",
+    "hazard_unavailable": "Stops: it cannot tell whether the way is clear",
+    "bearing_unavailable": "Does not set off: it cannot tell which way they are",
+    "alignment_failed": "Stops: it could not line up with them",
+    "step_limit": "Stops: it has taken as many steps as it may",
+    "timeout": "Stops: it ran out of time",
+    "aborted": "Stops: something interrupted it",
+    "drive_error": "Stops: the drive reported a failure",
+}
+
+#: Records that are how the loop works rather than what happened in the
+#: room. Kept in the playback, because the whole run is still there to step
+#: through, and left out of the plain telling.
+_MACHINERY = {
+    "turn_started",
+    "model_called",
+    "target_bound",
+    "skills_available",
+    # The list announces each Episode with a heading of its own.
+    "episode_started",
+}
+
+
+def _said_in(
+    step: Mapping[str, Any], storyboard: Optional[Mapping[str, Any]] = None
+) -> Tuple[str, bool]:
+    """One Episode Moment as a sentence, and whether it carries the story.
+
+    A Turn is four records — the Turn opening, the model answering, the note
+    it wrote, the call it made — and only the last two say anything a
+    visitor came to see. The Observation after them says something only when
+    it did not simply work.
+    """
+    kind = str(step.get("kind") or "")
+    facts = step.get("facts") or {}
+    if kind == "tool_called":
+        tool = str(facts.get("tool") or "")
+        args = facts.get("args") or {}
+        wording = _ACTIONS.get(tool)
+        return (wording(args) if wording else tool.replace("_", " ")), True
+    if kind == "observation":
+        result = facts.get("result") or {}
+        snapshot = facts.get("snapshot") or {}
+        distance = snapshot.get("distance_cm")
+        if "refused" in result:
+            return f"Refused: {result['refused']}", True
+        if _text(result.get("kind")) == "listening":
+            heard = result.get("transcript")
+            if heard:
+                return f"Hears “{heard}”", True
+            return "Nobody answers", True
+        stopped = _text(result.get("result"))
+        if stopped:
+            where = (
+                f" ({distance:g}cm away)"
+                if isinstance(distance, (int, float))
+                else ""
+            )
+            return (
+                _APPROACH_ENDINGS.get(stopped, stopped.replace("_", " ")) + where,
+                True,
+            )
+        return str(step.get("headline") or ""), False
+    if kind == "execution_failed":
+        return str(step.get("headline") or ""), True
+    if kind == "episode_finished":
+        board = storyboard or {}
+        if board.get("outcome") == "done":
+            # `done` was the Moment before this one, and said why it ended.
+            return f"The Episode ends after {board.get('turns', 0)} turn(s)", True
+        return f"The Episode ends: {board.get('ending') or 'it stops here'}", True
+    if kind == "handoff_requested":
+        return str(step.get("headline") or ""), True
+    return str(step.get("headline") or ""), kind not in _MACHINERY
+
+
 def playback_of(
     payload: Mapping[str, Any],
     actors: Sequence[str] = (DEFAULT_ACTOR,),
@@ -586,7 +688,13 @@ def playback_of(
             if found is None:
                 continue
             index, episode = found
+            note = ""
             for moment in episode["storyboard"]["moments"]:
+                summary, tells = _said_in(moment, episode["storyboard"])
+                if moment["kind"] == "decision_noted":
+                    # The note belongs to the call it was written for: one
+                    # row saying what it did and why, rather than two.
+                    note = moment["detail"]
                 steps.append(
                     {
                         **moment,
@@ -595,8 +703,13 @@ def playback_of(
                         "actor": episode["actor"],
                         "cue_kind": _text(episode["cue_kind"]),
                         "cue_text": episode.get("cue_text"),
+                        "summary": summary,
+                        "tells_the_story": tells and moment["kind"] != "decision_noted",
+                        "why": note if moment["kind"] == "tool_called" else "",
                     }
                 )
+                if moment["kind"] == "tool_called":
+                    note = ""
             continue
         beat = _perception_beat(record) or _cue_beat(record, actor_of, input_kind)
         if beat is None:
@@ -608,6 +721,11 @@ def playback_of(
                 "kind": beat.kind,
                 "label": beat.label,
                 "headline": beat.headline,
+                "summary": beat.headline,
+                # Everything Misty perceived belongs to the story: it is how
+                # it decided whether there was anything to respond to.
+                "tells_the_story": True,
+                "why": "",
                 "detail": beat.detail,
                 "facts": dict(record.get("facts") or {}),
                 # What the person said, or what was observed about them,

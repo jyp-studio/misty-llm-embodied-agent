@@ -243,3 +243,72 @@ def test_every_step_carries_what_the_page_draws_it_with():
                 assert step["robot"], "an Episode Moment with no pose to draw"
             else:
                 assert "robot" not in step, "perception invented a pose"
+
+
+# ---------------------------------------------------------------------------
+# The plain telling of a run
+# ---------------------------------------------------------------------------
+
+def told(key):
+    return [step for step in playback(key) if step["tells_the_story"]]
+
+
+def test_the_loops_own_bookkeeping_is_not_part_of_the_telling():
+    """`turn 1`, `model replied in 0ms`, `available Skills`: how the loop
+    works, not what happened in the room. `0ms` is not even true of a
+    recording, where the clock is a fake one."""
+    kinds = {step["kind"] for step in told("hey-greeting-only")}
+
+    assert not kinds & {
+        "turn_started", "model_called", "episode_started",
+        "target_bound", "skills_available", "decision_noted",
+    }
+    assert "tool_called" in kinds
+    assert [step["kind"] for step in playback("hey-greeting-only")].count("turn_started") == 4
+
+
+def test_each_action_is_one_sentence_with_the_reason_on_it():
+    """Two records — the note it wrote, the call it made — read as one
+    thing: what it did, and why it said it was doing it."""
+    steps = told("come-closer-hazard")
+    said = [step["summary"] for step in steps]
+
+    assert said[0].startswith("“"), "the person speaks first"
+    assert any(line.startswith("Says “") for line in said)
+    assert "Comes closer" in said
+    assert any("something is in the way" in line for line in said)
+    assert any("115cm away" in line for line in said)
+    # Whenever the model wrote a note, it rides on the call it was written
+    # for rather than sitting in a row of its own. (Recorded runs do not
+    # always carry one: `tool_choice` requires a call, not a sentence.)
+    for showcase in SHOWCASES:
+        steps = playback(showcase.key)
+        written = [step["detail"] for step in steps if step["kind"] == "decision_noted"]
+        carried = [step["why"] for step in steps if step.get("why")]
+
+        assert carried == written, showcase.key
+
+
+def test_a_result_is_shown_only_when_it_says_something():
+    """Every Tool call comes back; `ok` after speaking is not news, and a
+    row for each of them is what made the list twice as long as the run."""
+    spoken_results = [
+        step
+        for step in playback("hey-greeting-only")
+        if step["kind"] == "observation" and step["headline"] == "ok"
+    ]
+    heard = [step for step in told("vague-help") if step["summary"].startswith("Hears “")]
+
+    assert spoken_results and not any(step["tells_the_story"] for step in spoken_results)
+    assert heard, "what somebody actually said was left out"
+    assert any(step["summary"] == "Nobody answers" for step in told("hey-greeting-only"))
+
+
+def test_the_telling_is_shorter_than_the_record_and_never_longer():
+    for showcase in SHOWCASES:
+        steps = playback(showcase.key)
+        story = [step for step in steps if step["tells_the_story"]]
+
+        assert len(story) <= len(steps)
+        assert story, f"{showcase.key} has nothing to tell"
+        assert all(step["summary"] for step in steps), "a step with no sentence"

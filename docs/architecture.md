@@ -153,7 +153,11 @@ The page replays them without a key and animates the simulated Misty from
 each Moment's folded pose plus the Tool call, Observation and Snapshot. It
 plays one list per run — `playback_of` — which interleaves what the local
 gates perceived with the Moments of each Episode where it opened, so a run
-that never opened one still has its reasoning to show. That projection is
+that never opened one still has its reasoning to show. Each step carries a
+plain sentence and whether it tells the story: a Turn is four records, and
+only the call and the note written for it say anything a visitor came to
+see, so the page plays those by default and keeps every record behind a
+switch. That projection is
 applied when a recording is served rather than when it is made, so the page
 can change without re-running anything against a paid model. A
 recording is evidence about that model on that day, not a test: the

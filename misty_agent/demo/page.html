@@ -1182,9 +1182,11 @@ function placeBubble(who) {
     tip = [hx + 2, top - 16];
   } else {
     x = Math.min(STAGE.W - edge - width, Math.max(hx - BUBBLE.side - width, centre - cross));
-    y = Math.max(edge, Math.min(middle - 20 - height, top - 18 - height * 0.4));
+    // Above the top of the head, so the tail comes down to the face
+    // from above rather than running into the side of the head.
+    y = Math.max(edge, top - 24 - height);
     base = [x + width - 30, y + height];
-    tip = [hx - 34, middle - 10];
+    tip = [hx - 30, top + 4];
   }
   byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
   byId(`${who}BubbleTail`).setAttribute(

@@ -287,14 +287,18 @@
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
           <g class="bubble" id="mistyBubble" opacity="0">
-            <rect id="mistyBubbleBox" x="24" y="20" width="420" height="60" rx="22" fill="var(--misty)"/>
             <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
-            <text id="mistyBubbleText" x="46" y="54" font-size="20" fill="#fff"></text>
+            <g id="mistyBubbleBody">
+              <rect id="mistyBubbleBox" x="0" y="0" width="200" height="60" rx="22" fill="var(--misty)"/>
+              <text id="mistyBubbleText" x="22" y="34" font-size="20" fill="#fff"></text>
+            </g>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
-            <rect id="personBubbleBox" x="516" y="20" width="420" height="60" rx="22" fill="var(--person-bubble)"/>
             <path id="personBubbleTail" d="" fill="var(--person-bubble)" stroke="var(--person-bubble)" stroke-width="2" stroke-linejoin="round"/>
-            <text id="personBubbleText" x="538" y="54" font-size="20" fill="var(--person-ink)"></text>
+            <g id="personBubbleBody">
+              <rect id="personBubbleBox" x="0" y="0" width="200" height="60" rx="22" fill="var(--person-bubble)"/>
+              <text id="personBubbleText" x="22" y="34" font-size="20" fill="var(--person-ink)"></text>
+            </g>
           </g>
         </svg>
       </div>
@@ -996,6 +1000,7 @@ function drawScene(scene) {
   // once the run moves on.
   setBubble("misty", scene.speaking === "misty" ? scene.mistySays : "", false);
   setBubble("person", scene.speaking === "person" ? scene.personSays : "", scene.personObserved);
+  stage.distance = scene.distance;
   if (REDUCED || stage.now.x === null) stage.now.x = mistyXFor(scene.distance);
 }
 
@@ -1061,72 +1066,130 @@ function frame(clock) {
   const [ex, ey] = [mx + 22 * k, gy - 72 * k];
   const [fx, fy] = project([STAGE.personX - 2, 170, STAGE.front]);
   byId("cone").setAttribute("d", `M${ex.toFixed(1)} ${ey.toFixed(1)} L${fx.toFixed(1)} ${(fy - 26).toFixed(1)} L${fx.toFixed(1)} ${(fy + 26).toFixed(1)} Z`);
-  // Bubble tails follow whoever is speaking.
-  pointTail("misty", mx + 6 * k, gy - 94 * k);
-  const [hx, hy] = project([STAGE.personX - 2, 188, STAGE.front]);
-  pointTail("person", hx, hy);
+  placeBubble("misty");
+  placeBubble("person");
 }
 
-function setBubble(who, text, observed) {
-  const group = byId(`${who}Bubble`);
-  const box = byId(`${who}BubbleBox`);
-  const node = byId(`${who}BubbleText`);
-  // Hiding, the words fade out with the bubble instead of leaving it empty.
-  group.setAttribute("opacity", text ? "1" : "0");
-  if (!text) return;
-  node.textContent = "";
-  const shown = observed ? `Observed: ${text}` : text;
-  const lines = wrap(shown, 36).slice(0, 4);
-  const left = Number(box.getAttribute("x")) + 22;
-  lines.forEach((line, index) => {
-    const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
-    span.setAttribute("x", String(left));
-    span.setAttribute("dy", index === 0 ? "0" : "26");
-    span.textContent = line;
-    if (observed) span.setAttribute("font-style", "italic");
-    node.appendChild(span);
-  });
-  box.setAttribute("height", String(34 + lines.length * 26));
-  // As wide as its longest line: Misty's bubble grows rightwards from the
-  // left edge, the person's leftwards from the right edge.
-  const spans = [...node.querySelectorAll("tspan")];
-  const longest = Math.max(...spans.map((span) => span.getComputedTextLength()));
-  const width = Math.round(Math.max(96, Math.min(420, longest + 44)));
-  box.setAttribute("width", String(width));
-  if (who === "person") {
-    const right = 936;
-    box.setAttribute("x", String(right - width));
-    for (const span of spans) span.setAttribute("x", String(right - width + 22));
+/* A line's bubble sits above and in front of whoever says it: Misty faces
+   right, so its bubble grows rightwards from above its head; the person
+   faces left, so theirs sits beside and above their face, growing left.
+   Either may cross the middle of the stage a little when the line is
+   short. A line that needs wrapping stays on its speaker's side. */
+const BUBBLE = { font: 20, line: 26, pad: 22, gap: 26, cross: 40, min: 220, max: 420, lines: 5 };
+const bubbles = { misty: null, person: null };
+
+function bubbleRoom(who, cross) {
+  // How wide this speaker's bubble may be, given where they stand. One
+  // line starts at the speaker and reaches forward, a little past the
+  // middle. Wrapped, Misty's may also reach back over its own head, since
+  // it is short and there is room above it; the person's must stay clear
+  // of their face.
+  const middle = STAGE.W / 2;
+  const [x] = speakerHead(who);
+  let reach;
+  if (who === "misty") reach = cross ? middle + cross - (x - 36) : middle - 12;
+  else reach = (x - 40) - (middle - cross);
+  return Math.max(BUBBLE.min, Math.min(BUBBLE.max, reach)) - BUBBLE.pad * 2;
+}
+
+function speakerHead(who) {
+  // Where the speaker's head is on screen: [x, top, middle].
+  const k = scaleAt(STAGE.front);
+  if (who === "misty") {
+    const x = stage.now.x ?? mistyXFor(stage.distance);
+    const [mx, gy] = project([x, 0, STAGE.front]);
+    return [mx + 8 * k, gy - 92 * k, gy - 72 * k];
   }
+  const [hx, top] = project([STAGE.personX - 2, 188, STAGE.front]);
+  const [, middle] = project([STAGE.personX - 2, 170, STAGE.front]);
+  return [hx, top, middle];
 }
 
-function pointTail(who, speakerX, speakerY) {
-  // A tail from the bubble to whoever is speaking, so it is theirs at a
-  // glance rather than by which side of the stage it sits on.
-  const box = byId(`${who}BubbleBox`);
-  const boxLeft = Number(box.getAttribute("x"));
-  const boxRight = boxLeft + Number(box.getAttribute("width"));
-  const bottom = Number(box.getAttribute("y")) + Number(box.getAttribute("height"));
-  const base = Math.max(boxLeft + 36, Math.min(boxRight - 36, speakerX));
-  const reach = Math.max(18, Math.min(60, (speakerY - bottom) * 0.5));
-  const tip = base + (speakerX - base) * 0.4;
-  byId(`${who}BubbleTail`).setAttribute(
-    "d", `M${(base - 12).toFixed(1)} ${bottom - 2} L${tip.toFixed(1)} ${(bottom + reach).toFixed(1)} L${(base + 12).toFixed(1)} ${bottom - 2}`
-  );
+let measurer = null;
+function textWidth(text) {
+  if (!measurer) {
+    measurer = document.createElement("canvas").getContext("2d");
+    measurer.font = `${BUBBLE.font}px ${getComputedStyle(document.body).fontFamily}`;
+  }
+  return measurer.measureText(text).width;
 }
 
-function wrap(text, width) {
+function wrapToWidth(text, width) {
   // Words for spaced languages; characters for scripts written without spaces.
   const tokens = /\s/.test(text) ? text.split(/(\s+)/) : [...text];
   const lines = [];
   let line = "";
   for (const token of tokens) {
-    if ((line + token).length > width && line.trim()) { lines.push(line.trim()); line = token.trimStart(); }
+    if (line.trim() && textWidth(line + token) > width) { lines.push(line.trim()); line = token.trimStart(); }
     else line += token;
   }
   if (line.trim()) lines.push(line.trim());
-  if (lines.length > 4) lines[3] = lines[3].slice(0, width - 1) + "…";
+  if (lines.length > BUBBLE.lines) {
+    lines.length = BUBBLE.lines;
+    // Drop the last word, or the last character where words have no spaces.
+    const last = lines[BUBBLE.lines - 1];
+    lines[BUBBLE.lines - 1] = (/\s/.test(last) ? last.replace(/\s*\S*$/, "") : last.slice(0, -1)) + "…";
+  }
   return lines;
+}
+
+function setBubble(who, text, observed) {
+  const group = byId(`${who}Bubble`);
+  // Hiding, the words fade out with the bubble instead of leaving it empty.
+  group.setAttribute("opacity", text ? "1" : "0");
+  if (!text) { bubbles[who] = null; return; }
+  const shown = observed ? `Observed: ${text}` : text;
+  // Short enough for one line, it may cross the middle a little; longer,
+  // it wraps to stay on its own side.
+  let lines = wrapToWidth(shown, bubbleRoom(who, BUBBLE.cross));
+  if (lines.length > 1) lines = wrapToWidth(shown, bubbleRoom(who, 0));
+  const node = byId(`${who}BubbleText`);
+  node.textContent = "";
+  lines.forEach((line, index) => {
+    const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    span.setAttribute("x", String(BUBBLE.pad));
+    span.setAttribute("dy", index === 0 ? "0" : String(BUBBLE.line));
+    span.textContent = line;
+    if (observed) span.setAttribute("font-style", "italic");
+    node.appendChild(span);
+  });
+  const longest = Math.max(...lines.map(textWidth));
+  const width = Math.round(Math.max(96, longest + BUBBLE.pad * 2));
+  const height = 34 + lines.length * BUBBLE.line;
+  const box = byId(`${who}BubbleBox`);
+  box.setAttribute("width", String(width));
+  box.setAttribute("height", String(height));
+  bubbles[who] = { width, height, lines: lines.length };
+}
+
+function placeBubble(who) {
+  // Called every frame, so a bubble follows Misty as it drives.
+  const size = bubbles[who];
+  if (!size) return;
+  const { width, height, lines } = size;
+  const [hx, top, middle] = speakerHead(who);
+  const edge = 12;
+  // One line may cross the middle a little; a wrapped line never does,
+  // even when its speaker has come close to the middle themselves.
+  const cross = lines > 1 ? 0 : BUBBLE.cross;
+  const centre = STAGE.W / 2;
+  let x, y, base, tip;
+  if (who === "misty") {
+    x = Math.max(edge, Math.min(hx - 36, centre + cross - width));
+    y = Math.max(edge, top - BUBBLE.gap - height);
+    const bx = Math.max(x + 28, Math.min(x + width - 28, hx));
+    base = [bx, y + height];
+    tip = [hx + 2, top - 6];
+  } else {
+    x = Math.min(STAGE.W - edge - width, Math.max(hx - 40 - width, centre - cross));
+    y = Math.max(edge, Math.min(middle - 8 - height, top - 10 - height * 0.4));
+    base = [x + width - 30, y + height];
+    tip = [hx - 20, middle - 2];
+  }
+  byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+  byId(`${who}BubbleTail`).setAttribute(
+    "d", `M${(base[0] - 11).toFixed(1)} ${(base[1] - 2).toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] + 11).toFixed(1)} ${(base[1] - 2).toFixed(1)}`
+  );
 }
 
 /* ---------- Replay ---------- */

@@ -9,9 +9,9 @@
     --ink: #1d1d1f; --muted: #6e6e73; --faint: #86868b; --line: #e3e3e8;
     --panel: #f5f5f7; --page: #ffffff; --accent: #0071e3; --accent-ink: #0066cc;
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
-    --person: #5e5ce6; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
-    --misty: #0f7d6a; --world: #a85a00;
-    --room-top: #dde2ea; --room-left: #e4e8ef; --room-right: #e1e6ed; --room-back: #eaeef3;
+    --person: #5b7a92; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
+    --misty: #0b8aa6; --world: #a85a00;
+    --room-back: #eaeef3;
     --room-floor: #f8f9fb; --room-line: #e6e9ef; --room-edge: #d3d9e3; --room-pool: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
@@ -19,9 +19,9 @@
       --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
       --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
-      --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
-      --misty: #3ccfb0; --world: #f5a524;
-      --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
+      --person: #9fb8cc; --warn: #ff6961; --ok: #32d74b;
+      --misty: #52cfe6; --world: #f5a524;
+      --room-back: #202329;
       --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
     }
   }
@@ -29,9 +29,9 @@
     --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
     --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
-    --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
-    --misty: #3ccfb0; --world: #f5a524;
-    --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
+    --person: #9fb8cc; --warn: #ff6961; --ok: #32d74b;
+    --misty: #52cfe6; --world: #f5a524;
+    --room-back: #202329;
     --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
   }
   * { box-sizing: border-box; }
@@ -85,9 +85,9 @@
   .chat li:last-child { margin-bottom: 0; }
   .chat .bubble-row { display: flex; flex-direction: column; }
   .chat .bubble { max-width: 86%; padding: 7px 12px; overflow-wrap: anywhere; border-radius: 16px; }
-  .chat .person .bubble { align-self: flex-end; background: color-mix(in srgb, var(--person) 14%, var(--page)); border-bottom-right-radius: 5px; }
+  .chat .person .bubble { align-self: flex-end; background: color-mix(in srgb, var(--person) 18%, var(--page)); border-bottom-right-radius: 5px; }
   .chat .person .bubble.seen { font-style: italic; }
-  .chat .says .bubble { align-self: flex-start; background: color-mix(in srgb, var(--misty) 14%, var(--page)); border-bottom-left-radius: 5px; }
+  .chat .says .bubble { align-self: flex-start; background: color-mix(in srgb, var(--misty) 18%, var(--page)); border-bottom-left-radius: 5px; }
   .chat .who { align-self: flex-end; margin-bottom: 2px; color: var(--person); font-size: 12px; font-weight: 600; }
   /* The model's own trace: small print before what it does, the way a
      coding agent shows its thinking and tool calls above its answer. */
@@ -807,23 +807,23 @@ function mistyXFor(distance) {
 }
 
 function drawRoom() {
-  const X = 380, B = -560, FRONT = 520, TOP = 300;
+  // Wide and tall enough that only the back wall and the floor are ever in
+  // frame: no side walls, no ceiling. The floor's lines still meet at the
+  // centre, which is all the depth the stage needs.
+  const X = 900, B = -560, FRONT = 520, TOP = 600;
   const quad = (points) => points.map((p) => project(p).map((n) => n.toFixed(1)).join(",")).join(" ");
   const line = (a, b) => {
     const [x1, y1] = project(a), [x2, y2] = project(b);
     return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
   };
   let lines = "";
-  for (let x = -X; x <= X; x += 63.4) lines += line([x, 0, FRONT], [x, 0, B]);
+  for (let i = -14; i <= 14; i += 1) lines += line([i * 63.4, 0, FRONT], [i * 63.4, 0, B]);
   for (const z of [-420, -270, -110, 60, 220]) lines += line([-X, 0, z], [X, 0, z]);
   byId("room").innerHTML = `
-    <polygon points="${quad([[-X,TOP,B],[X,TOP,B],[X,TOP,FRONT],[-X,TOP,FRONT]])}" fill="var(--room-top)"/>
-    <polygon points="${quad([[-X,0,B],[-X,0,FRONT],[-X,TOP,FRONT],[-X,TOP,B]])}" fill="var(--room-left)"/>
-    <polygon points="${quad([[X,0,B],[X,0,FRONT],[X,TOP,FRONT],[X,TOP,B]])}" fill="var(--room-right)"/>
     <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="var(--room-back)"/>
     <polygon points="${quad([[-X,0,B],[X,0,B],[X,0,FRONT],[-X,0,FRONT]])}" fill="var(--room-floor)"/>
     <g stroke="var(--room-line)" stroke-width="1.2">${lines}</g>
-    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="none" stroke="var(--room-edge)"/>`;
+    ${line([-X, 0, B], [X, 0, B]).replace("<line", '<line stroke="var(--room-edge)"')}`;
   // Misty's tracks: four wheels, each with a spoke so driving shows.
   byId("wheels").innerHTML = [-20, -8, 4, 16].map((x) => `
     <g transform="translate(${x} -7)"><circle r="4.4" fill="#8a90a0"/>
@@ -935,7 +935,7 @@ function drawPerson(id, { x, z, exp, motion, t, stride = 0, turn = 0, opacity = 
   const [sx, gy] = project([x, 0, z]);
   const k = scaleAt(z);
   const tag = label
-    ? `<text x="-2" y="-196" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">${escapeText(label)}</text>`
+    ? `<text x="16" y="-186" text-anchor="start" font-size="11" font-weight="700" fill="var(--muted)">${escapeText(label)}</text>`
     : "";
   return `<g opacity="${opacity}">
     <ellipse cx="${sx}" cy="${gy}" rx="${60 * k}" ry="${12 * k}" fill="url(#pool)"/>

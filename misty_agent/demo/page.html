@@ -10,6 +10,7 @@
     --panel: #f5f5f7; --page: #ffffff; --accent: #0071e3; --accent-ink: #0066cc;
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #5e5ce6; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
+    --misty: #0f7d6a; --world: #a85a00;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -17,6 +18,7 @@
       --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
       --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
+      --misty: #3ccfb0; --world: #f5a524;
     }
   }
   :root[data-theme="dark"] {
@@ -24,6 +26,7 @@
     --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
     --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
+    --misty: #3ccfb0; --world: #f5a524;
   }
   * { box-sizing: border-box; }
   body {
@@ -38,7 +41,6 @@
   .chip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
   .chip::before { width: 8px; height: 8px; content: ""; background: var(--accent); border-radius: 50%; }
   .hero { max-width: 860px; margin: 0 auto; padding: 56px 24px 36px; text-align: center; }
-  .eyebrow { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
   h1 { margin: 10px 0 0; font-size: clamp(34px, 5.4vw, 56px); line-height: 1.06; letter-spacing: -.035em; }
   .hero p { margin: 16px auto 0; max-width: 700px; color: var(--muted); font-size: 17px; }
   main { max-width: 1180px; margin: 0 auto; padding: 0 32px 64px; }
@@ -57,44 +59,72 @@
   .example[disabled] { cursor: not-allowed; opacity: .55; }
 
   .theatre { margin-top: 28px; padding: 24px; background: var(--panel); border-radius: 22px; }
-  .theatre-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .theatre-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
   .theatre-head h2 { font-size: 22px; }
-  .theatre-head p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
-  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .badge { padding: 4px 10px; color: var(--muted); background: var(--page); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; font-weight: 600; }
-  .badge.kind { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; margin-top: 18px; }
+  .made-by { color: var(--faint); font-size: 13px; cursor: help; }
+  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
   .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 10; }
   .stage svg { display: block; width: 100%; height: 100%; }
-  .tool-pill { position: absolute; bottom: 12px; left: 12px; max-width: calc(100% - 24px); padding: 6px 12px; overflow: hidden; color: #fff; background: rgba(29,29,31,.86); border-radius: 999px; font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; transition: opacity .25s; }
-  .tool-pill[hidden] { display: block; opacity: 0; }
-  .now { display: grid; align-content: start; gap: 10px; padding: 18px; background: var(--page); border: 1px solid var(--line); border-radius: 16px; }
-  .now small { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-  .now strong { font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
-  .now p { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
-  .now .why { padding: 10px 12px; background: var(--panel); border-radius: 10px; color: var(--ink); font-size: 14px; }
-  .now .why:empty { display: none; }
-  .now .skills { color: var(--faint); font-size: 12px; }
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
-  .controls button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
-  .controls button svg { width: 20px; height: 20px; fill: currentColor; }
-  .controls button.primary { width: 46px; height: 46px; color: #fff; background: var(--accent); border-color: var(--accent); }
-  .controls button[disabled] { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
-  .controls input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
-  .controls span { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
-  .provenance { margin: 12px 0 0; color: var(--faint); font-size: 12px; }
-  .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 8px; color: var(--muted); font-size: 13px; }
-  .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
-  .timeline { position: relative; max-height: 340px; margin: 16px 0 0; padding: 0; overflow: auto; list-style: none; background: var(--page); border: 1px solid var(--line); border-radius: 14px; }
-  .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; }
-  .timeline li:last-child { border-bottom: 0; }
-  .timeline li.quiet { color: var(--faint); font-size: 12px; }
-  .timeline li.episode { display: block; color: var(--muted); background: var(--panel); cursor: default; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
-  .timeline li[aria-current="true"] { background: color-mix(in srgb, var(--accent) 12%, var(--page)); }
-  .timeline li .ico { text-align: center; }
-  .timeline li span { overflow-wrap: anywhere; }
-  .timeline li em { color: var(--muted); font-style: normal; }
-  .timeline li.perception { color: var(--muted); background: color-mix(in srgb, var(--panel) 55%, var(--page)); }
+  /* What Misty is doing and sensing right now, under the picture of it. */
+  .senses { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 10px; }
+  .senses span { padding: 3px 10px; color: var(--muted); background: var(--page); border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+  .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
+  .senses .sensing { color: var(--ink); }
+  .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
+  /* The run as a conversation. Its height follows the stage column. */
+  .chat-wrap { position: relative; min-height: 320px; background: var(--page); border: 1px solid var(--line); border-radius: 16px; }
+  .chat { position: absolute; inset: 0; margin: 0; padding: 14px; overflow: auto; list-style: none; scroll-behavior: smooth; }
+  .chat li { margin: 0 0 8px; cursor: pointer; font-size: 14px; line-height: 1.45; }
+  .chat li[hidden] { display: none; }
+  .chat li:last-child { margin-bottom: 0; }
+  .chat .bubble-row { display: flex; flex-direction: column; }
+  .chat .bubble { max-width: 86%; padding: 7px 12px; overflow-wrap: anywhere; border-radius: 16px; }
+  .chat .person .bubble { align-self: flex-end; background: color-mix(in srgb, var(--person) 14%, var(--page)); border-bottom-right-radius: 5px; }
+  .chat .person .bubble.seen { font-style: italic; }
+  .chat .says .bubble { align-self: flex-start; background: color-mix(in srgb, var(--misty) 14%, var(--page)); border-bottom-left-radius: 5px; }
+  .chat .who { align-self: flex-end; margin-bottom: 2px; color: var(--person); font-size: 12px; font-weight: 600; }
+  /* The model's own trace: small print before what it does, the way a
+     coding agent shows its thinking and tool calls above its answer. */
+  .chat .thought { margin: 0 0 3px; color: var(--faint); font-size: 12.5px; font-style: italic; }
+  .chat .thought::before { content: "\273B  "; font-style: normal; }
+  .chat .act { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
+  .chat .act::before { flex: none; width: 7px; height: 7px; content: ""; background: var(--misty); border-radius: 50%; transform: translateY(-1px); }
+  .chat .result { margin-left: 3px; padding-left: 14px; color: var(--muted); border-left: 1.5px solid var(--line); }
+  .chat .result.pushback { color: var(--world); border-left-color: var(--world); }
+  .chat .sense { color: var(--faint); font-size: 12.5px; }
+  .chat .sense svg { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; }
+  .chat .marker { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; cursor: default; }
+  .chat .marker::before, .chat .marker::after { flex: 1; height: 1px; content: ""; background: var(--line); }
+  .chat .machinery { color: var(--faint); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .chat .act, .chat .result, .chat .sense, .chat .machinery { width: fit-content; max-width: 100%; padding: 1px 6px; margin-left: -6px; border-radius: 8px; }
+  .chat .result { margin-left: 3px; }
+  .chat li[aria-current="true"] .hl { outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 2px; }
+  .chat .empty { color: var(--faint); cursor: default; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .controls > button { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
+  .controls > button svg { width: 20px; height: 20px; fill: currentColor; }
+  .controls > button.primary { width: 46px; height: 46px; color: #fff; background: var(--accent); border-color: var(--accent); }
+  .controls > button[disabled] { color: var(--faint); background: var(--panel); border-color: var(--line); cursor: not-allowed; }
+  .controls > span { flex: none; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+  /* The run's shape at a glance: one icon per step, on a line. */
+  .strip { position: relative; display: flex; flex: 1; align-items: center; justify-content: space-between; min-width: 0; height: 40px; }
+  .strip::before { position: absolute; left: 0; right: 0; top: 50%; height: 2px; content: ""; background: var(--line); }
+  .strip button { position: relative; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--muted); background: var(--panel); border: 0; border-radius: 50%; cursor: pointer; }
+  .strip button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .strip button.person { color: var(--person); }
+  .strip button.says, .strip button.acts { color: var(--misty); }
+  .strip button.pushback { color: var(--world); }
+  .strip button.ahead { opacity: .35; }
+  .strip button[aria-current="true"] { color: #fff; background: var(--accent); opacity: 1; }
+  .strip.dense button { width: 10px; height: 10px; background: currentColor; }
+  .strip.dense button svg { display: none; }
+  .strip.dense button[aria-current="true"] { width: 14px; height: 14px; background: var(--accent); }
+  .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 12px; color: var(--muted); font-size: 12.5px; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; }
+  .legend::before { width: 9px; height: 9px; content: ""; background: var(--dot); border-radius: 50%; }
+  .switch { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; cursor: pointer; }
+  .provenance { margin: 10px 0 0; color: var(--faint); font-size: 12px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   .live { margin-top: 28px; padding: 24px; border: 1px solid var(--line); border-radius: 22px; }
   .live p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
@@ -128,7 +158,7 @@
   .person .wave-arm { transform-box: fill-box; transform-origin: 0% 100%; }
   .person.waving .wave-arm { animation: wave .5s ease-in-out infinite alternate; }
   .person.walking { animation: walk 5s linear infinite; }
-  .bubble { transition: opacity .25s; }
+  svg .bubble { transition: opacity .25s; }
   .cone { opacity: 0; transition: opacity .25s; }
   .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
   .badge-float { opacity: 0; transition: opacity .3s; }
@@ -148,6 +178,7 @@
   }
   @media (max-width: 860px) {
     .stage-wrap { grid-template-columns: 1fr; }
+    .chat-wrap { height: 340px; }
     .live-form { grid-template-columns: 1fr; }
     .live-form input[type=file] { max-width: none; }
   }
@@ -157,7 +188,8 @@
     .hero p { font-size: 16px; }
     main { padding: 0 16px 48px; }
     .theatre, .live { padding: 16px; border-radius: 16px; }
-    .tool-pill { font-size: 11px; }
+    .controls { flex-wrap: wrap; }
+    .strip { flex-basis: 100%; order: 5; }
   }
 </style>
 </head>
@@ -185,14 +217,12 @@
 
   <section class="theatre" aria-labelledby="runTitle">
     <div class="theatre-head">
-      <div>
-        <span class="eyebrow" id="runEyebrow">Recorded run</span>
-        <h2 id="runTitle">Pick an example</h2>
-        <div class="badges" id="provenanceBadges"><span class="badge kind" id="provenanceBadge"></span></div>
-      </div>
+      <h2 id="runTitle">Pick an example</h2>
+      <span class="made-by" id="provenanceBadge"></span>
     </div>
 
     <div class="stage-wrap">
+      <div class="stage-col">
       <div class="stage" id="stage" aria-label="Animated simulation of Misty and the people it is talking to">
         <svg viewBox="0 0 640 400" role="img" aria-labelledby="stageText">
           <title id="stageText">Simulated scene</title>
@@ -206,7 +236,7 @@
           <g class="obstacle" id="obstacle">
             <rect x="-24" y="266" width="48" height="52" rx="6" fill="#f2b84b" stroke="#8a5a00" stroke-width="2"/>
             <path d="M-24 280 L24 300 M-24 300 L24 280" stroke="#8a5a00" stroke-width="3"/>
-            <text x="0" y="258" text-anchor="middle" font-size="13" font-weight="700" fill="var(--warn)">blocked</text>
+            <text x="0" y="258" text-anchor="middle" font-size="13" font-weight="700" fill="var(--world)">blocked</text>
           </g>
 
           <!-- People: B waits at the back, A stands in front of Misty -->
@@ -267,23 +297,22 @@
 
           <!-- Speech bubbles (text set from the run) -->
           <g class="bubble" id="mistyBubble" opacity="0">
-            <rect id="mistyBubbleBox" x="20" y="14" width="300" height="60" rx="16" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
+            <rect id="mistyBubbleBox" x="20" y="14" width="300" height="60" rx="16" fill="var(--page)" stroke="var(--misty)" stroke-width="1.5"/>
+            <path id="mistyBubbleTail" d="" fill="var(--page)" stroke="var(--misty)" stroke-width="1.5" stroke-linejoin="round"/>
             <text id="mistyBubbleText" x="36" y="40" font-size="14" fill="var(--ink)"></text>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
             <rect id="personBubbleBox" x="330" y="14" width="290" height="60" rx="16" fill="var(--page)" stroke="var(--person)" stroke-width="1.5"/>
+            <path id="personBubbleTail" d="" fill="var(--page)" stroke="var(--person)" stroke-width="1.5" stroke-linejoin="round"/>
             <text id="personBubbleText" x="346" y="40" font-size="14" fill="var(--ink)"></text>
           </g>
         </svg>
-        <div class="tool-pill" id="toolPill" hidden></div>
+      </div>
+        <div class="senses" id="senses"></div>
       </div>
 
-      <div class="now" aria-live="polite">
-        <small id="nowKind">Waiting</small>
-        <strong id="nowHeadline">Choose an example to replay it.</strong>
-        <p id="nowDetail"></p>
-        <div class="why" id="nowWhy"></div>
-        <span class="skills" id="nowSkills"></span>
+      <div class="chat-wrap">
+        <ol class="chat" id="timeline" aria-label="What Misty perceived, said and did, in order"></ol>
       </div>
     </div>
 
@@ -297,15 +326,18 @@
       <button id="replayForward" type="button" title="Next step" aria-label="Next step" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <input id="replayScrub" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Scrub through every step">
+      <div class="strip" id="replayStrip" role="group" aria-label="Jump to a step"></div>
       <span id="replayCounter"></span>
     </div>
-    <div class="list-head">
-      <span id="stepCount"></span>
-      <label class="switch"><input type="checkbox" id="showEverything"> Show every record</label>
+    <div class="foot">
+      <span class="legend" style="--dot: var(--person)">Person</span>
+      <span class="legend" style="--dot: var(--misty)">Misty</span>
+      <span class="legend" style="--dot: var(--world)">Something got in the way</span>
+      <span class="legend" style="--dot: var(--faint)">What Misty sensed</span>
+      <label class="switch"><input type="checkbox" id="showEverything"> Developer view</label>
     </div>
-    <ol class="timeline" id="timeline" aria-label="Everything this run perceived and did"></ol>
     <p class="provenance" id="provenanceMeans"></p>
+    <p class="sr-only" id="nowSpoken" aria-live="polite"></p>
   </section>
 
   <section class="live" aria-labelledby="live-title">
@@ -378,7 +410,6 @@ async function selectExample(key) {
   if (!response.ok) { showError(document_.error || "could not load the recording"); return; }
   const payload = document_.payload;
   loadRun({
-    eyebrow: "Recorded run",
     title: item.title,
     provenance: payload.execution.provenance,
     steps: payload.playback,
@@ -389,55 +420,42 @@ async function selectExample(key) {
 
 function loadRun(run) {
   pauseReplay();
-  byId("runEyebrow").textContent = run.eyebrow;
   byId("runTitle").textContent = run.title;
   const provenance = run.provenance;
-  const badges = [
-    `<span class="badge kind" id="provenanceBadge">${escapeText(
-      provenance.model === "not called" ? "recorded run · no model call" : provenance.kind.replaceAll("_", " "))}</span>`,
-    provenance.model ? `<span class="badge">model: ${escapeText(provenance.model)}</span>` : "",
-    provenance.recorded_on ? `<span class="badge">recorded ${escapeText(provenance.recorded_on)}</span>` : "",
-    `<span class="badge">${escapeText(provenance.robot || "Simulated Misty")}</span>`,
-  ];
-  byId("provenanceBadges").innerHTML = badges.join("");
-  // The long version is one hover away; the short one is the part nobody
-  // should be able to miss.
-  byId("provenanceBadges").title = provenance.detail || provenance.kind_means;
+  // One quiet line says who made the run; the long version is a hover away,
+  // and the part nobody should miss sits under the controls.
+  byId("provenanceBadge").textContent = madeBy(provenance);
+  byId("provenanceBadge").title = provenance.detail || provenance.kind_means;
   byId("provenanceMeans").textContent = provenance.hardware_unverified;
   state.steps = run.steps || [];
   state.actors = [...new Set(
     state.steps.filter((step) => step.actor).map((step) => step.actor)
   )];
+  state.replayAt = 0;
   chooseShown();
   const hasSteps = state.shown.length > 0;
   byId("replayJournal").disabled = !hasSteps;
-  byId("replayScrub").disabled = !hasSteps;
   setPlayButton("play");
   renderTimeline();
+  renderStrip();
   if (hasSteps) {
     showMoment(0);
   } else {
     drawScene(emptyScene());
-    setNow("Nothing to play", "This example has not been recorded yet.", "", "", "");
+    drawSenses(emptyScene());
+    showMessage("This example has not been recorded yet.");
     byId("replayCounter").textContent = "";
     stepButtons();
   }
 }
 
-const ICONS = {
-  episode_started: "▶", episode_finished: "■", target_bound: "◎", skills_available: "✦",
-  turn_started: "·", model_called: "·", decision_noted: "✎", tool_called: "⚙",
-  observation: "↩", handoff_requested: "✋", execution_failed: "⚠", tool_refused: "⊘",
-  visual_gate: "👁", wake: "👂", capture: "👂", asr: "👂", input: "💬",
-  observed_cue: "👁", cue_queued: "⏳", cue_dequeued: "⇄", cue_dropped: "✕",
-  cue_suppressed: "🤫", cue_suppression_started: "🤫", cue_suppression_cleared: "🤫",
-  cue_suppression_bypassed: "⇡",
-};
-const QUIET = new Set(["turn_started", "model_called"]);
-const SAYS_ITSELF = new Set([
-  "episode_started", "episode_finished", "target_bound", "skills_available",
-  "turn_started", "model_called", "visual_gate",
-]);
+function madeBy(provenance) {
+  if (provenance.model === "not called") return "Recorded · the model was never called · simulated";
+  const how = provenance.kind === "live_model_run" ? "Live run" : "Recorded";
+  const model = provenance.model ? ` with ${provenance.model}` : "";
+  const when = provenance.recorded_on ? ` on ${provenance.recorded_on}` : "";
+  return `${how}${model}${when} · simulated`;
+}
 
 function chooseShown() {
   const everything = byId("showEverything").checked;
@@ -445,83 +463,158 @@ function chooseShown() {
     .map((step, index) => index)
     .filter((index) => everything || state.steps[index].tells_the_story);
   state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
-  byId("replayScrub").max = String(Math.max(0, state.shown.length - 1));
-  byId("stepCount").textContent = everything
-    ? `${state.steps.length} records`
-    : `${state.shown.length} steps, out of ${state.steps.length} records`;
+}
+
+/* ---------- The run as a conversation ---------- */
+
+//: Small outline icons, drawn rather than typed: emoji render differently
+//: on every platform and shout over the text beside them.
+const ICON_PATHS = {
+  person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/>',
+  says: '<path d="M4 5h16v11H10l-6 4z"/>',
+  move: '<path d="M4 12h15M13 6l6 6-6 6"/>',
+  ear: '<path d="M6 10a7 7 0 1 1 13 3.6a10 10 0 0 1-2 2a8 8 0 0 0-2 3a4.5 4.5 0 0 1-6.8 1.4"/><path d="M10 10a3 3 0 1 1 5 2.2"/>',
+  eye: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  warn: '<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.2M12 17.2v.3"/>',
+  silence: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>',
+  body: '<rect x="4" y="5" width="16" height="12" rx="4"/><path d="M9 10.5v1.5M15 10.5v1.5M9 21h6"/>',
+  book: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v16H6.5A1.5 1.5 0 0 0 5 20.5z"/><path d="M5 20.5A1.5 1.5 0 0 0 6.5 22H19"/>',
+  sound: '<path d="M9 17V5l10-2v12"/><circle cx="6.5" cy="17" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/>',
+  stop: '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  flag: '<path d="M6 21V4h11l-2 4 2 4H6"/>',
+  wait: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  dot: '<circle cx="12" cy="12" r="3"/>',
+};
+
+function iconSvg(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ICON_PATHS.dot}</svg>`;
+}
+
+const ACT_ICONS = {
+  approach: "move", listen: "ear", look_around: "eye", observe_target: "eye",
+  inspect_scene: "eye", activate_skill: "book", read_skill_resource: "book",
+  play_audio: "sound", respect_boundary: "stop", done: "check",
+};
+
+function iconFor(step) {
+  const result = step.facts?.result || {};
+  switch (step.voice) {
+    case "person": return step.kind === "observed_cue" ? "eye" : "person";
+    case "says": return "says";
+    case "acts": return ACT_ICONS[step.facts?.tool] || "body";
+    case "result":
+      if (step.pushback) return "warn";
+      if (result.kind === "listening") return "silence";
+      return result.result === "arrived" ? "check" : "dot";
+    case "sense":
+      if (["wake", "capture", "asr"].includes(step.kind)) return "ear";
+      return step.kind === "visual_gate" ? "eye" : "wait";
+    case "marker": return step.kind === "handoff_requested" ? "wait" : "flag";
+    default: return "dot";
+  }
 }
 
 function renderTimeline() {
-  let episode = -1;
-  const rows = [];
-  state.shown.map((index) => state.steps[index]).forEach((step, index) => {
-    if (step.source === "episode" && step.episode !== episode) {
-      episode = step.episode;
-      rows.push(`<li class="episode">Episode ${episode + 1} · ${escapeText(step.actor)}</li>`);
+  // The model's note is shown as small print above what it did, the way a
+  // coding agent shows its reasoning above its answer. With every record
+  // showing, the note has a row of its own, so it is not repeated.
+  const everything = byId("showEverything").checked;
+  const many = state.actors.length > 1;
+  let actor = null;
+  byId("timeline").innerHTML = state.shown.map((absolute, at) => {
+    const step = state.steps[absolute];
+    let lead = "";
+    if (many && step.source === "episode" && step.actor !== actor) {
+      actor = step.actor;
+      lead = `<div class="marker">Talking with ${escapeText(actor)}</div>`;
     }
-    const classes = [
-      step.source === "perception" ? "perception" : "",
-      QUIET.has(step.kind) ? "quiet" : "",
-    ].filter(Boolean).join(" ");
-    const why = step.why ? ` <em>${escapeText(step.why)}</em>` : "";
-    rows.push(`<li data-step="${index}" class="${classes}"><span class="ico" aria-hidden="true">${ICONS[step.kind] || "•"}</span><span>${escapeText(step.summary)}${why}</span></li>`);
-  });
-  byId("timeline").innerHTML = rows.join("");
+    const why = step.why && !everything ? `<p class="thought">${escapeText(step.why)}</p>` : "";
+    return `<li data-step="${at}" hidden>${lead}${why}${rowFor(step, many)}</li>`;
+  }).join("");
 }
 
-function describeStep(step) {
-  if (step.source === "perception") {
-    return { label: step.label, headline: step.summary, detail: step.detail || "" };
+function rowFor(step, many) {
+  switch (step.voice) {
+    case "person": {
+      const seen = step.kind === "observed_cue";
+      const who = many && step.actor ? `<span class="who">${escapeText(step.actor)}</span>` : "";
+      const words = seen ? `Seen: ${step.text}` : step.text;
+      return `<div class="bubble-row person">${who}<div class="bubble hl${seen ? " seen" : ""}">${escapeText(words)}</div></div>`;
+    }
+    case "says":
+      return `<div class="bubble-row says"><div class="bubble hl">${escapeText(step.text)}</div></div>`;
+    case "acts":
+      return `<div class="act hl">${escapeText(step.summary)}</div>`;
+    case "result":
+      return `<div class="result hl${step.pushback ? " pushback" : ""}">${escapeText(step.summary)}</div>`;
+    case "sense":
+      return `<div class="sense hl" title="${escapeText(step.label || "")}">${iconSvg(iconFor(step))}${escapeText(step.summary)}</div>`;
+    case "marker":
+      return `<div class="marker hl">${escapeText(step.summary)}</div>`;
+    default:
+      return `<div class="machinery hl">${escapeText(step.summary)}</div>`;
   }
-  const label = {
-    episode_started: "Episode started", episode_finished: "Episode ended",
-    target_bound: "Interaction Target", skills_available: "Skills available",
-    turn_started: "Turn", model_called: "Model", decision_noted: "Why",
-    tool_called: "Tool call", observation: "Result", handoff_requested: "Handoff notice",
-    execution_failed: "Failure", tool_refused: "Refused",
-  }[step.kind] || step.kind.replaceAll("_", " ");
-  // The exact record stays in the detail line, under the plain sentence.
-  return { label, headline: step.summary, detail: step.headline === step.summary ? (step.detail || "") : step.headline };
+}
+
+function renderStrip() {
+  const strip = byId("replayStrip");
+  strip.innerHTML = state.shown.map((absolute, at) => {
+    const step = state.steps[absolute];
+    const said = step.text && ["person", "says"].includes(step.voice) ? `“${step.text}”` : step.summary;
+    const label = `${at + 1}. ${said.length > 90 ? `${said.slice(0, 89)}…` : said}`;
+    const classes = `${step.voice}${step.pushback ? " pushback" : ""}`;
+    return `<button type="button" data-step="${at}" class="${classes}" title="${escapeText(label)}" aria-label="${escapeText(label)}">${iconSvg(iconFor(step))}</button>`;
+  }).join("");
+  fitStrip();
+}
+
+function fitStrip() {
+  // Icons while they fit; dots once there are too many to tell apart.
+  const strip = byId("replayStrip");
+  strip.classList.toggle("dense", state.shown.length * 30 > strip.clientWidth);
 }
 
 function keepInView(row) {
-  // Scroll the list, never the page: playback must not move the reader.
+  // Scroll the conversation, never the page: playback must not move the
+  // reader. The newest line sits at the bottom, as in any chat.
   const list = byId("timeline");
-  const top = row.offsetTop - list.offsetTop;
-  if (top < list.scrollTop) list.scrollTop = top;
-  else if (top + row.offsetHeight > list.scrollTop + list.clientHeight) {
-    list.scrollTop = top + row.offsetHeight - list.clientHeight;
-  }
+  const top = row.offsetTop;
+  const bottom = top + row.offsetHeight;
+  if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight + 14;
+  else if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 14);
 }
 
-function setNow(kind, headline, detail, why, skills) {
-  byId("nowKind").textContent = kind;
-  byId("nowHeadline").textContent = headline;
-  byId("nowDetail").textContent = detail;
-  byId("nowWhy").textContent = why;
-  byId("nowSkills").textContent = skills;
+function showMessage(text) {
+  byId("timeline").innerHTML = `<li class="empty">${escapeText(text)}</li>`;
 }
 
 function showMoment(index) {
   if (!state.shown.length) return;
   const at = Math.max(0, Math.min(index, state.shown.length - 1));
   state.replayAt = at;
-  const absolute = state.shown[at];
-  const step = state.steps[absolute];
-  byId("replayScrub").value = String(at);
+  const step = state.steps[state.shown[at]];
   byId("replayCounter").textContent = `${at + 1} / ${state.shown.length}`;
+  // Lines appear as the run reaches them, so the ending is not given away
+  // before anybody presses play.
+  let current = null;
   for (const row of document.querySelectorAll("#timeline [data-step]")) {
-    const current = Number(row.dataset.step) === at;
-    row.setAttribute("aria-current", String(current));
-    if (current) keepInView(row);
+    const n = Number(row.dataset.step);
+    row.hidden = n > at;
+    row.setAttribute("aria-current", String(n === at));
+    if (n === at) current = row;
+  }
+  if (current) keepInView(current);
+  for (const dot of document.querySelectorAll("#replayStrip [data-step]")) {
+    const n = Number(dot.dataset.step);
+    dot.classList.toggle("ahead", n > at);
+    dot.setAttribute("aria-current", String(n === at));
   }
   stepButtons();
-  const scene = sceneAt(absolute);
+  const scene = sceneAt(state.shown[at]);
   drawScene(scene);
-  const text = describeStep(step);
-  const why = step.why || (scene.why && step.kind !== "decision_noted" ? scene.why : "");
-  const skills = step.active_skills?.length ? step.skill_status : "";
-  setNow(text.label, text.headline, text.detail, why, skills || "");
+  drawSenses(scene);
+  byId("nowSpoken").textContent = step.text || step.summary;
 }
 
 /* ---------- From moments to a scene ---------- */
@@ -556,28 +649,33 @@ function sceneAt(index) {
     tool: null, args: {}, mistySays: "", personSays: "", personObserved: false,
     why: "", driving: false, obstacle: false, flash: false, halted: false,
     actor: "", waiting: null, done: false, caption: "", cue: null, skill: "",
-    looking: false, waving: false, sensing: "",
+    looking: false, waving: false, sensing: "", faceKnown: false,
+    distanceKnown: false, lastSpeaker: "",
   };
   let previousLed = null;
   for (let i = 0; i <= index; i += 1) {
     const step = state.steps[i];
     const last = i === index;
     if (step.source === "perception") {
-      // Before any Episode — and sometimes instead of one. Nothing here
+      // Before any Episode, and sometimes instead of one. Nothing here
       // moves the robot; it is what the robot is making of the room.
-      // The caption says which sense this is; the panel beside it says what
-      // that sense made of the room. Saying both in both places is how the
-      // page ended up repeating itself.
-      scene.sensing = last ? step.label : scene.sensing;
+      if (last) scene.sensing = SENSING[step.kind] || "";
       if (step.kind === "visual_gate") {
         const facts = step.facts || {};
         scene.present = (facts.person_count ?? 1) > 0;
+        scene.faceKnown = true;
         scene.looking = Boolean(facts.looking);
         scene.waving = Boolean(facts.hand_visible) && Boolean(facts.looking);
       }
       if (step.kind === "input" || step.kind === "observed_cue") {
-        scene.personSays = step.text || step.headline;
+        // Somebody else speaking while Misty is busy with A: they step in
+        // at the back, and their words are marked as theirs.
+        const other = scene.actor && step.actor && step.actor !== scene.actor && !scene.done;
+        if (other) scene.waiting = step.actor;
+        const words = step.text || step.headline;
+        scene.personSays = other ? `${step.actor}: ${words}` : words;
         scene.personObserved = step.kind === "observed_cue";
+        scene.lastSpeaker = "person";
       }
       if (step.kind === "asr" && step.text) scene.personSays = step.text;
       continue;
@@ -586,7 +684,7 @@ function sceneAt(index) {
     if (step.kind === "episode_started") {
       scene.actor = step.actor; scene.waiting = null; scene.present = true;
       scene.tool = null; scene.mistySays = ""; scene.done = false; scene.why = "";
-      scene.sensing = ""; scene.waving = false;
+      scene.sensing = ""; scene.waving = false; scene.lastSpeaker = "person";
       if (step.cue_text) {
         scene.personObserved = step.cue_kind !== "explicit_request";
         scene.personSays = step.cue_text;
@@ -599,7 +697,7 @@ function sceneAt(index) {
     } else if (step.kind === "tool_called") {
       scene.tool = step.facts.tool; scene.args = step.facts.args || {};
       scene.driving = false; scene.skill = ""; scene.stopped = "";
-      if (scene.tool === "speak") scene.mistySays = scene.args.text;
+      if (scene.tool === "speak") { scene.mistySays = scene.args.text; scene.lastSpeaker = "misty"; }
       if (scene.tool === "activate_skill") scene.skill = `Skill: ${scene.args.name}`;
       if (scene.tool === "read_skill_resource") scene.skill = `Reading ${scene.args.resource}`;
       if (scene.tool === "play_audio") scene.skill = `♪ ${scene.args.sound}`;
@@ -609,8 +707,10 @@ function sceneAt(index) {
       if (typeof snapshot.distance_cm === "number") {
         if (scene.tool === "approach" && snapshot.distance_cm !== scene.distance) scene.driving = last;
         scene.distance = snapshot.distance_cm;
+        scene.distanceKnown = true;
       }
       scene.present = snapshot.face_present !== false || scene.tool === "listen";
+      if (typeof snapshot.face_present === "boolean") scene.faceKnown = true;
       if (scene.tool === "approach") {
         scene.stopped = result.result === "arrived" ? "" : String(result.result || "").replaceAll("_", " ");
         if (["blocked", "hazard_unavailable"].includes(result.result)) scene.obstacle = true;
@@ -619,6 +719,7 @@ function sceneAt(index) {
       if (scene.tool === "respect_boundary") scene.halted = true;
       if (typeof result.transcript === "string" && result.transcript.trim()) {
         scene.personSays = result.transcript; scene.personObserved = false;
+        scene.lastSpeaker = "person";
       }
     } else if (step.kind === "handoff_requested") {
       scene.waiting = state.actors.find((actor) => actor !== scene.actor) || "B";
@@ -633,10 +734,32 @@ function sceneAt(index) {
   return scene;
 }
 
+//: What Misty is doing with its senses before any Episode, in words.
+const SENSING = {
+  wake: "Listening for its name", capture: "Listening", asr: "Turning speech into text",
+  visual_gate: "Watching", observed_cue: "Watching",
+  cue_queued: "Deciding whether to respond", cue_dequeued: "Deciding whether to respond",
+  cue_dropped: "Deciding whether to respond", cue_suppressed: "Holding back",
+  cue_suppression_started: "Holding back", cue_suppression_cleared: "Ready again",
+  cue_suppression_bypassed: "Called again",
+};
+
+function drawSenses(scene) {
+  // What Misty is doing and what it knows of the person, as a few short
+  // labels under the stage rather than a panel of prose beside it.
+  const chips = [];
+  const doing = scene.sensing || captionFor(scene);
+  if (doing) chips.push([scene.sensing ? "sensing" : "doing", doing]);
+  if (scene.stopped) chips.push(["pushback", `Stopped: ${scene.stopped}`]);
+  if (scene.faceKnown) chips.push(["", scene.present ? "Face in view" : "Nobody in view"]);
+  if (scene.distanceKnown) chips.push(["", `${Math.round(scene.distance)} cm away`]);
+  if (scene.waiting) chips.push(["", `${scene.waiting} is waiting`]);
+  byId("senses").innerHTML = chips
+    .map(([kind, text]) => `<span class="${kind}">${escapeText(text)}</span>`).join("");
+}
+
 function captionFor(scene) {
-  if (scene.sensing) return scene.sensing;
-  if (scene.done) return "Episode finished. Misty chose to stop.";
-  if (scene.stopped) return `Stopped: ${scene.stopped}`;
+  if (scene.done) return "Finished";
   const words = {
     speak: "Speaking", listen: "Listening", approach: "Driving closer",
     look_around: "Looking around", observe_target: "Taking a quick look at the person",
@@ -660,7 +783,8 @@ function emptyScene() {
     robot: POSE_AT_REST, distance: 190, present: true, tool: null, args: {},
     mistySays: "", personSays: "", personObserved: false, why: "", driving: false,
     obstacle: false, flash: false, halted: false, actor: "", waiting: null,
-    done: false, skill: "", caption: "",
+    done: false, skill: "", caption: "", faceKnown: false, distanceKnown: false,
+    lastSpeaker: "",
   };
 }
 
@@ -727,21 +851,17 @@ function drawScene(scene) {
   personB.classList.toggle("waving", Boolean(scene.waiting));
   byId("personBLabel").textContent = scene.waiting || "";
 
-  setBubble("misty", scene.mistySays, false);
-  setBubble("person", scene.personSays, scene.personObserved);
-  // What Misty is doing, in words. The exact call is in the panel beside
-  // the stage and in the list below it; the words it spoke are in the
-  // bubble. Putting all three here is how one sentence got said three times.
-  const pill = byId("toolPill");
-  pill.hidden = !scene.caption;
-  pill.textContent = scene.caption || "";
+  // Whoever spoke last is in full; the line before it stays, faded, so the
+  // exchange can still be read as a pair.
+  setBubble("misty", scene.mistySays, false, x, scene.lastSpeaker === "person");
+  setBubble("person", scene.personSays, scene.personObserved, 470, scene.lastSpeaker === "misty");
 }
 
-function setBubble(who, text, observed) {
+function setBubble(who, text, observed, speakerX, earlier) {
   const group = byId(`${who}Bubble`);
   const box = byId(`${who}BubbleBox`);
   const node = byId(`${who}BubbleText`);
-  group.setAttribute("opacity", text ? "1" : "0");
+  group.setAttribute("opacity", text ? (earlier ? ".4" : "1") : "0");
   node.textContent = "";
   if (!text) return;
   const shown = observed ? `Observed: ${text}` : text;
@@ -755,7 +875,18 @@ function setBubble(who, text, observed) {
     if (observed) span.setAttribute("font-style", "italic");
     node.appendChild(span);
   });
-  box.setAttribute("height", String(26 + lines.length * 18));
+  const height = 26 + lines.length * 18;
+  box.setAttribute("height", String(height));
+  // A tail pointing at whoever is speaking, so the bubble is theirs at a
+  // glance rather than by which side of the stage it sits on.
+  const boxLeft = Number(box.getAttribute("x"));
+  const boxRight = boxLeft + Number(box.getAttribute("width"));
+  const bottom = Number(box.getAttribute("y")) + height;
+  const base = Math.max(boxLeft + 26, Math.min(boxRight - 26, speakerX));
+  const tip = base + (speakerX - base) * 0.5;
+  byId(`${who}BubbleTail`).setAttribute(
+    "d", `M${base - 9} ${bottom - 2} L${tip} ${bottom + 16} L${base + 9} ${bottom - 2}`
+  );
 }
 
 function wrap(text, width) {
@@ -779,12 +910,13 @@ function atShown(index) {
 }
 
 function delayFor(step) {
-  if (step.source === "perception") return step.kind === "visual_gate" ? 520 : 700;
-  if (QUIET.has(step.kind)) return 260;
-  if (step.kind === "tool_called" && step.facts.tool === "speak") {
-    return Math.min(4200, 900 + String(step.facts.args?.text || "").length * 45);
+  // Long enough to read what appeared, and no longer.
+  if (step.voice === "person" || step.voice === "says") {
+    return Math.min(4200, 900 + String(step.text || "").length * 45) + (step.why ? 900 : 0);
   }
-  if (step.kind === "tool_called") return 1300;
+  if (step.source === "perception") return step.kind === "visual_gate" ? 520 : 800;
+  if (step.voice === "machinery") return 260;
+  if (step.kind === "tool_called") return step.why ? 2000 : 1300;
   if (step.kind === "observation") return 1000;
   if (step.kind === "decision_noted") return 1300;
   return 650;
@@ -889,7 +1021,6 @@ async function runLive() {
       : "";
     note.textContent = `Done: ${payload.storyboard.ending}.${seen} It is playing above.`;
     loadRun({
-      eyebrow: "Live run",
       title: `“${said || "(no words)"}”`,
       provenance: {
         ...payload.provenance,
@@ -909,7 +1040,7 @@ async function runLive() {
 }
 
 function showError(message) {
-  setNow("Error", message, "", "", "");
+  showMessage(message);
 }
 
 function asBase64(file) {
@@ -947,14 +1078,16 @@ byId("showEverything").addEventListener("change", () => {
   const absolute = state.shown[state.replayAt];
   chooseShown();
   renderTimeline();
+  renderStrip();
   // Stay where the reader was: the nearest shown step at or before it.
   const at = state.shown.findIndex((index) => index >= absolute);
   showMoment(at === -1 ? state.shown.length - 1 : at);
 });
-byId("replayScrub").addEventListener("input", (event) => {
-  pauseReplay();
-  showMoment(Number(event.target.value));
+byId("replayStrip").addEventListener("click", (event) => {
+  const dot = event.target.closest("[data-step]");
+  if (dot) { pauseReplay(); showMoment(Number(dot.dataset.step)); }
 });
+window.addEventListener("resize", fitStrip);
 byId("runLive").addEventListener("click", runLive);
 boot().catch((error) => showError(String(error)));
 </script>

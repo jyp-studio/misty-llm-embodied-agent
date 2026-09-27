@@ -281,12 +281,21 @@ def test_each_action_is_one_sentence_with_the_reason_on_it():
     # Whenever the model wrote a note, it rides on the call it was written
     # for rather than sitting in a row of its own. (Recorded runs do not
     # always carry one: `tool_choice` requires a call, not a sentence.)
+    # A note that only repeats the line Misty is about to say is dropped:
+    # above the bubble, it reads as the robot saying everything twice.
     for showcase in SHOWCASES:
         steps = playback(showcase.key)
         written = [step["detail"] for step in steps if step["kind"] == "decision_noted"]
         carried = [step["why"] for step in steps if step.get("why")]
+        dropped = [
+            step["text"]
+            for step in steps
+            if step["kind"] == "tool_called" and step["voice"] == "says" and not step["why"]
+        ]
 
-        assert carried == written, showcase.key
+        assert all(note in written for note in carried), showcase.key
+        for note in set(written) - set(carried):
+            assert note in dropped, (showcase.key, note)
 
 
 def test_a_result_is_shown_only_when_it_says_something():
@@ -312,3 +321,58 @@ def test_the_telling_is_shorter_than_the_record_and_never_longer():
         assert len(story) <= len(steps)
         assert story, f"{showcase.key} has nothing to tell"
         assert all(step["summary"] for step in steps), "a step with no sentence"
+
+
+# ---------------------------------------------------------------------------
+# Who each step belongs to
+# ---------------------------------------------------------------------------
+
+def test_every_step_says_whose_it_is():
+    """The page draws a step by whose it is: the person's words and Misty's
+    words as bubbles, an action as a line, what came back indented under
+    it. Without this, all four looked the same and nobody could tell a
+    request from a reply."""
+    from misty_agent.demo import VOICES
+
+    for showcase in SHOWCASES:
+        for step in playback(showcase.key):
+            assert step["voice"] in VOICES, (showcase.key, step["kind"])
+            if step["voice"] in {"person", "says"}:
+                assert step["text"], (showcase.key, step["summary"])
+
+    voices = {step["summary"]: step["voice"] for step in told("come-closer-hazard")}
+    assert voices["Comes closer"] == "acts"
+    assert voices["Nobody answers"] == "result"
+    blocked = next(step for step in told("come-closer-hazard") if "in the way" in step["summary"])
+    assert blocked["voice"] == "result" and blocked["pushback"]
+    heard = next(step for step in told("vague-help") if step["summary"].startswith("Hears “"))
+    assert heard["voice"] == "person" and heard["text"] in heard["summary"]
+
+
+def test_someone_speaking_during_an_episode_appears_where_they_spoke():
+    """B asks for a turn while Misty is listening to A. Spliced in whole at
+    the place A's Episode opened, B's words came after A's goodbye, as if
+    Misty had said goodbye for no reason."""
+    story = [step["summary"] for step in told("a-then-b")]
+
+    asked = story.index("“Hey Misty, my turn.”")
+    assert story.index("Listens for an answer") < asked
+    assert asked < story.index("B is waiting for a turn")
+    assert asked < next(i for i, line in enumerate(story) if "goodbye" in line)
+    who = {step["text"]: step.get("actor") for step in told("a-then-b") if step["voice"] == "person"}
+    assert who["Hey Misty, my turn."] == "B"
+
+
+def test_what_was_understood_keeps_the_order_it_was_understood_in():
+    """A cue carries the time its words were spoken, and is detected only
+    once they have been transcribed. Sorting by time alone put the words
+    before the wake phrase that let them through."""
+    story = [step["summary"] for step in told("hey-greeting-only")]
+
+    assert story[:4] == [
+        "Wake phrase recognised",
+        "An utterance was captured",
+        "Transcribed",
+        "“Hey Misty, hello!”",
+    ]
+    assert story[-1] == "Conversation over after 4 turns"

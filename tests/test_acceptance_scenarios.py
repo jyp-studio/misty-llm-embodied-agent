@@ -300,10 +300,11 @@ def test_a_run_says_which_of_the_four_things_it_is():
 
 def test_the_page_can_play_pause_restart_and_scrub_every_moment():
     """Ticket 15 asks for all four, over the whole run rather than the first
-    Episode: the scrubber's range is every Moment the run produced."""
+    Episode. The scrubber is a strip with one icon per step, so the shape of
+    a run shows before it is played."""
     page = answer_page()
 
-    assert 'id="replayScrub"' in page and 'type="range"' in page
+    assert 'id="replayStrip"' in page and "function renderStrip()" in page
     assert "function playReplay()" in page
     assert "function pauseReplay()" in page
     assert "function restartReplay()" in page
@@ -315,7 +316,7 @@ def test_the_page_can_play_pause_restart_and_scrub_every_moment():
     assert 'id="replayBack"' in page and 'id="replayForward"' in page
     assert "function stepBy(" in page
     # Scrubbing pauses rather than fighting the timer.
-    assert 'byId("replayScrub").addEventListener("input"' in page
+    assert 'byId("replayStrip").addEventListener("click"' in page
     assert "pauseReplay();" in page
     # Over one list covering the whole run — every Episode's Moments, and
     # the perception before them. `tests/test_demo_recordings.py` holds the

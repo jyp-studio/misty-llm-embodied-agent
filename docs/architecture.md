@@ -151,13 +151,18 @@ and writes each run to `misty_agent/demo/recordings/` in the scripted
 route's shape, labelled `recorded_model_run` with the model name and date.
 The page replays them without a key and animates the simulated Misty from
 each Moment's folded pose plus the Tool call, Observation and Snapshot. It
-plays one list per run — `playback_of` — which interleaves what the local
-gates perceived with the Moments of each Episode where it opened, so a run
-that never opened one still has its reasoning to show. Each step carries a
-plain sentence and whether it tells the story: a Turn is four records, and
-only the call and the note written for it say anything a visitor came to
-see, so the page plays those by default and keeps every record behind a
-switch. That projection is
+plays one list per run — `playback_of` — which keeps the runtime's
+records in the order it wrote them and lets each Episode's Moments out as
+time passes, so a run that never opened an Episode still has its reasoning
+to show, and somebody speaking during one appears where they spoke. Each
+step carries a plain sentence, whether it tells the story, and its voice:
+the person's words, Misty's words, Misty's other actions, what came back,
+what Misty sensed on its own, or a marker. The page draws the run as a
+conversation from those voices beside the stage, with the model's note as
+small print above the call it was written for, and a strip of one icon per
+step as the scrubber. A Turn is four records, and only the call and its note
+say anything a visitor came to see, so the page plays those by default and
+keeps every record behind a developer switch. That projection is
 applied when a recording is served rather than when it is made, so the page
 can change without re-running anything against a paid model. A
 recording is evidence about that model on that day, not a test: the

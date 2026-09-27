@@ -1302,3 +1302,15 @@ def test_a_non_explicit_cue_is_never_presented_as_something_the_person_said():
         float(beat["detail"].split("s of suppression")[0]) for beat in suppressed
     ]
     assert remaining[0] == 30 and 0 < remaining[1] < 30
+
+
+def test_the_page_draws_every_voice_a_step_can_have():
+    """A voice the page has no case for falls through to the small grey
+    print meant for the loop's bookkeeping, and a person's words would
+    quietly stop being a bubble."""
+    from misty_agent.demo import VOICES
+
+    page = answer("GET", "/").body.decode("utf-8")
+    rows = page[page.index("function rowFor"):page.index("function renderStrip")]
+    for voice in set(VOICES) - {"note", "machinery"}:
+        assert f'case "{voice}"' in rows, voice

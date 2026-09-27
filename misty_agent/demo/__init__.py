@@ -636,11 +636,69 @@ def _said_in(
         board = storyboard or {}
         if board.get("outcome") == "done":
             # `done` was the Moment before this one, and said why it ended.
-            return f"The Episode ends after {board.get('turns', 0)} turn(s)", True
-        return f"The Episode ends: {board.get('ending') or 'it stops here'}", True
+            turns = int(board.get("turns") or 0)
+            return f"Conversation over after {turns} turn{'' if turns == 1 else 's'}", True
+        return f"Conversation over: {board.get('ending') or 'it stops here'}", True
     if kind == "handoff_requested":
-        return str(step.get("headline") or ""), True
+        return "Someone else is waiting for a turn", True
     return str(step.get("headline") or ""), kind not in _MACHINERY
+
+
+#: Who a step belongs to, which is how the page draws it: the person's words
+#: and Misty's words as bubbles, Misty's other actions as plain lines, what
+#: came back as an indented line under the action, and everything Misty
+#: sensed on its own as small print.
+VOICES = ("person", "says", "acts", "result", "sense", "marker", "note", "machinery")
+
+#: Approach endings where the world got in the way, rather than Misty
+#: arriving. The page marks these in one colour, so they can be found at a
+#: glance.
+_PUSHBACK_ENDINGS = set(_APPROACH_ENDINGS) - {"arrived"}
+
+
+def _voice_of(step: Mapping[str, Any]) -> Tuple[str, str, bool]:
+    """Who a step belongs to, the words it carries, and whether it is the
+    world pushing back."""
+    kind = str(step.get("kind") or "")
+    facts = step.get("facts") or {}
+    if step.get("source") == "perception":
+        if kind in {"input", "observed_cue"}:
+            return "person", str(step.get("text") or step.get("headline") or ""), False
+        return "sense", "", False
+    if kind == "tool_called":
+        args = facts.get("args") or {}
+        if facts.get("tool") == "speak":
+            return "says", str(args.get("text") or ""), False
+        return "acts", "", False
+    if kind == "observation":
+        result = facts.get("result") or {}
+        if _text(result.get("kind")) == "listening" and result.get("transcript"):
+            return "person", str(result["transcript"]), False
+        pushback = "refused" in result or _text(result.get("result")) in _PUSHBACK_ENDINGS
+        return "result", "", pushback
+    if kind in {"execution_failed", "tool_refused"}:
+        return "result", "", True
+    if kind in {"episode_finished", "handoff_requested"}:
+        return "marker", "", False
+    if kind == "decision_noted":
+        return "note", "", False
+    return "machinery", "", False
+
+
+def _words(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def _repeats(note: str, said: str) -> bool:
+    """Whether a note only says again what Misty is about to say aloud.
+
+    The model sometimes writes its line as its note. Printed above the
+    bubble, it reads as the robot saying everything twice.
+    """
+    note, said = _words(note), _words(said)
+    if not note or not said:
+        return False
+    return note == said or (len(note) >= 12 and (note in said or said in note))
 
 
 def playback_of(
@@ -681,9 +739,22 @@ def playback_of(
         index = detected.index(cue_id) if cue_id in detected else 0
         return actors[min(index, len(actors) - 1)]
 
+    # The runtime's records stay in the order it wrote them, which is the
+    # order things were understood in: a cue is detected after the speech
+    # it came from was transcribed, even though it carries the time the
+    # words were spoken. An Episode's Moments wait at the place it opened
+    # and are let out as time passes, so somebody speaking while it runs
+    # (B asking for a turn during A's `listen`) appears where they spoke.
     steps: list = []
+    pending: list = []
+
+    def let_out(until: float) -> None:
+        while pending and pending[0][0] <= until:
+            steps.append(pending.pop(0)[1])
+
     for record in records:
         if _text(record.get("type")) == "episode_opened":
+            let_out(float("inf"))
             found = by_cue.get(str(record.get("cue_id")))
             if found is None:
                 continue
@@ -695,46 +766,64 @@ def playback_of(
                     # The note belongs to the call it was written for: one
                     # row saying what it did and why, rather than two.
                     note = moment["detail"]
-                steps.append(
-                    {
-                        **moment,
-                        "source": "episode",
-                        "episode": index,
-                        "actor": episode["actor"],
-                        "cue_kind": _text(episode["cue_kind"]),
-                        "cue_text": episode.get("cue_text"),
-                        "summary": summary,
-                        "tells_the_story": tells and moment["kind"] != "decision_noted",
-                        "why": note if moment["kind"] == "tool_called" else "",
-                    }
-                )
+                step = {
+                    **moment,
+                    "source": "episode",
+                    "episode": index,
+                    "actor": episode["actor"],
+                    "cue_kind": _text(episode["cue_kind"]),
+                    "cue_text": episode.get("cue_text"),
+                    "summary": summary,
+                    "tells_the_story": tells and moment["kind"] != "decision_noted",
+                    "why": note if moment["kind"] == "tool_called" else "",
+                }
+                if moment["kind"] == "handoff_requested":
+                    waiting = actor_of(str((moment.get("facts") or {}).get("cue_id")))
+                    step["summary"] = f"{waiting} is waiting for a turn"
+                voice, text, pushback = _voice_of(step)
+                if voice == "says" and _repeats(step["why"], text):
+                    step["why"] = ""
+                step.update(voice=voice, text=text, pushback=pushback)
+                # A Moment's time counts from its Episode's start.
+                pending.append((_time_of(record) + _time_of(moment), step))
                 if moment["kind"] == "tool_called":
                     note = ""
             continue
         beat = _perception_beat(record) or _cue_beat(record, actor_of, input_kind)
         if beat is None:
             continue
-        steps.append(
-            {
-                "source": "perception",
-                "t": record.get("t"),
-                "kind": beat.kind,
-                "label": beat.label,
-                "headline": beat.headline,
-                "summary": beat.headline,
-                # Everything Misty perceived belongs to the story: it is how
-                # it decided whether there was anything to respond to.
-                "tells_the_story": True,
-                "why": "",
-                "detail": beat.detail,
-                "facts": dict(record.get("facts") or {}),
-                # What the person said, or what was observed about them,
-                # unquoted: the stage puts it in a bubble, and the wording
-                # around it belongs to the caption rather than the bubble.
-                "text": record.get("text"),
-            }
-        )
+        step = {
+            "source": "perception",
+            "t": record.get("t"),
+            "kind": beat.kind,
+            "label": beat.label,
+            "headline": beat.headline,
+            "summary": beat.headline,
+            # Everything Misty perceived belongs to the story: it is how
+            # it decided whether there was anything to respond to.
+            "tells_the_story": True,
+            "why": "",
+            "detail": beat.detail,
+            "facts": dict(record.get("facts") or {}),
+            # What the person said, or what was observed about them,
+            # unquoted: the stage puts it in a bubble, and the wording
+            # around it belongs to the caption rather than the bubble.
+            "text": record.get("text"),
+        }
+        voice, text, pushback = _voice_of(step)
+        step.update(voice=voice, text=text or step["text"], pushback=pushback)
+        if voice == "person" and record.get("cue_id"):
+            # Whose words these are, for a run with more than one person.
+            step["actor"] = actor_of(str(record["cue_id"]))
+        let_out(_time_of(record))
+        steps.append(step)
+    let_out(float("inf"))
     return steps
+
+
+def _time_of(source: Mapping[str, Any]) -> float:
+    value = source.get("t")
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
 def with_playback(

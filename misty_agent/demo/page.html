@@ -11,8 +11,8 @@
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0071e3; --world: #a85a00;
-    --room-top: #c9d0da; --room-left: #d2d8e0; --room-right: #cfd5de; --room-back: #d9dee6;
-    --room-floor: #eef1f5; --room-line: #dfe3ea; --room-edge: #c3cad5; --room-pool: #ffffff;
+    --room-top: #b3bbc7; --room-left: #bdc4ce; --room-right: #b9c1cb; --room-back: #c6cdd6;
+    --room-floor: #e1e5eb; --room-line: #d1d6de; --room-edge: #adb5c1; --room-pool: #f4f6f9;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -223,7 +223,7 @@
             <radialGradient id="ledGlow"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
             <radialGradient id="shell" cx=".32" cy=".25" r="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".65" stop-color="#f2f4f7"/><stop offset="1" stop-color="#dfe3ea"/></radialGradient>
             <radialGradient id="pool"><stop offset="0" stop-color="var(--room-pool)" stop-opacity=".95"/><stop offset="1" stop-color="var(--room-pool)" stop-opacity="0"/></radialGradient>
-            <linearGradient id="figureLight" gradientUnits="userSpaceOnUse" x1="-26" y1="-170" x2="26" y2="-140"><stop offset="0" stop-color="#eef4f8"/><stop offset=".55" stop-color="#d3dee8"/><stop offset="1" stop-color="#b5c5d2"/></linearGradient>
+            <linearGradient id="figureLight" gradientUnits="userSpaceOnUse" x1="-26" y1="-170" x2="26" y2="-140"><stop offset="0" stop-color="#fafafb"/><stop offset=".55" stop-color="#e9e9eb"/><stop offset="1" stop-color="#d2d3d8"/></linearGradient>
             <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
             <filter id="goo" x="-30%" y="-20%" width="160%" height="140%" color-interpolation-filters="sRGB">
               <feGaussianBlur stdDeviation="3.1"/>
@@ -233,7 +233,7 @@
               <feGaussianBlur in="SourceAlpha" stdDeviation="3.1"/>
               <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 20 -8.4" result="shape"/>
               <feMorphology operator="dilate" radius=".95" in="shape" result="grown"/>
-              <feFlood flood-color="#a1b3c4"/>
+              <feFlood flood-color="#a8a9b0"/>
               <feComposite in2="grown" operator="in"/>
             </filter>
           </defs>
@@ -848,7 +848,7 @@ const FACES = {
 };
 const MOUTH = `<rect class="mouth" x="4.2" y="-62.6" width="5.6" height="1.4" rx=".7" fill="${EYE}" opacity=".8"/>`;
 
-/* ---------- The person: a soft silhouette in glacier grey ----------
+/* ---------- The person: a soft silhouette in the grey of their bubbles ----------
    The limbs move on their own but are drawn as one shape: the parts are
    merged, lit by one gradient, and outlined only around the outside. */
 const BODY = {
@@ -910,7 +910,7 @@ function personPose(motion, t, stride, turn) {
 /* A face from the fixture's observable signals only: looking, head
    lowered, mouth corners raised. Three marks, turned towards Misty. */
 function personFace(hx, hy, r, exp) {
-  const k = r / 18, ink = "#3e505f";
+  const k = r / 18, ink = "#3a3b40";
   const x = hx + (exp === "away" ? 6 : -6) * k, y = hy - 2 * k;
   if (exp === "lowered") {
     return `<path d="M${x-9*k} ${y+2*k} q${2.4*k} ${2.2*k} ${4.8*k} 0 M${x+4.2*k} ${y+2*k} q${2.4*k} ${2.2*k} ${4.8*k} 0" fill="none" stroke="${ink}" stroke-width="${1.5*k}" stroke-linecap="round"/>
@@ -1087,6 +1087,17 @@ function setBubble(who, text, observed) {
     node.appendChild(span);
   });
   box.setAttribute("height", String(34 + lines.length * 26));
+  // As wide as its longest line: Misty's bubble grows rightwards from the
+  // left edge, the person's leftwards from the right edge.
+  const spans = [...node.querySelectorAll("tspan")];
+  const longest = Math.max(...spans.map((span) => span.getComputedTextLength()));
+  const width = Math.round(Math.max(96, Math.min(420, longest + 44)));
+  box.setAttribute("width", String(width));
+  if (who === "person") {
+    const right = 936;
+    box.setAttribute("x", String(right - width));
+    for (const span of spans) span.setAttribute("x", String(right - width + 22));
+  }
 }
 
 function pointTail(who, speakerX, speakerY) {

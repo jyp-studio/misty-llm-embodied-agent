@@ -1078,17 +1078,21 @@ function frame(clock) {
 const BUBBLE = { font: 20, line: 26, pad: 22, gap: 46, side: 64, cross: 40, min: 220, max: 420, lines: 5 };
 const bubbles = { misty: null, person: null };
 
-function bubbleRoom(who, cross) {
-  // How wide this speaker's bubble may be, given where they stand. One
-  // line starts at the speaker and reaches forward, a little past the
-  // middle. Wrapped, Misty's may also reach back over its own head, since
-  // it is short and there is room above it; the person's must stay clear
-  // of their face.
+function bubbleRoom(who, how) {
+  // How wide this speaker's bubble may be, given where they stand.
+  // "front": one line, starting at the speaker and reaching forward, a
+  //   little past the middle.
+  // "over": wrapped, reaching from the front back over the speaker's head,
+  //   as far as their own half of the stage allows.
+  // "beside": the person's fallback when even that takes more rows than
+  //   fit above their head: narrow, in front of the face.
   const middle = STAGE.W / 2;
   const [x] = speakerHead(who);
   let reach;
-  if (who === "misty") reach = cross ? middle + cross - (x - 36) : middle - 12;
-  else reach = (x - BUBBLE.side) - (middle - cross);
+  if (who === "misty") reach = how === "front" ? middle + BUBBLE.cross - (x - 36) : middle - 12;
+  else if (how === "front") reach = (x - BUBBLE.side) - (middle - BUBBLE.cross);
+  else if (how === "over") reach = STAGE.W - 12 - middle;
+  else reach = (x - BUBBLE.side) - middle;
   return Math.max(BUBBLE.min, Math.min(BUBBLE.max, reach)) - BUBBLE.pad * 2;
 }
 
@@ -1139,10 +1143,20 @@ function setBubble(who, text, observed) {
   group.setAttribute("opacity", text ? "1" : "0");
   if (!text) { bubbles[who] = null; return; }
   const shown = observed ? `Observed: ${text}` : text;
-  // Short enough for one line, it may cross the middle a little; longer,
-  // it wraps to stay on its own side.
-  let lines = wrapToWidth(shown, bubbleRoom(who, BUBBLE.cross));
-  if (lines.length > 1) lines = wrapToWidth(shown, bubbleRoom(who, 0));
+  // Short enough for one line, it starts in front and may cross the middle
+  // a little. Longer, it reaches back over the speaker's head and stays on
+  // their side. Above the person's head there is room for two rows; a line
+  // that needs more sits narrow beside their face instead.
+  let how = "front";
+  let lines = wrapToWidth(shown, bubbleRoom(who, how));
+  if (lines.length > 1) {
+    how = "over";
+    lines = wrapToWidth(shown, bubbleRoom(who, how));
+    if (who === "person" && lines.length > 2) {
+      how = "beside";
+      lines = wrapToWidth(shown, bubbleRoom(who, how));
+    }
+  }
   const node = byId(`${who}BubbleText`);
   node.textContent = "";
   lines.forEach((line, index) => {
@@ -1159,14 +1173,14 @@ function setBubble(who, text, observed) {
   const box = byId(`${who}BubbleBox`);
   box.setAttribute("width", String(width));
   box.setAttribute("height", String(height));
-  bubbles[who] = { width, height, lines: lines.length };
+  bubbles[who] = { width, height, lines: lines.length, how };
 }
 
 function placeBubble(who) {
   // Called every frame, so a bubble follows Misty as it drives.
   const size = bubbles[who];
   if (!size) return;
-  const { width, height, lines } = size;
+  const { width, height, lines, how } = size;
   const [hx, top, middle] = speakerHead(who);
   const edge = 12;
   // One line may cross the middle a little; a wrapped line never does,
@@ -1180,6 +1194,13 @@ function placeBubble(who) {
     const bx = Math.max(x + 28, Math.min(x + width - 28, hx));
     base = [bx, y + height];
     tip = [hx + 2, top - 16];
+  } else if (how === "over") {
+    // From in front of the face, back over the head, towards the right.
+    x = Math.max(centre, Math.min(hx - BUBBLE.side - 40, STAGE.W - edge - width));
+    y = Math.max(edge, top - 24 - height);
+    const bx = Math.max(x + 28, Math.min(x + width - 28, hx - 18));
+    base = [bx, y + height];
+    tip = [hx - 10, top - 8];
   } else {
     x = Math.min(STAGE.W - edge - width, Math.max(hx - BUBBLE.side - width, centre - cross));
     // Above the top of the head, so the tail comes down to the face

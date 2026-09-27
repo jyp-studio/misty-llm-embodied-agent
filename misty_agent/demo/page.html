@@ -87,7 +87,7 @@
   .chat .bubble { max-width: 86%; padding: 7px 12px; overflow-wrap: anywhere; border-radius: 16px; }
   .chat .person .bubble { align-self: flex-end; background: color-mix(in srgb, var(--person) 18%, var(--page)); border-bottom-right-radius: 5px; }
   .chat .person .bubble.seen { font-style: italic; }
-  .chat .says .bubble { align-self: flex-start; background: color-mix(in srgb, var(--misty) 18%, var(--page)); border-bottom-left-radius: 5px; }
+  .chat .says .bubble { align-self: flex-start; color: #fff; background: var(--misty); border-bottom-left-radius: 5px; }
   .chat .who { align-self: flex-end; margin-bottom: 2px; color: var(--person); font-size: 12px; font-weight: 600; }
   /* The model's own trace: small print before what it does, the way a
      coding agent shows its thinking and tool calls above its answer. */
@@ -287,9 +287,9 @@
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
           <g class="bubble" id="mistyBubble" opacity="0">
-            <rect id="mistyBubbleBox" x="24" y="20" width="420" height="60" rx="22" fill="var(--page)" stroke="var(--misty)" stroke-width="2"/>
-            <path id="mistyBubbleTail" d="" fill="var(--page)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
-            <text id="mistyBubbleText" x="46" y="54" font-size="20" fill="var(--ink)"></text>
+            <rect id="mistyBubbleBox" x="24" y="20" width="420" height="60" rx="22" fill="var(--misty)"/>
+            <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
+            <text id="mistyBubbleText" x="46" y="54" font-size="20" fill="#fff"></text>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
             <rect id="personBubbleBox" x="516" y="20" width="420" height="60" rx="22" fill="var(--page)" stroke="var(--person)" stroke-width="2"/>

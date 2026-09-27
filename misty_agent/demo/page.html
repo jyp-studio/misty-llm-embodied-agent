@@ -1075,16 +1075,16 @@ function frame(clock) {
 }
 
 /* Where a line's bubble goes.
-   - One line that fits sits above and in front of the speaker, facing the
-     way they face, clear of their head. It may cross the middle of the
-     stage, as long as it does not touch the other figure.
+   - One line that fits sits over the speaker's head, shifted a little the
+     way they face, with a clear gap above the head. It may cross the
+     middle of the stage, as long as it does not touch the other figure.
    - A longer line is anchored at the middle and runs out towards the
      speaker's own edge of the stage: Misty's ends at the middle, the
      person's starts there. If the speaker has come past the middle, the
      anchor is their front instead, so the bubble is still before them.
    - It never overlaps the other figure, and wraps to as many rows as fit
      above the speaker's head. */
-const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, ahead: 70, anchor: 60, keep: 16, edge: 12, max: 460, lines: 5 };
+const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, over: 30, anchor: 60, keep: 16, edge: 12, max: 460, lines: 5 };
 const bubbles = { misty: null, person: null };
 
 function figureBox(who, settled = false) {
@@ -1108,6 +1108,9 @@ function overlapsVertically(y, height, box) {
   return y < box.bottom && y + height > box.top;
 }
 
+// How far a one-row bubble's middle sits ahead of the speaker's head.
+function ahead(width) { return width * 0.25 + 20; }
+
 function bubbleLayout(who, width, height, mode) {
   // Place a bubble of this size for this speaker, now. Returns its box
   // and its tail.
@@ -1120,7 +1123,7 @@ function bubbleLayout(who, width, height, mode) {
     y = Math.max(edge, me.headTop - BUBBLE.above - height);
     const limit = overlapsVertically(y, height, other) ? other.left - keep : STAGE.W - edge;
     if (mode === "front") {
-      x = Math.min(me.headX - 20, limit - width);
+      x = Math.min(me.headX + ahead(width) - width / 2, limit - width);
     } else {
       const right = Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor));
       x = right - width;
@@ -1129,12 +1132,13 @@ function bubbleLayout(who, width, height, mode) {
     bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + 8));
     tip = [me.headX + 8, me.headTop - 16];
   } else {
-    y = Math.max(edge, me.headTop - 14 - height);
+    y = Math.max(edge, me.headTop - BUBBLE.over - height);
     const limit = overlapsVertically(y, height, other) ? other.right + keep : edge;
     if (mode === "front") {
-      x = Math.max(limit, me.headX - BUBBLE.ahead - width);
-      bx = x + width - 30;
-      tip = [me.headX - me.headR - 10, me.headMid - me.headR * 0.8];
+      x = Math.max(limit, me.headX - ahead(width) - width / 2);
+      x = Math.min(x, STAGE.W - edge - width);
+      bx = Math.max(x + 28, Math.min(x + width - 28, me.headX - 12));
+      tip = [me.headX - 8, me.headTop - 10];
     } else {
       x = Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
       x = Math.min(x, STAGE.W - edge - width);
@@ -1159,13 +1163,13 @@ function bubbleRoom(who, mode) {
     const y = Math.max(edge, me.headTop - BUBBLE.above - oneRow);
     const limit = overlapsVertically(y, oneRow, other) ? other.left - keep : STAGE.W - edge;
     room = mode === "front"
-      ? limit - (me.headX - 20)
+      ? limit - edge
       : Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor)) - edge;
   } else {
-    const y = Math.max(edge, me.headTop - 14 - oneRow);
+    const y = Math.max(edge, me.headTop - BUBBLE.over - oneRow);
     const limit = overlapsVertically(y, oneRow, other) ? other.right + keep : edge;
     room = mode === "front"
-      ? (me.headX - BUBBLE.ahead) - limit
+      ? (STAGE.W - edge) - limit
       : (STAGE.W - edge) - Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
   }
   return Math.max(160, Math.min(BUBBLE.max, room)) - BUBBLE.pad * 2;
@@ -1174,7 +1178,7 @@ function bubbleRoom(who, mode) {
 function rowsAbove(who) {
   // How many rows fit above the speaker's head.
   const me = figureBox(who, true);
-  const clearance = who === "misty" ? BUBBLE.above : 14;
+  const clearance = who === "misty" ? BUBBLE.above : BUBBLE.over;
   const room = me.headTop - clearance - BUBBLE.edge - 34;
   return Math.max(1, Math.min(BUBBLE.lines, Math.floor(room / BUBBLE.line)));
 }

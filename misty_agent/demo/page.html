@@ -1002,9 +1002,9 @@ function drawScene(scene) {
   byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
   // A bubble shows while its line is the step being played, and is gone
   // once the run moves on.
+  stage.distance = scene.distance;
   setBubble("misty", scene.speaking === "misty" ? scene.mistySays : "", false);
   setBubble("person", scene.speaking === "person" ? scene.personSays : "", scene.personObserved);
-  stage.distance = scene.distance;
   if (REDUCED || stage.now.x === null) stage.now.x = mistyXFor(scene.distance);
 }
 
@@ -1074,43 +1074,109 @@ function frame(clock) {
   placeBubble("person");
 }
 
-/* A line's bubble sits above and in front of whoever says it: Misty faces
-   right, so its bubble grows rightwards from above its head; the person
-   faces left, so theirs sits beside and above their face, growing left.
-   Either may cross the middle of the stage a little when the line is
-   short. A line that needs wrapping stays on its speaker's side. */
-const BUBBLE = { font: 20, line: 26, pad: 22, gap: 46, side: 64, cross: 40, min: 220, max: 420, lines: 5 };
+/* Where a line's bubble goes.
+   - One line that fits sits above and in front of the speaker, facing the
+     way they face, clear of their head. It may cross the middle of the
+     stage, as long as it does not touch the other figure.
+   - A longer line is anchored at the middle and runs out towards the
+     speaker's own edge of the stage: Misty's ends at the middle, the
+     person's starts there. If the speaker has come past the middle, the
+     anchor is their front instead, so the bubble is still before them.
+   - It never overlaps the other figure, and wraps to as many rows as fit
+     above the speaker's head. */
+const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, ahead: 70, anchor: 60, keep: 16, edge: 12, max: 460, lines: 5 };
 const bubbles = { misty: null, person: null };
 
-function bubbleRoom(who, how) {
-  // How wide this speaker's bubble may be, given where they stand.
-  // "front": one line, starting at the speaker and reaching forward, a
-  //   little past the middle.
-  // "over": wrapped, reaching from the front back over the speaker's head,
-  //   as far as their own half of the stage allows.
-  // "beside": the person's fallback when even that takes more rows than
-  //   fit above their head: narrow, in front of the face.
-  const middle = STAGE.W / 2;
-  const [x] = speakerHead(who);
-  let reach;
-  if (who === "misty") reach = how === "front" ? middle + BUBBLE.cross - (x - 36) : Math.min(middle, x + BUBBLE.side + 40) - 12;
-  else if (how === "front") reach = (x - BUBBLE.side) - (middle - BUBBLE.cross);
-  else if (how === "over") reach = STAGE.W - 12 - middle;
-  else reach = (x - BUBBLE.side) - middle;
-  return Math.max(BUBBLE.min, Math.min(BUBBLE.max, reach)) - BUBBLE.pad * 2;
+function figureBox(who, settled = false) {
+  // Where a figure is on screen: its box, and its head. `settled` asks
+  // where Misty is going rather than where it is on its way.
+  if (who === "misty") {
+    const k = scaleAt(STAGE.front);
+    const x = settled || stage.now.x === null ? mistyXFor(stage.distance) : stage.now.x;
+    const [mx, gy] = project([x, 0, STAGE.front]);
+    return { left: mx - 32 * k, right: mx + 32 * k, top: gy - 95 * k, bottom: gy,
+      headX: mx + 8 * k, headTop: gy - 92 * k, headMid: gy - 72 * k, headR: 26 * k };
+  }
+  const k = scaleAt(STAGE.front) * STAGE.personSize;
+  const [px, gy] = project([STAGE.personX, 0, STAGE.front]);
+  const [hx, top] = personPoint(-2, 188);
+  const [, mid] = personPoint(-2, 170);
+  return { left: px - 32 * k, right: px + 32 * k, top, bottom: gy, headX: hx, headTop: top, headMid: mid, headR: 16.5 * k };
 }
 
-function speakerHead(who) {
-  // Where the speaker's head is on screen: [x, top, middle].
-  const k = scaleAt(STAGE.front);
+function overlapsVertically(y, height, box) {
+  return y < box.bottom && y + height > box.top;
+}
+
+function bubbleLayout(who, width, height, mode) {
+  // Place a bubble of this size for this speaker, now. Returns its box
+  // and its tail.
+  const me = figureBox(who);
+  const other = figureBox(who === "misty" ? "person" : "misty");
+  const { edge, keep } = BUBBLE;
+  const centre = STAGE.W / 2;
+  let x, y, bx, tip;
   if (who === "misty") {
-    const x = stage.now.x ?? mistyXFor(stage.distance);
-    const [mx, gy] = project([x, 0, STAGE.front]);
-    return [mx + 8 * k, gy - 92 * k, gy - 72 * k];
+    y = Math.max(edge, me.headTop - BUBBLE.above - height);
+    const limit = overlapsVertically(y, height, other) ? other.left - keep : STAGE.W - edge;
+    if (mode === "front") {
+      x = Math.min(me.headX - 20, limit - width);
+    } else {
+      const right = Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor));
+      x = right - width;
+    }
+    x = Math.max(edge, x);
+    bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + 8));
+    tip = [me.headX + 8, me.headTop - 16];
+  } else {
+    y = Math.max(edge, me.headTop - 14 - height);
+    const limit = overlapsVertically(y, height, other) ? other.right + keep : edge;
+    if (mode === "front") {
+      x = Math.max(limit, me.headX - BUBBLE.ahead - width);
+      bx = x + width - 30;
+      tip = [me.headX - me.headR - 10, me.headMid - me.headR * 0.8];
+    } else {
+      x = Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
+      x = Math.min(x, STAGE.W - edge - width);
+      bx = Math.max(x + 28, Math.min(x + width - 28, me.headX - 14));
+      tip = [me.headX - 8, me.headTop - 12];
+    }
   }
-  const [hx, top] = personPoint(-2, 188);
-  const [, middle] = personPoint(-2, 170);
-  return [hx, top, middle];
+  return { x, y, base: [bx, y + height], tip };
+}
+
+function bubbleRoom(who, mode) {
+  // The widest a bubble may be in this mode, for where its speaker will be.
+  const me = figureBox(who, true);
+  const other = figureBox(who === "misty" ? "person" : "misty", true);
+  const { edge, keep } = BUBBLE;
+  const centre = STAGE.W / 2;
+  // The other figure only limits a bubble that would sit level with it;
+  // judged here for a bubble of one row, as the one being tried.
+  const oneRow = 34 + BUBBLE.line;
+  let room;
+  if (who === "misty") {
+    const y = Math.max(edge, me.headTop - BUBBLE.above - oneRow);
+    const limit = overlapsVertically(y, oneRow, other) ? other.left - keep : STAGE.W - edge;
+    room = mode === "front"
+      ? limit - (me.headX - 20)
+      : Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor)) - edge;
+  } else {
+    const y = Math.max(edge, me.headTop - 14 - oneRow);
+    const limit = overlapsVertically(y, oneRow, other) ? other.right + keep : edge;
+    room = mode === "front"
+      ? (me.headX - BUBBLE.ahead) - limit
+      : (STAGE.W - edge) - Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
+  }
+  return Math.max(160, Math.min(BUBBLE.max, room)) - BUBBLE.pad * 2;
+}
+
+function rowsAbove(who) {
+  // How many rows fit above the speaker's head.
+  const me = figureBox(who, true);
+  const clearance = who === "misty" ? BUBBLE.above : 14;
+  const room = me.headTop - clearance - BUBBLE.edge - 34;
+  return Math.max(1, Math.min(BUBBLE.lines, Math.floor(room / BUBBLE.line)));
 }
 
 let measurer = null;
@@ -1122,7 +1188,7 @@ function textWidth(text) {
   return measurer.measureText(text).width;
 }
 
-function wrapToWidth(text, width) {
+function wrapToWidth(text, width, rows = BUBBLE.lines) {
   // Words for spaced languages; characters for scripts written without spaces.
   const tokens = /\s/.test(text) ? text.split(/(\s+)/) : [...text];
   const lines = [];
@@ -1132,11 +1198,11 @@ function wrapToWidth(text, width) {
     else line += token;
   }
   if (line.trim()) lines.push(line.trim());
-  if (lines.length > BUBBLE.lines) {
-    lines.length = BUBBLE.lines;
+  if (lines.length > rows) {
+    lines.length = rows;
     // Drop the last word, or the last character where words have no spaces.
-    const last = lines[BUBBLE.lines - 1];
-    lines[BUBBLE.lines - 1] = (/\s/.test(last) ? last.replace(/\s*\S*$/, "") : last.slice(0, -1)) + "…";
+    const last = lines[rows - 1];
+    lines[rows - 1] = (/\s/.test(last) ? last.replace(/\s*\S*$/, "") : last.slice(0, -1)) + "…";
   }
   return lines;
 }
@@ -1147,19 +1213,11 @@ function setBubble(who, text, observed) {
   group.setAttribute("opacity", text ? "1" : "0");
   if (!text) { bubbles[who] = null; return; }
   const shown = observed ? `Observed: ${text}` : text;
-  // Short enough for one line, it starts in front and may cross the middle
-  // a little. Longer, it reaches back over the speaker's head and stays on
-  // their side. Above the person's head there is room for two rows; a line
-  // that needs more sits narrow beside their face instead.
-  let how = "front";
-  let lines = wrapToWidth(shown, bubbleRoom(who, how));
+  let mode = "front";
+  let lines = wrapToWidth(shown, bubbleRoom(who, mode));
   if (lines.length > 1) {
-    how = "over";
-    lines = wrapToWidth(shown, bubbleRoom(who, how));
-    if (who === "person" && lines.length > 2) {
-      how = "beside";
-      lines = wrapToWidth(shown, bubbleRoom(who, how));
-    }
+    mode = "long";
+    lines = wrapToWidth(shown, bubbleRoom(who, mode), rowsAbove(who));
   }
   const node = byId(`${who}BubbleText`);
   node.textContent = "";
@@ -1177,51 +1235,14 @@ function setBubble(who, text, observed) {
   const box = byId(`${who}BubbleBox`);
   box.setAttribute("width", String(width));
   box.setAttribute("height", String(height));
-  bubbles[who] = { width, height, lines: lines.length, how };
+  bubbles[who] = { width, height, mode };
 }
 
 function placeBubble(who) {
   // Called every frame, so a bubble follows Misty as it drives.
   const size = bubbles[who];
   if (!size) return;
-  const { width, height, lines, how } = size;
-  const [hx, top, middle] = speakerHead(who);
-  const edge = 12;
-  // One line may cross the middle a little; a wrapped line never does,
-  // even when its speaker has come close to the middle themselves.
-  const cross = lines > 1 ? 0 : BUBBLE.cross;
-  const centre = STAGE.W / 2;
-  let x, y, base, tip;
-  if (who === "misty" && how === "over") {
-    // Mirror of the person's: from in front of Misty (its right), back
-    // over its head towards the left, never past the middle.
-    const right = Math.min(centre, hx + BUBBLE.side + 40);
-    x = Math.max(edge, right - width);
-    y = Math.max(edge, top - BUBBLE.gap - height);
-    const bx = Math.max(x + 28, Math.min(x + width - 28, hx + 18));
-    base = [bx, y + height];
-    tip = [hx + 10, top - 16];
-  } else if (who === "misty") {
-    x = Math.max(edge, Math.min(hx - 36, centre + cross - width));
-    y = Math.max(edge, top - BUBBLE.gap - height);
-    const bx = Math.max(x + 28, Math.min(x + width - 28, hx));
-    base = [bx, y + height];
-    tip = [hx + 2, top - 16];
-  } else if (how === "over") {
-    // From in front of the face, back over the head, towards the right.
-    x = Math.max(centre, Math.min(hx - BUBBLE.side - 40, STAGE.W - edge - width));
-    y = Math.max(edge, top - 24 - height);
-    const bx = Math.max(x + 28, Math.min(x + width - 28, hx - 18));
-    base = [bx, y + height];
-    tip = [hx - 10, top - 8];
-  } else {
-    x = Math.min(STAGE.W - edge - width, Math.max(hx - BUBBLE.side - width, centre - cross));
-    // Above the top of the head, so the tail comes down to the face
-    // from above rather than running into the side of the head.
-    y = Math.max(edge, top - 24 - height);
-    base = [x + width - 30, y + height];
-    tip = [hx - 30, top + 4];
-  }
+  const { x, y, base, tip } = bubbleLayout(who, size.width, size.height, size.mode);
   byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
   byId(`${who}BubbleTail`).setAttribute(
     "d", `M${(base[0] - 11).toFixed(1)} ${(base[1] - 2).toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] + 11).toFixed(1)} ${(base[1] - 2).toFixed(1)}`

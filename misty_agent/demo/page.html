@@ -9,7 +9,7 @@
     --ink: #1d1d1f; --muted: #6e6e73; --faint: #86868b; --line: #e3e3e8;
     --panel: #f5f5f7; --page: #ffffff; --accent: #0071e3; --accent-ink: #0066cc;
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
-    --person: #5b7a92; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
+    --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0071e3; --world: #a85a00;
     --room-back: #eaeef3;
     --room-floor: #f8f9fb; --room-line: #e6e9ef; --room-edge: #d3d9e3; --room-pool: #ffffff;
@@ -19,7 +19,7 @@
       --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
       --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
-      --person: #9fb8cc; --warn: #ff6961; --ok: #32d74b;
+      --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
       --misty: #2997ff; --world: #f5a524;
       --room-back: #202329;
       --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
@@ -29,7 +29,7 @@
     --ink: #f5f5f7; --muted: #a1a1a6; --faint: #8e8e93; --line: #38383a;
     --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
-    --person: #9fb8cc; --warn: #ff6961; --ok: #32d74b;
+    --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
     --misty: #2997ff; --world: #f5a524;
     --room-back: #202329;
     --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
@@ -85,7 +85,7 @@
   .chat li:last-child { margin-bottom: 0; }
   .chat .bubble-row { display: flex; flex-direction: column; }
   .chat .bubble { max-width: 86%; padding: 7px 12px; overflow-wrap: anywhere; border-radius: 16px; }
-  .chat .person .bubble { align-self: flex-end; background: color-mix(in srgb, var(--person) 18%, var(--page)); border-bottom-right-radius: 5px; }
+  .chat .person .bubble { align-self: flex-end; color: var(--person-ink); background: var(--person-bubble); border-bottom-right-radius: 5px; }
   .chat .person .bubble.seen { font-style: italic; }
   .chat .says .bubble { align-self: flex-start; color: #fff; background: var(--misty); border-bottom-left-radius: 5px; }
   .chat .who { align-self: flex-end; margin-bottom: 2px; color: var(--person); font-size: 12px; font-weight: 600; }
@@ -292,9 +292,9 @@
             <text id="mistyBubbleText" x="46" y="54" font-size="20" fill="#fff"></text>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
-            <rect id="personBubbleBox" x="516" y="20" width="420" height="60" rx="22" fill="var(--page)" stroke="var(--person)" stroke-width="2"/>
-            <path id="personBubbleTail" d="" fill="var(--page)" stroke="var(--person)" stroke-width="2" stroke-linejoin="round"/>
-            <text id="personBubbleText" x="538" y="54" font-size="20" fill="var(--ink)"></text>
+            <rect id="personBubbleBox" x="516" y="20" width="420" height="60" rx="22" fill="var(--person-bubble)"/>
+            <path id="personBubbleTail" d="" fill="var(--person-bubble)" stroke="var(--person-bubble)" stroke-width="2" stroke-linejoin="round"/>
+            <text id="personBubbleText" x="538" y="54" font-size="20" fill="var(--person-ink)"></text>
           </g>
         </svg>
       </div>

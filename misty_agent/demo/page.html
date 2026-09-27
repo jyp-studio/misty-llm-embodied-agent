@@ -802,13 +802,17 @@ function emptyScene() {
    theatre: the person keeps to the right, and Misty's gap from them grows
    with the real distance without being to scale; the chips under the stage
    carry the real number. */
-const STAGE = { W: 960, H: 540, F: 1400, eye: 110, camera: 560, front: -130, back: -330, personX: 150 };
+const STAGE = { W: 960, H: 540, F: 1400, eye: 110, camera: 560, front: -130, back: -330, personX: 150, personSize: 0.88 };
 
 function project([x, y, z]) {
   const d = STAGE.camera - z;
   return [STAGE.W / 2 + STAGE.F * x / d, STAGE.H / 2 - STAGE.F * (y - STAGE.eye) / d];
 }
 function scaleAt(z) { return STAGE.F / (STAGE.camera - z); }
+// A point on the person standing at the front, from their own centimetres.
+function personPoint(x, y) {
+  return project([STAGE.personX + x * STAGE.personSize, y * STAGE.personSize, STAGE.front]);
+}
 function mistyXFor(distance) {
   return STAGE.personX - (130 + Math.max(30, Math.min(300, Number(distance) || 150)) * 0.9);
 }
@@ -942,7 +946,7 @@ function drawPerson(id, { x, z, exp, motion, t, stride = 0, turn = 0, opacity = 
     `<circle cx="-2" cy="-170" r="16.5" transform="${nod}"/>` +
     limb("arm", [p.shoulderX, -141], p.nearArm[0], p.nearArm[1], 33);
   const [sx, gy] = project([x, 0, z]);
-  const k = scaleAt(z);
+  const k = scaleAt(z) * STAGE.personSize;
   const tag = label
     ? `<text x="16" y="-186" text-anchor="start" font-size="11" font-weight="700" fill="var(--muted)">${escapeText(label)}</text>`
     : "";
@@ -1064,7 +1068,7 @@ function frame(clock) {
 
   // The camera's look, from Misty's screen to the person's face.
   const [ex, ey] = [mx + 22 * k, gy - 72 * k];
-  const [fx, fy] = project([STAGE.personX - 2, 170, STAGE.front]);
+  const [fx, fy] = personPoint(-2, 170);
   byId("cone").setAttribute("d", `M${ex.toFixed(1)} ${ey.toFixed(1)} L${fx.toFixed(1)} ${(fy - 26).toFixed(1)} L${fx.toFixed(1)} ${(fy + 26).toFixed(1)} Z`);
   placeBubble("misty");
   placeBubble("person");
@@ -1089,7 +1093,7 @@ function bubbleRoom(who, how) {
   const middle = STAGE.W / 2;
   const [x] = speakerHead(who);
   let reach;
-  if (who === "misty") reach = how === "front" ? middle + BUBBLE.cross - (x - 36) : middle - 12;
+  if (who === "misty") reach = how === "front" ? middle + BUBBLE.cross - (x - 36) : Math.min(middle, x + BUBBLE.side + 40) - 12;
   else if (how === "front") reach = (x - BUBBLE.side) - (middle - BUBBLE.cross);
   else if (how === "over") reach = STAGE.W - 12 - middle;
   else reach = (x - BUBBLE.side) - middle;
@@ -1104,8 +1108,8 @@ function speakerHead(who) {
     const [mx, gy] = project([x, 0, STAGE.front]);
     return [mx + 8 * k, gy - 92 * k, gy - 72 * k];
   }
-  const [hx, top] = project([STAGE.personX - 2, 188, STAGE.front]);
-  const [, middle] = project([STAGE.personX - 2, 170, STAGE.front]);
+  const [hx, top] = personPoint(-2, 188);
+  const [, middle] = personPoint(-2, 170);
   return [hx, top, middle];
 }
 
@@ -1188,7 +1192,16 @@ function placeBubble(who) {
   const cross = lines > 1 ? 0 : BUBBLE.cross;
   const centre = STAGE.W / 2;
   let x, y, base, tip;
-  if (who === "misty") {
+  if (who === "misty" && how === "over") {
+    // Mirror of the person's: from in front of Misty (its right), back
+    // over its head towards the left, never past the middle.
+    const right = Math.min(centre, hx + BUBBLE.side + 40);
+    x = Math.max(edge, right - width);
+    y = Math.max(edge, top - BUBBLE.gap - height);
+    const bx = Math.max(x + 28, Math.min(x + width - 28, hx + 18));
+    base = [bx, y + height];
+    tip = [hx + 10, top - 16];
+  } else if (who === "misty") {
     x = Math.max(edge, Math.min(hx - 36, centre + cross - width));
     y = Math.max(edge, top - BUBBLE.gap - height);
     const bx = Math.max(x + 28, Math.min(x + width - 28, hx));

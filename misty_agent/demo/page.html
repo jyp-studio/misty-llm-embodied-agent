@@ -11,6 +11,8 @@
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #5e5ce6; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0f7d6a; --world: #a85a00;
+    --room-top: #dde2ea; --room-left: #e4e8ef; --room-right: #e1e6ed; --room-back: #eaeef3;
+    --room-floor: #f8f9fb; --room-line: #e6e9ef; --room-edge: #d3d9e3; --room-pool: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -19,6 +21,8 @@
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
       --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
       --misty: #3ccfb0; --world: #f5a524;
+      --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
+      --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
     }
   }
   :root[data-theme="dark"] {
@@ -27,6 +31,8 @@
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
     --person: #7d7aff; --warn: #ff6961; --ok: #32d74b;
     --misty: #3ccfb0; --world: #f5a524;
+    --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
+    --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
   }
   * { box-sizing: border-box; }
   body {
@@ -62,8 +68,8 @@
   .theatre-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
   .theatre-head h2 { font-size: 22px; }
   .made-by { color: var(--faint); font-size: 13px; cursor: help; }
-  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
-  .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 10; }
+  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 9; }
   .stage svg { display: block; width: 100%; height: 100%; }
   /* What Misty is doing and sensing right now, under the picture of it. */
   .senses { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 10px; }
@@ -137,27 +143,17 @@
   .live-note.error { color: var(--warn); }
   footer { padding: 20px 32px; color: var(--muted); border-top: 1px solid var(--line); text-align: center; font-size: 13px; }
 
-  /* The robot. Every moving part transitions, so a replay reads as motion. */
-  .misty { transition: transform .9s cubic-bezier(.4,.1,.2,1); }
-  /* fill-box: pivots are fractions of each part's own box, so they follow
-     Misty wherever the chassis has driven to. */
-  .misty .head { transition: transform .45s ease; transform-box: fill-box; transform-origin: 39% 96%; }
-  .misty .arm { transition: transform .45s ease; transform-box: fill-box; transform-origin: 50% 4%; }
-  .misty .face-features { transition: transform .45s ease; }
+  /* The stage. Misty's and the people's poses are eased in a frame loop;
+     these are only the small repeating motions. */
   .misty .wheel-spokes { transform-box: fill-box; transform-origin: center; }
-  .misty.driving .wheel-spokes { animation: spin .5s linear infinite; }
+  .misty.driving .wheel-spokes { animation: spin .6s linear infinite; }
   .misty.talking .mouth { animation: talk .22s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
-  .misty.scanning .head { animation: scan 1.6s ease-in-out infinite; }
   .misty .led-glow { transition: fill .3s, opacity .3s; }
   .misty.flash .led-glow { animation: flash .35s ease-in-out 3; }
   .misty .ears { opacity: 0; transition: opacity .2s; }
   .misty.listening .ears { opacity: 1; }
   .misty.listening .ears path { animation: ear 1.1s ease-out infinite; }
   .misty.listening .ears path:nth-child(2) { animation-delay: .35s; }
-  .person { transition: transform .9s ease, opacity .6s ease; }
-  .person .wave-arm { transform-box: fill-box; transform-origin: 0% 100%; }
-  .person.waving .wave-arm { animation: wave .5s ease-in-out infinite alternate; }
-  .person.walking { animation: walk 5s linear infinite; }
   svg .bubble { transition: opacity .25s; }
   .cone { opacity: 0; transition: opacity .25s; }
   .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
@@ -167,14 +163,11 @@
   .obstacle.on { opacity: 1; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes talk { from { transform: scaleY(.25); } to { transform: scaleY(1.25); } }
-  @keyframes scan { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-9px); } 75% { transform: translateX(9px); } }
   @keyframes flash { 50% { opacity: .15; } }
   @keyframes ear { from { opacity: .9; } to { opacity: 0; } }
-  @keyframes wave { from { transform: rotate(-18deg); } to { transform: rotate(22deg); } }
-  @keyframes walk { from { transform: translateX(-560px); } to { transform: translateX(120px); } }
   @keyframes pulse { 50% { opacity: .45; } }
   @media (prefers-reduced-motion: reduce) {
-    .misty, .misty *, .person, .person * { animation: none !important; transition: none !important; }
+    .misty *, .cone { animation: none !important; transition: none !important; }
   }
   @media (max-width: 860px) {
     .stage-wrap { grid-template-columns: 1fr; }
@@ -224,87 +217,84 @@
     <div class="stage-wrap">
       <div class="stage-col">
       <div class="stage" id="stage" aria-label="Animated simulation of Misty and the people it is talking to">
-        <svg viewBox="0 0 640 400" role="img" aria-labelledby="stageText">
+        <svg viewBox="0 0 960 540" role="img" aria-labelledby="stageText">
           <title id="stageText">Simulated scene</title>
           <defs>
             <radialGradient id="ledGlow"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+            <radialGradient id="shell" cx=".32" cy=".25" r="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".65" stop-color="#f2f4f7"/><stop offset="1" stop-color="#dfe3ea"/></radialGradient>
+            <radialGradient id="pool"><stop offset="0" stop-color="var(--room-pool)" stop-opacity=".95"/><stop offset="1" stop-color="var(--room-pool)" stop-opacity="0"/></radialGradient>
+            <linearGradient id="figureLight" gradientUnits="userSpaceOnUse" x1="-26" y1="-170" x2="26" y2="-140"><stop offset="0" stop-color="#eef4f8"/><stop offset=".55" stop-color="#d3dee8"/><stop offset="1" stop-color="#b5c5d2"/></linearGradient>
+            <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+            <filter id="goo" x="-30%" y="-20%" width="160%" height="140%" color-interpolation-filters="sRGB">
+              <feGaussianBlur stdDeviation="3.1"/>
+              <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8.4"/>
+            </filter>
+            <filter id="gooEdge" x="-30%" y="-20%" width="160%" height="140%" color-interpolation-filters="sRGB">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="3.1"/>
+              <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 20 -8.4" result="shape"/>
+              <feMorphology operator="dilate" radius=".95" in="shape" result="grown"/>
+              <feFlood flood-color="#a1b3c4"/>
+              <feComposite in2="grown" operator="in"/>
+            </filter>
           </defs>
-          <rect x="0" y="318" width="640" height="82" fill="var(--floor)"/>
-          <line x1="0" y1="318" x2="640" y2="318" stroke="var(--line)" stroke-width="2"/>
-
-          <!-- Obstacle that appears when the approach reports something in the way -->
+          <!-- An eye-level stage: every line running into it meets at the centre. -->
+          <g id="room"></g>
+          <!-- Whoever is further back: B waiting, or somebody walking past. -->
+          <g id="peopleBehind"></g>
+          <!-- Something in Misty's way, when an approach reports one -->
           <g class="obstacle" id="obstacle">
-            <rect x="-24" y="266" width="48" height="52" rx="6" fill="#f2b84b" stroke="#8a5a00" stroke-width="2"/>
-            <path d="M-24 280 L24 300 M-24 300 L24 280" stroke="#8a5a00" stroke-width="3"/>
-            <text x="0" y="258" text-anchor="middle" font-size="13" font-weight="700" fill="var(--world)">blocked</text>
+            <rect x="-17" y="-30" width="34" height="30" rx="7" fill="#f3d9a6" stroke="#c99a4a" stroke-width="1"/>
+            <path d="M-11 -22 L11 -8 M-11 -8 L11 -22" stroke="#c99a4a" stroke-width="1.6" stroke-linecap="round"/>
+            <text x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)">blocked</text>
           </g>
 
-          <!-- People: B waits at the back, A stands in front of Misty -->
-          <g class="person" id="personB" opacity="0">
-            <g transform="translate(560 0)">
-              <circle cx="0" cy="186" r="20" fill="var(--person)" opacity=".75"/>
-              <rect x="-20" y="210" width="40" height="72" rx="16" fill="var(--person)" opacity=".75"/>
-              <rect x="-13" y="280" width="11" height="38" rx="5" fill="var(--person)" opacity=".75"/>
-              <rect x="2" y="280" width="11" height="38" rx="5" fill="var(--person)" opacity=".75"/>
-              <rect class="wave-arm" x="18" y="178" width="9" height="40" rx="4.5" fill="var(--person)" opacity=".75"/>
-              <text x="0" y="192" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" id="personBLabel">B</text>
-            </g>
-          </g>
-          <g class="person" id="personA">
-            <g transform="translate(470 0)">
-              <circle cx="0" cy="170" r="24" fill="var(--person)" id="personHead"/>
-              <rect x="-24" y="198" width="48" height="84" rx="18" fill="var(--person)"/>
-              <rect x="-16" y="280" width="13" height="38" rx="6" fill="var(--person)"/>
-              <rect x="3" y="280" width="13" height="38" rx="6" fill="var(--person)"/>
-              <rect x="-33" y="206" width="10" height="56" rx="5" fill="var(--person)"/>
-              <rect class="wave-arm" x="23" y="206" width="10" height="56" rx="5" fill="var(--person)" id="personWaveArm"/>
-              <text x="0" y="176" text-anchor="middle" font-size="16" font-weight="700" fill="#fff" id="personALabel"></text>
-            </g>
-          </g>
-
-          <!-- Misty. Translated horizontally by distance; parts move per pose -->
-          <g class="misty" id="misty" transform="translate(170 0)">
-            <!-- camera cone for observe_target / inspect_scene -->
-            <path class="cone" id="cone" d="M22 150 L230 110 L230 230 Z" fill="var(--accent)" opacity=".18"/>
-            <!-- base with wheels -->
-            <rect x="-58" y="282" width="116" height="30" rx="14" fill="var(--robot-edge)"/>
-            <g transform="translate(-34 304)"><circle r="13" fill="#48484a"/><g class="wheel-spokes"><circle r="13" fill="none"/><path d="M-9 0H9M0-9V9" stroke="#c7c7cc" stroke-width="3" stroke-linecap="round"/></g></g>
-            <g transform="translate(34 304)"><circle r="13" fill="#48484a"/><g class="wheel-spokes"><circle r="13" fill="none"/><path d="M-9 0H9M0-9V9" stroke="#c7c7cc" stroke-width="3" stroke-linecap="round"/></g></g>
-            <!-- arms, pivoting at the shoulders -->
-            <g class="arm" id="armRight"><rect x="-56" y="204" width="16" height="64" rx="8" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/></g>
-            <g class="arm" id="armLeft"><rect x="40" y="204" width="16" height="64" rx="8" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/></g>
-            <!-- torso with chest LED -->
-            <path d="M-46 196 Q-46 186 -36 186 H36 Q46 186 46 196 L52 284 H-52 Z" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/>
-            <circle class="led-glow" id="ledGlow" cx="0" cy="234" r="26" fill="url(#ledGlow)" opacity="0"/>
-            <circle id="led" cx="0" cy="234" r="11" fill="#3a3a3c" stroke="var(--robot-edge)" stroke-width="2.5"/>
-            <!-- head -->
-            <g class="head" id="head">
-              <rect x="-10" y="170" width="20" height="18" fill="var(--robot-edge)"/>
-              <rect x="-58" y="96" width="116" height="80" rx="30" fill="var(--robot)" stroke="var(--robot-edge)" stroke-width="3"/>
-              <rect x="-44" y="108" width="88" height="56" rx="18" fill="var(--screen)"/>
-              <g class="face-features" id="face"></g>
+          <!-- Misty II, drawn in centimetres, turned three-quarters towards the person -->
+          <g class="misty" id="misty">
+            <ellipse cx="0" cy="0" rx="75" ry="15" fill="url(#pool)"/>
+            <ellipse cx="0" cy="0" rx="34" ry="5" fill="#2a2d36" opacity=".14" filter="url(#soft)"/>
+            <path d="M-20 -19 H24 Q29 -19 30 -15 L28 -10 H-24 L-25 -15 Q-25 -19 -20 -19 Z" fill="#4c505c"/>
+            <g id="armLeft"><ellipse cx="22" cy="-32" rx="3.6" ry="9.5" transform="rotate(-8 22 -32)" fill="#e3e6ec" stroke="#d9dde5"/></g>
+            <path d="M-15 -50 C-21 -50 -23 -42 -23.5 -32 L-24.5 -19 Q-24.5 -15 -20.5 -15 H20.5 Q24.5 -15 24.5 -19 L23.5 -32 C23 -42 21 -50 15 -50 Z" fill="url(#shell)" stroke="#d9dde5"/>
+            <path d="M-15 -50 C-21 -50 -23 -42 -23.5 -32 L-24.5 -19 Q-24.5 -15 -20.5 -15 H-12 C-15 -26 -15 -40 -10 -50 Z" fill="#e3e6ec" opacity=".75"/>
+            <circle class="led-glow" id="ledGlow" cx="8" cy="-31" r="8" fill="url(#ledGlow)" opacity="0"/>
+            <circle cx="8" cy="-31" r="5.2" fill="none" stroke="#c9ced8" stroke-width="1.2"/>
+            <circle id="led" cx="8" cy="-31" r="2.8" fill="#8a90a0"/>
+            <g id="armRight"><ellipse cx="-12" cy="-30" rx="4.6" ry="11" transform="rotate(-12 -12 -30)" fill="url(#shell)" stroke="#d9dde5"/></g>
+            <path d="M-29 -15 H22 Q27 -15 29.5 -11 L26.5 -3 Q25 0 21 0 H-23 Q-27 0 -28.5 -3 L-31.5 -11 Q-32 -15 -29 -15 Z" fill="#6b7080"/>
+            <g id="wheels"></g>
+            <path d="M22 -13 Q26.5 -12.5 27.5 -9.5" fill="none" stroke="#b7bcc8" stroke-width="1.2" stroke-linecap="round"/>
+            <rect x="-5" y="-56" width="10" height="8" rx="3" fill="#e3e6ec" stroke="#d9dde5"/>
+            <g id="head">
+              <rect x="-30" y="-88" width="54" height="36" rx="17" fill="#e3e6ec" stroke="#d9dde5"/>
+              <rect x="-26" y="-89" width="55" height="37" rx="17.5" fill="url(#shell)" stroke="#d9dde5"/>
+              <path d="M-12 -88.5 Q2 -94 16 -88.5" fill="none" stroke="#d9dde5" stroke-width="1.2"/>
+              <rect x="-12" y="-83" width="37" height="25" rx="11" fill="#252a38"/>
+              <g id="face"></g>
               <g class="ears" id="ears">
-                <path d="M66 118 Q76 136 66 154" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
-                <path d="M76 110 Q90 136 76 162" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+                <path d="M31 -78 Q35 -71 31 -64" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
+                <path d="M35 -82 Q41 -71 35 -60" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
               </g>
             </g>
-            <!-- floating badge for Skills and sounds -->
-            <g class="badge-float" id="floatBadge">
-              <rect x="-80" y="52" width="160" height="30" rx="15" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
-              <text id="floatText" x="0" y="72" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)"></text>
+            <g class="badge-float" id="floatBadge" transform="translate(0 -104) scale(.55)">
+              <rect x="-80" y="-18" width="160" height="30" rx="15" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
+              <text id="floatText" x="0" y="2" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)"></text>
             </g>
           </g>
+          <!-- The camera's look, from Misty's screen to the person's face -->
+          <path class="cone" id="cone" d="" fill="var(--accent)" opacity=".16"/>
+          <!-- The person Misty is talking to -->
+          <g id="personFront"></g>
 
-          <!-- Speech bubbles (text set from the run) -->
+          <!-- Speech bubbles, each with a tail to whoever is speaking -->
           <g class="bubble" id="mistyBubble" opacity="0">
-            <rect id="mistyBubbleBox" x="20" y="14" width="300" height="60" rx="16" fill="var(--page)" stroke="var(--misty)" stroke-width="1.5"/>
-            <path id="mistyBubbleTail" d="" fill="var(--page)" stroke="var(--misty)" stroke-width="1.5" stroke-linejoin="round"/>
-            <text id="mistyBubbleText" x="36" y="40" font-size="14" fill="var(--ink)"></text>
+            <rect id="mistyBubbleBox" x="24" y="20" width="420" height="60" rx="22" fill="var(--page)" stroke="var(--misty)" stroke-width="2"/>
+            <path id="mistyBubbleTail" d="" fill="var(--page)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
+            <text id="mistyBubbleText" x="46" y="54" font-size="20" fill="var(--ink)"></text>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
-            <rect id="personBubbleBox" x="330" y="14" width="290" height="60" rx="16" fill="var(--page)" stroke="var(--person)" stroke-width="1.5"/>
-            <path id="personBubbleTail" d="" fill="var(--page)" stroke="var(--person)" stroke-width="1.5" stroke-linejoin="round"/>
-            <text id="personBubbleText" x="346" y="40" font-size="14" fill="var(--ink)"></text>
+            <rect id="personBubbleBox" x="516" y="20" width="420" height="60" rx="22" fill="var(--page)" stroke="var(--person)" stroke-width="2"/>
+            <path id="personBubbleTail" d="" fill="var(--page)" stroke="var(--person)" stroke-width="2" stroke-linejoin="round"/>
+            <text id="personBubbleText" x="538" y="54" font-size="20" fill="var(--ink)"></text>
           </g>
         </svg>
       </div>
@@ -650,7 +640,8 @@ function sceneAt(index) {
     why: "", driving: false, obstacle: false, flash: false, halted: false,
     actor: "", waiting: null, done: false, caption: "", cue: null, skill: "",
     looking: false, waving: false, sensing: "", faceKnown: false,
-    distanceKnown: false, lastSpeaker: "",
+    distanceKnown: false, lastSpeaker: "", gazeKnown: false, headLowered: false,
+    smiling: false,
   };
   let previousLed = null;
   for (let i = 0; i <= index; i += 1) {
@@ -666,6 +657,10 @@ function sceneAt(index) {
         scene.faceKnown = true;
         scene.looking = Boolean(facts.looking);
         scene.waving = Boolean(facts.hand_visible) && Boolean(facts.looking);
+        // The person's face is drawn from these signals and nothing else.
+        scene.gazeKnown = true;
+        scene.headLowered = Boolean(facts.head_lowered);
+        scene.smiling = Boolean(facts.mouth_corners_raised);
       }
       if (step.kind === "input" || step.kind === "observed_cue") {
         // Somebody else speaking while Misty is busy with A: they step in
@@ -676,6 +671,7 @@ function sceneAt(index) {
         scene.personSays = other ? `${step.actor}: ${words}` : words;
         scene.personObserved = step.kind === "observed_cue";
         scene.lastSpeaker = "person";
+        if (step.kind === "observed_cue" && /lowered/i.test(words)) scene.headLowered = true;
       }
       if (step.kind === "asr" && step.text) scene.personSays = step.text;
       continue;
@@ -731,6 +727,9 @@ function sceneAt(index) {
     previousLed = led;
   }
   scene.caption = captionFor(scene);
+  // Somebody the camera watched who never looked at Misty, and never
+  // became anybody's Episode, is walking past.
+  scene.passing = scene.gazeKnown && !scene.looking && !scene.actor && scene.present;
   return scene;
 }
 
@@ -784,80 +783,283 @@ function emptyScene() {
     mistySays: "", personSays: "", personObserved: false, why: "", driving: false,
     obstacle: false, flash: false, halted: false, actor: "", waiting: null,
     done: false, skill: "", caption: "", faceKnown: false, distanceKnown: false,
-    lastSpeaker: "",
+    lastSpeaker: "", gazeKnown: false, headLowered: false, smiling: false, passing: false,
   };
 }
 
 /* ---------- Drawing ---------- */
 
+/* The stage is an eye-level room seen straight on, so every line running
+   into it meets at the centre. Figures are drawn in centimetres and scaled
+   by how far back they stand. Distances are a stage cheat, as in any
+   theatre: the person keeps to the right, and Misty's gap from them grows
+   with the real distance without being to scale; the chips under the stage
+   carry the real number. */
+const STAGE = { W: 960, H: 540, F: 1400, eye: 110, camera: 560, front: -130, back: -330, personX: 150 };
+
+function project([x, y, z]) {
+  const d = STAGE.camera - z;
+  return [STAGE.W / 2 + STAGE.F * x / d, STAGE.H / 2 - STAGE.F * (y - STAGE.eye) / d];
+}
+function scaleAt(z) { return STAGE.F / (STAGE.camera - z); }
+function mistyXFor(distance) {
+  return STAGE.personX - (130 + Math.max(30, Math.min(300, Number(distance) || 150)) * 0.9);
+}
+
+function drawRoom() {
+  const X = 380, B = -560, FRONT = 520, TOP = 300;
+  const quad = (points) => points.map((p) => project(p).map((n) => n.toFixed(1)).join(",")).join(" ");
+  const line = (a, b) => {
+    const [x1, y1] = project(a), [x2, y2] = project(b);
+    return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+  };
+  let lines = "";
+  for (let x = -X; x <= X; x += 63.4) lines += line([x, 0, FRONT], [x, 0, B]);
+  for (const z of [-420, -270, -110, 60, 220]) lines += line([-X, 0, z], [X, 0, z]);
+  byId("room").innerHTML = `
+    <polygon points="${quad([[-X,TOP,B],[X,TOP,B],[X,TOP,FRONT],[-X,TOP,FRONT]])}" fill="var(--room-top)"/>
+    <polygon points="${quad([[-X,0,B],[-X,0,FRONT],[-X,TOP,FRONT],[-X,TOP,B]])}" fill="var(--room-left)"/>
+    <polygon points="${quad([[X,0,B],[X,0,FRONT],[X,TOP,FRONT],[X,TOP,B]])}" fill="var(--room-right)"/>
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="var(--room-back)"/>
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,0,FRONT],[-X,0,FRONT]])}" fill="var(--room-floor)"/>
+    <g stroke="var(--room-line)" stroke-width="1.2">${lines}</g>
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="none" stroke="var(--room-edge)"/>`;
+  // Misty's tracks: four wheels, each with a spoke so driving shows.
+  byId("wheels").innerHTML = [-20, -8, 4, 16].map((x) => `
+    <g transform="translate(${x} -7)"><circle r="4.4" fill="#8a90a0"/>
+      <g class="wheel-spokes"><circle r="4.4" fill="none"/><path d="M-3 0H3M0-3V3" stroke="#5b6070" stroke-width="1.1" stroke-linecap="round"/></g></g>`).join("");
+}
+
+/* Misty's screen, in the head's own centimetres. */
+const EYE = "var(--eye)";
 const FACES = {
-  neutral: '<ellipse cx="-18" cy="136" rx="7" ry="9" fill="var(--eye)"/><ellipse cx="18" cy="136" rx="7" ry="9" fill="var(--eye)"/>',
-  happy: '<path d="M-26 140 Q-18 126 -10 140" fill="none" stroke="var(--eye)" stroke-width="5" stroke-linecap="round"/><path d="M10 140 Q18 126 26 140" fill="none" stroke="var(--eye)" stroke-width="5" stroke-linecap="round"/>',
-  sad: '<ellipse cx="-18" cy="140" rx="7" ry="6" fill="var(--eye)"/><ellipse cx="18" cy="140" rx="7" ry="6" fill="var(--eye)"/><path d="M-28 128 L-10 132 M28 128 L10 132" stroke="var(--eye)" stroke-width="3" stroke-linecap="round"/>',
-  angry: '<ellipse cx="-18" cy="140" rx="7" ry="6" fill="#ff8a7a"/><ellipse cx="18" cy="140" rx="7" ry="6" fill="#ff8a7a"/><path d="M-28 126 L-10 133 M28 126 L10 133" stroke="#ff8a7a" stroke-width="3" stroke-linecap="round"/>',
-  surprised: '<circle cx="-18" cy="136" r="10" fill="none" stroke="var(--eye)" stroke-width="4"/><circle cx="18" cy="136" r="10" fill="none" stroke="var(--eye)" stroke-width="4"/>',
-  love: '<path d="M-18 145 l-9 -9 a5 5 0 0 1 9 -6 a5 5 0 0 1 9 6 z" fill="#ff7aa8"/><path d="M18 145 l-9 -9 a5 5 0 0 1 9 -6 a5 5 0 0 1 9 6 z" fill="#ff7aa8"/>',
-  afraid: '<ellipse cx="-18" cy="138" rx="5" ry="8" fill="var(--eye)"/><ellipse cx="18" cy="138" rx="5" ry="8" fill="var(--eye)"/><path d="M-26 126 L-12 130 M26 126 L12 130" stroke="var(--eye)" stroke-width="3" stroke-linecap="round"/>',
+  neutral: `<rect x="-3.2" y="-75" width="6.4" height="9.5" rx="3.2" fill="${EYE}"/><rect x="10.8" y="-75" width="6.4" height="9.5" rx="3.2" fill="${EYE}"/>`,
+  happy: `<path d="M-3.4 -68 q3.4 -5.4 6.8 0 M10.6 -68 q3.4 -5.4 6.8 0" fill="none" stroke="${EYE}" stroke-width="2.2" stroke-linecap="round"/>`,
+  sad: `<rect x="-3.2" y="-71" width="6.4" height="6" rx="3" fill="${EYE}"/><rect x="10.8" y="-71" width="6.4" height="6" rx="3" fill="${EYE}"/><path d="M-4 -76 L3 -74 M18 -76 L11 -74" stroke="${EYE}" stroke-width="1.3" stroke-linecap="round"/>`,
+  angry: `<rect x="-3.2" y="-71" width="6.4" height="6" rx="3" fill="#ff8a7a"/><rect x="10.8" y="-71" width="6.4" height="6" rx="3" fill="#ff8a7a"/><path d="M-4 -77 L3 -74 M18 -77 L11 -74" stroke="#ff8a7a" stroke-width="1.3" stroke-linecap="round"/>`,
+  surprised: `<circle cx="0" cy="-70" r="3.8" fill="none" stroke="${EYE}" stroke-width="1.6"/><circle cx="14" cy="-70" r="3.8" fill="none" stroke="${EYE}" stroke-width="1.6"/>`,
+  love: `<path d="M0 -66 l-3.6 -3.6 a2 2 0 0 1 3.6 -2.4 a2 2 0 0 1 3.6 2.4 z M14 -66 l-3.6 -3.6 a2 2 0 0 1 3.6 -2.4 a2 2 0 0 1 3.6 2.4 z" fill="#ff7aa8"/>`,
+  afraid: `<rect x="-2" y="-74" width="4" height="8" rx="2" fill="${EYE}"/><rect x="12" y="-74" width="4" height="8" rx="2" fill="${EYE}"/><path d="M-4 -78 L2 -76.5 M18 -78 L12 -76.5" stroke="${EYE}" stroke-width="1.2" stroke-linecap="round"/>`,
 };
-const MOUTH = '<rect class="mouth" x="-9" y="152" width="18" height="4" rx="2" fill="var(--eye)"/>';
+const MOUTH = `<rect class="mouth" x="4.2" y="-62.6" width="5.6" height="1.4" rx=".7" fill="${EYE}" opacity=".8"/>`;
+
+/* ---------- The person: a soft silhouette in glacier grey ----------
+   The limbs move on their own but are drawn as one shape: the parts are
+   merged, lit by one gradient, and outlined only around the outside. */
+const BODY = {
+  thigh: "M-8 0 A8 8 0 0 1 8 0 C8 12 7.2 28 5.7 45 Q0 49.5 -5.7 45 C-7.2 28 -8 12 -8 0 Z",
+  calf: "M-5.7 0 A5.7 5.7 0 0 1 5.7 0 C5.3 18 4.6 32 4.4 40 L-4 40 L-4.3 38 C-4.9 26 -5.5 12 -5.7 0 Z",
+  foot: "M-10 40 C-10 37 -6 36.6 -2.6 36.8 L4.6 37 C5.8 37.2 5.8 42.6 4.4 42.6 H-8.2 C-9.6 42.6 -10 41.6 -10 40 Z",
+  upper: "M-4.9 -1.5 C-5.4 11 -5.1 23 -4.3 33 Q0 37.5 4.3 33 C5.1 23 5.4 11 4.9 -1.5 Q0 -6 -4.9 -1.5 Z",
+  fore: "M-4 -1.5 C-4.2 10 -3.8 20 -3.4 27 C-3.7 32.5 -1.8 36 0.2 36 C2.2 36 3.9 32.5 3.6 27 C4 20 4.2 10 4 -1.5 Q0 -5 -4 -1.5 Z",
+  torso: "M-5.5 -158 C-5.5 -153 -6.5 -150.5 -9 -149 C-15 -147.5 -21 -146.5 -22.5 -141.5 C-23.5 -137 -23 -130 -22 -122 C-20.8 -112 -18.6 -100 -17.4 -90 C-17 -86 -17.2 -82 -16.4 -78.5 C-14.5 -76 -8 -77 0 -77 C8 -77 14.5 -76 16.4 -78.5 C17.2 -82 17 -86 16.8 -90 C17.8 -100 19.8 -112 20.8 -122 C21.8 -130 22 -137 21 -141.5 C19.5 -146.5 14 -147.5 8.5 -149 C6 -150.5 5 -153 5 -158 Z",
+};
+
+function mix(a, b, k) { return a + (b - a) * k; }
+
+function limb(kind, at, a1, a2, len, hand = false) {
+  const top = `translate(${at[0]} ${at[1]}) rotate(${a1.toFixed(2)})`;
+  const low = `${top} translate(0 ${len}) rotate(${a2.toFixed(2)})`;
+  if (kind === "leg") {
+    return `<path d="${BODY.thigh}" transform="${top}"/><path d="${BODY.calf}" transform="${low}"/><path d="${BODY.foot}" transform="${low}"/>`;
+  }
+  // An open hand, only when it is held up to be seen.
+  const palm = hand
+    ? `<ellipse cx="0.2" cy="32.5" rx="5" ry="6.4" transform="${low}"/>` +
+      `<ellipse cx="-4.6" cy="28" rx="1.9" ry="3.8" transform="${low} rotate(28 -4.6 28)"/>`
+    : "";
+  return `<path d="${BODY.upper}" transform="${top}"/><path d="${BODY.fore}" transform="${low}"/>${palm}`;
+}
+
+/* `turn` runs from three-quarters (0, standing) to side-on (1, walking):
+   side-on, a body is narrower front to back and its hips and shoulders sit
+   near its middle. `stride` is how much of a walk there is in the step. */
+function personPose(motion, t, stride, turn) {
+  const p = {
+    width: mix(1, 0.66, turn), hipX: mix(8.2, 1.5, turn), shoulderX: mix(17.3, 5, turn),
+    // Standing, feet apart, the one on Misty's side a little ahead.
+    nearLeg: [-4, 0], farLeg: [5.5, 0], nearArm: [-3, 8], farArm: [-4, 8],
+    bob: Math.sin(t * 1.6) * 0.5, lean: 0, palm: false,
+  };
+  if (stride > 0) {
+    const phase = t * Math.PI * 2 * 0.95;
+    const s = Math.sin(phase), c = Math.cos(phase);
+    const blend = (rest, walk) => rest.map((v, i) => mix(v, walk[i], stride));
+    p.nearLeg = blend(p.nearLeg, [24 * s, -30 * Math.max(0, c)]);
+    p.farLeg = blend(p.farLeg, [-24 * s, -30 * Math.max(0, -c)]);
+    p.nearArm = blend(p.nearArm, [-32 * s, 8 + 10 * Math.max(0, -s)]);
+    p.farArm = blend(p.farArm, [32 * s, 8 + 10 * Math.max(0, s)]);
+    p.bob = mix(p.bob, -1.6 * Math.abs(c), stride);
+    p.lean = 3 * stride;
+  } else if (motion === "wave") {
+    // A greeting: the arm on Misty's side up and out, elbow about chest
+    // high, the hand beside the face, swinging from the elbow.
+    const w = Math.sin(t * Math.PI * 2 * 1.7);
+    p.farArm = [75 - 3 * w, 95 + 14 * w];
+    p.lean = 1.5;
+    p.palm = true;
+  }
+  return p;
+}
+
+/* A face from the fixture's observable signals only: looking, head
+   lowered, mouth corners raised. Three marks, turned towards Misty. */
+function personFace(hx, hy, r, exp) {
+  const k = r / 18, ink = "#3e505f";
+  const x = hx + (exp === "away" ? 6 : -6) * k, y = hy - 2 * k;
+  if (exp === "lowered") {
+    return `<path d="M${x-9*k} ${y+2*k} q${2.4*k} ${2.2*k} ${4.8*k} 0 M${x+4.2*k} ${y+2*k} q${2.4*k} ${2.2*k} ${4.8*k} 0" fill="none" stroke="${ink}" stroke-width="${1.5*k}" stroke-linecap="round"/>
+      <path d="M${x-3.6*k} ${y+10*k} q${3.6*k} ${-1.8*k} ${7.2*k} 0" fill="none" stroke="${ink}" stroke-width="${1.5*k}" stroke-linecap="round"/>`;
+  }
+  const look = (exp === "away" ? 0.9 : -0.6) * k;
+  let out = `<ellipse cx="${x-6.4*k+look}" cy="${y}" rx="${1.8*k}" ry="${2.3*k}" fill="${ink}"/><ellipse cx="${x+6.4*k+look}" cy="${y}" rx="${1.8*k}" ry="${2.3*k}" fill="${ink}"/>`;
+  if (exp === "smile") {
+    out += `<path d="M${x-4.6*k} ${y+6.5*k} q${4.6*k} ${4.4*k} ${9.2*k} 0" fill="none" stroke="${ink}" stroke-width="${1.6*k}" stroke-linecap="round"/>
+      <ellipse cx="${x-9.4*k}" cy="${y+5.5*k}" rx="${2.5*k}" ry="${1.4*k}" fill="#f3b8c4" opacity=".55"/><ellipse cx="${x+9.4*k}" cy="${y+5.5*k}" rx="${2.5*k}" ry="${1.4*k}" fill="#f3b8c4" opacity=".55"/>`;
+  } else {
+    out += `<path d="M${x-3*k} ${y+8*k} h${6*k}" stroke="${ink}" stroke-width="${1.5*k}" stroke-linecap="round"/>`;
+  }
+  return out;
+}
+
+function drawPerson(id, { x, z, exp, motion, t, stride = 0, turn = 0, opacity = 1, label = "" }) {
+  const p = personPose(motion, t, stride, turn);
+  const nod = exp === "lowered" ? "translate(-3 4) rotate(-18 -2 -153)" : exp === "away" ? "rotate(7 -2 -153)" : "rotate(-4 -2 -153)";
+  const parts =
+    limb("arm", [-p.shoulderX, -141], p.farArm[0], p.farArm[1], 33, p.palm) +
+    limb("leg", [-p.hipX, -84], p.farLeg[0], p.farLeg[1], 45) +
+    limb("leg", [p.hipX, -84], p.nearLeg[0], p.nearLeg[1], 45) +
+    `<path d="${BODY.torso}" transform="scale(${p.width.toFixed(3)} 1)"/>` +
+    `<circle cx="-2" cy="-170" r="16.5" transform="${nod}"/>` +
+    limb("arm", [p.shoulderX, -141], p.nearArm[0], p.nearArm[1], 33);
+  const [sx, gy] = project([x, 0, z]);
+  const k = scaleAt(z);
+  const tag = label
+    ? `<text x="-2" y="-196" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">${escapeText(label)}</text>`
+    : "";
+  return `<g opacity="${opacity}">
+    <ellipse cx="${sx}" cy="${gy}" rx="${60 * k}" ry="${12 * k}" fill="url(#pool)"/>
+    <ellipse cx="${sx}" cy="${gy}" rx="${20 * k}" ry="${4 * k}" fill="#2a2d36" opacity=".13" filter="url(#soft)"/>
+    <g transform="translate(${sx.toFixed(1)} ${gy.toFixed(1)}) scale(${k.toFixed(4)})">
+      <g transform="translate(0 ${p.bob.toFixed(2)}) rotate(${-p.lean} 0 -80)">
+        <g filter="url(#gooEdge)">${parts}</g>
+        <mask id="${id}Mask" maskUnits="userSpaceOnUse" x="-80" y="-240" width="160" height="260"><g fill="#fff" filter="url(#goo)">${parts}</g></mask>
+        <rect x="-80" y="-240" width="160" height="260" fill="url(#figureLight)" mask="url(#${id}Mask)"/>
+        <g transform="${nod} translate(${(-1.5 * turn).toFixed(2)} 0)">${personFace(-2, -170, 16.5, exp)}</g>
+        ${tag}
+      </g>
+    </g></g>`;
+}
+
+function expressionOf(scene) {
+  if (scene.headLowered || scene.cue === "care_cue") return "lowered";
+  if (scene.gazeKnown && !scene.looking) return "away";
+  if (scene.smiling) return "smile";
+  return "neutral";
+}
+
+/* ---------- Drawing a step, and the frames between steps ---------- */
+
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const stage = {
+  scene: null, t0: performance.now(), last: performance.now(),
+  // What is on screen now, eased towards the step's pose each frame.
+  now: { x: null, near: 0, far: 0, roll: 0, faceX: 0, faceY: 0 },
+};
 
 function drawScene(scene) {
-  const misty = byId("misty");
+  // Called once per step: what does not move between steps is set here,
+  // and the frame loop eases the rest.
+  stage.scene = scene;
   const robot = scene.robot;
-  // Where Misty stands: the person is fixed, Misty sits `distance` to their left.
-  const distance = Math.max(30, Math.min(220, Number(scene.distance) || 150));
-  const x = Math.max(80, 470 - (100 + (distance - 50) * 1.25));
-  misty.setAttribute("transform", `translate(${x} 0)`);
-  byId("obstacle").setAttribute("transform", `translate(${Math.min(420, x + 90)} 0)`);
-  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
-  byId("cone").setAttribute("d", `M22 150 L${Math.max(60, 470 - x - 10)} 118 L${Math.max(60, 470 - x - 10)} 250 Z`);
-
-  const [pitch, roll, yaw] = robot.head || [0, 0, 0];
-  byId("head").style.transform = `rotate(${-roll * 0.6}deg)`;
-  byId("face").style.transform = `translate(${(-yaw / 81) * 14}px, ${(pitch / 40) * 8}px)`;
+  const misty = byId("misty");
   byId("face").innerHTML = (FACES[robot.expression] || FACES.neutral) + MOUTH;
-  const [left, right] = robot.arms || [90, 90];
-  // 90° is hanging down and -29° is straight up; drawn face-on, that range
-  // spans almost a half-turn at each shoulder.
-  const raise = (angle) => ((90 - angle) / 119) * 170;
-  byId("armRight").style.transform = `rotate(${raise(right)}deg)`;
-  byId("armLeft").style.transform = `rotate(${-raise(left)}deg)`;
   const [r, g, b] = robot.led || [0, 0, 0];
   const lit = r + g + b > 0;
-  byId("led").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "#3a3a3c");
+  byId("led").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "#8a90a0");
   byId("ledGlow").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "url(#ledGlow)");
   byId("ledGlow").setAttribute("opacity", lit ? ".45" : "0");
-
   misty.classList.toggle("talking", scene.tool === "speak");
   misty.classList.toggle("listening", scene.tool === "listen");
-  misty.classList.toggle("scanning", scene.tool === "look_around");
-  misty.classList.toggle("driving", Boolean(scene.driving));
   misty.classList.remove("flash");
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
   byId("floatBadge").classList.toggle("on", Boolean(scene.skill));
   byId("floatText").textContent = scene.skill || "";
-
-  const personA = byId("personA");
-  personA.style.opacity = scene.present ? "1" : ".18";
-  personA.classList.toggle(
-    "waving",
-    (scene.waving || scene.cue === "social_invitation") && !scene.done
-  );
-  byId("personHead").setAttribute("cy", scene.cue === "care_cue" ? "178" : "170");
-  byId("personALabel").textContent = scene.actor && scene.actor.length <= 2 ? scene.actor : "";
-  const personB = byId("personB");
-  personB.style.opacity = scene.waiting ? "1" : "0";
-  personB.classList.toggle("waving", Boolean(scene.waiting));
-  byId("personBLabel").textContent = scene.waiting || "";
-
-  // Whoever spoke last is in full; the line before it stays, faded, so the
-  // exchange can still be read as a pair.
-  setBubble("misty", scene.mistySays, false, x, scene.lastSpeaker === "person");
-  setBubble("person", scene.personSays, scene.personObserved, 470, scene.lastSpeaker === "misty");
+  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
+  setBubble("misty", scene.mistySays, false, scene.lastSpeaker === "person");
+  setBubble("person", scene.personSays, scene.personObserved, scene.lastSpeaker === "misty");
+  if (REDUCED || stage.now.x === null) stage.now.x = mistyXFor(scene.distance);
 }
 
-function setBubble(who, text, observed, speakerX, earlier) {
+function frame(clock) {
+  const scene = stage.scene;
+  requestAnimationFrame(frame);
+  if (!scene) return;
+  const t = REDUCED ? 0 : (clock - stage.t0) / 1000;
+  const dt = Math.min(0.1, (clock - stage.last) / 1000);
+  stage.last = clock;
+  const ease = REDUCED ? 1 : 1 - Math.exp(-dt * 5);
+  const now = stage.now;
+
+  // Misty: where it stands, how its head and arms are set.
+  const robot = scene.robot;
+  const [pitch, roll, yaw] = robot.head || [0, 0, 0];
+  const [left, right] = robot.arms || [90, 90];
+  // 90 degrees hangs down and -29 points straight up.
+  const raise = (angle) => ((90 - angle) / 119) * 150;
+  const scanning = scene.tool === "look_around" && !REDUCED ? Math.sin(t * 3.9) * 3 : 0;
+  const target = {
+    x: mistyXFor(scene.distance), near: -raise(right), far: -raise(left),
+    roll: -roll * 0.6, faceX: (-yaw / 81) * 3 + scanning, faceY: (pitch / 40) * 2,
+  };
+  for (const key of Object.keys(target)) now[key] += (target[key] - now[key]) * ease;
+  const moving = Math.abs(target.x - now.x) > 0.5;
+  const misty = byId("misty");
+  misty.classList.toggle("driving", moving);
+  const [mx, gy] = project([now.x, 0, STAGE.front]);
+  const k = scaleAt(STAGE.front);
+  misty.setAttribute("transform", `translate(${mx.toFixed(1)} ${gy.toFixed(1)}) scale(${k.toFixed(4)})`);
+  byId("head").setAttribute("transform", `rotate(${(-7 + now.roll).toFixed(2)} 0 -53)`);
+  byId("face").setAttribute("transform", `translate(${now.faceX.toFixed(2)} ${now.faceY.toFixed(2)})`);
+  byId("armRight").setAttribute("transform", `rotate(${now.near.toFixed(1)} -12 -40)`);
+  byId("armLeft").setAttribute("transform", `rotate(${now.far.toFixed(1)} 22 -41)`);
+  const [ox, oy] = project([now.x + 55, 0, STAGE.front]);
+  byId("obstacle").setAttribute("transform", `translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${k.toFixed(4)})`);
+
+  // The person: waving, walking past, or standing; with a face read from
+  // what was observed.
+  const exp = expressionOf(scene);
+  const labels = (state.actors || []).length > 1;
+  const wave = (scene.waving || scene.cue === "social_invitation") && !scene.done;
+  let front = "", behind = "";
+  if (scene.passing) {
+    // Walking past at the back, never turning towards Misty.
+    const x = 360 - ((t * 62) % 760);
+    behind += drawPerson("passer", { x, z: -260, exp: "away", motion: "walk", t, stride: REDUCED ? 0 : 1, turn: 1 });
+  } else {
+    front = drawPerson("personA", {
+      x: STAGE.personX, z: STAGE.front, exp, motion: wave ? "wave" : "stand", t,
+      opacity: scene.present ? 1 : 0.18, label: labels ? scene.actor : "",
+    });
+  }
+  if (scene.waiting) {
+    behind += drawPerson("personB", { x: 255, z: STAGE.back, exp: "smile", motion: "wave", t, label: scene.waiting });
+  }
+  byId("peopleBehind").innerHTML = behind;
+  byId("personFront").innerHTML = front;
+
+  // The camera's look, from Misty's screen to the person's face.
+  const [ex, ey] = [mx + 22 * k, gy - 72 * k];
+  const [fx, fy] = project([STAGE.personX - 2, 170, STAGE.front]);
+  byId("cone").setAttribute("d", `M${ex.toFixed(1)} ${ey.toFixed(1)} L${fx.toFixed(1)} ${(fy - 26).toFixed(1)} L${fx.toFixed(1)} ${(fy + 26).toFixed(1)} Z`);
+  // Bubble tails follow whoever is speaking.
+  pointTail("misty", mx + 6 * k, gy - 94 * k);
+  const [hx, hy] = project([STAGE.personX - 2, 188, STAGE.front]);
+  pointTail("person", hx, hy);
+}
+
+function setBubble(who, text, observed, earlier) {
   const group = byId(`${who}Bubble`);
   const box = byId(`${who}BubbleBox`);
   const node = byId(`${who}BubbleText`);
@@ -865,27 +1067,31 @@ function setBubble(who, text, observed, speakerX, earlier) {
   node.textContent = "";
   if (!text) return;
   const shown = observed ? `Observed: ${text}` : text;
-  const lines = wrap(shown, who === "misty" ? 38 : 36).slice(0, 4);
-  const left = Number(box.getAttribute("x")) + 16;
+  const lines = wrap(shown, 36).slice(0, 4);
+  const left = Number(box.getAttribute("x")) + 22;
   lines.forEach((line, index) => {
     const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
     span.setAttribute("x", String(left));
-    span.setAttribute("dy", index === 0 ? "0" : "18");
+    span.setAttribute("dy", index === 0 ? "0" : "26");
     span.textContent = line;
     if (observed) span.setAttribute("font-style", "italic");
     node.appendChild(span);
   });
-  const height = 26 + lines.length * 18;
-  box.setAttribute("height", String(height));
-  // A tail pointing at whoever is speaking, so the bubble is theirs at a
+  box.setAttribute("height", String(34 + lines.length * 26));
+}
+
+function pointTail(who, speakerX, speakerY) {
+  // A tail from the bubble to whoever is speaking, so it is theirs at a
   // glance rather than by which side of the stage it sits on.
+  const box = byId(`${who}BubbleBox`);
   const boxLeft = Number(box.getAttribute("x"));
   const boxRight = boxLeft + Number(box.getAttribute("width"));
-  const bottom = Number(box.getAttribute("y")) + height;
-  const base = Math.max(boxLeft + 26, Math.min(boxRight - 26, speakerX));
-  const tip = base + (speakerX - base) * 0.5;
+  const bottom = Number(box.getAttribute("y")) + Number(box.getAttribute("height"));
+  const base = Math.max(boxLeft + 36, Math.min(boxRight - 36, speakerX));
+  const reach = Math.max(18, Math.min(60, (speakerY - bottom) * 0.5));
+  const tip = base + (speakerX - base) * 0.4;
   byId(`${who}BubbleTail`).setAttribute(
-    "d", `M${base - 9} ${bottom - 2} L${tip} ${bottom + 16} L${base + 9} ${bottom - 2}`
+    "d", `M${(base - 12).toFixed(1)} ${bottom - 2} L${tip.toFixed(1)} ${(bottom + reach).toFixed(1)} L${(base + 12).toFixed(1)} ${bottom - 2}`
   );
 }
 
@@ -1089,6 +1295,8 @@ byId("replayStrip").addEventListener("click", (event) => {
 });
 window.addEventListener("resize", fitStrip);
 byId("runLive").addEventListener("click", runLive);
+drawRoom();
+requestAnimationFrame(frame);
 boot().catch((error) => showError(String(error)));
 </script>
 </body>

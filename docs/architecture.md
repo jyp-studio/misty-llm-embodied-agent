@@ -150,7 +150,13 @@ the same fixtures with the configured hosted model making every decision,
 and writes each run to `misty_agent/demo/recordings/` in the scripted
 route's shape, labelled `recorded_model_run` with the model name and date.
 The page replays them without a key and animates the simulated Misty from
-each Moment's folded pose plus the Tool call, Observation and Snapshot. It
+each Moment's folded pose plus the Tool call, Observation and Snapshot, on
+an eye-level stage whose lines meet at its centre. Misty and the person
+stand three-quarters to each other so both faces read, and the gap between
+them follows the real distance without being to scale. The person is an
+abstract figure whose face is drawn only from the fixture's observable
+signals (looking, head lowered, mouth corners raised), never inferred from
+what they say. It
 plays one list per run — `playback_of` — which keeps the runtime's
 records in the order it wrote them and lets each Episode's Moments out as
 time passes, so a run that never opened an Episode still has its reasoning

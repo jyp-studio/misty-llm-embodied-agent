@@ -1075,7 +1075,7 @@ function frame(clock) {
    faces left, so theirs sits beside and above their face, growing left.
    Either may cross the middle of the stage a little when the line is
    short. A line that needs wrapping stays on its speaker's side. */
-const BUBBLE = { font: 20, line: 26, pad: 22, gap: 26, cross: 40, min: 220, max: 420, lines: 5 };
+const BUBBLE = { font: 20, line: 26, pad: 22, gap: 46, side: 64, cross: 40, min: 220, max: 420, lines: 5 };
 const bubbles = { misty: null, person: null };
 
 function bubbleRoom(who, cross) {
@@ -1088,7 +1088,7 @@ function bubbleRoom(who, cross) {
   const [x] = speakerHead(who);
   let reach;
   if (who === "misty") reach = cross ? middle + cross - (x - 36) : middle - 12;
-  else reach = (x - 40) - (middle - cross);
+  else reach = (x - BUBBLE.side) - (middle - cross);
   return Math.max(BUBBLE.min, Math.min(BUBBLE.max, reach)) - BUBBLE.pad * 2;
 }
 
@@ -1179,12 +1179,12 @@ function placeBubble(who) {
     y = Math.max(edge, top - BUBBLE.gap - height);
     const bx = Math.max(x + 28, Math.min(x + width - 28, hx));
     base = [bx, y + height];
-    tip = [hx + 2, top - 6];
+    tip = [hx + 2, top - 16];
   } else {
-    x = Math.min(STAGE.W - edge - width, Math.max(hx - 40 - width, centre - cross));
-    y = Math.max(edge, Math.min(middle - 8 - height, top - 10 - height * 0.4));
+    x = Math.min(STAGE.W - edge - width, Math.max(hx - BUBBLE.side - width, centre - cross));
+    y = Math.max(edge, Math.min(middle - 20 - height, top - 18 - height * 0.4));
     base = [x + width - 30, y + height];
-    tip = [hx - 20, middle - 2];
+    tip = [hx - 34, middle - 10];
   }
   byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
   byId(`${who}BubbleTail`).setAttribute(

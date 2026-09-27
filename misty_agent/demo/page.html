@@ -11,7 +11,7 @@
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0071e3; --world: #a85a00;
-    --room-back: #eaeef3;
+    --room-top: #dde2ea; --room-left: #e4e8ef; --room-right: #e1e6ed; --room-back: #eaeef3;
     --room-floor: #f8f9fb; --room-line: #e6e9ef; --room-edge: #d3d9e3; --room-pool: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
@@ -21,7 +21,7 @@
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
       --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
       --misty: #2997ff; --world: #f5a524;
-      --room-back: #202329;
+      --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
       --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
     }
   }
@@ -31,7 +31,7 @@
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
     --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
     --misty: #2997ff; --world: #f5a524;
-    --room-back: #202329;
+    --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
     --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
   }
   * { box-sizing: border-box; }
@@ -730,6 +730,9 @@ function sceneAt(index) {
   // Somebody the camera watched who never looked at Misty, and never
   // became anybody's Episode, is walking past.
   scene.passing = scene.gazeKnown && !scene.looking && !scene.actor && scene.present;
+  // Who is speaking in this very step, if anybody.
+  const voice = state.steps[index]?.voice;
+  scene.speaking = voice === "says" ? "misty" : voice === "person" ? "person" : "";
   return scene;
 }
 
@@ -807,23 +810,25 @@ function mistyXFor(distance) {
 }
 
 function drawRoom() {
-  // Wide and tall enough that only the back wall and the floor are ever in
-  // frame: no side walls, no ceiling. The floor's lines still meet at the
-  // centre, which is all the depth the stage needs.
-  const X = 900, B = -560, FRONT = 520, TOP = 600;
+  // A room small enough that its back wall sits inside the frame, with the
+  // side walls, ceiling and floor all running towards it.
+  const X = 300, B = -560, FRONT = 520, TOP = 260;
   const quad = (points) => points.map((p) => project(p).map((n) => n.toFixed(1)).join(",")).join(" ");
   const line = (a, b) => {
     const [x1, y1] = project(a), [x2, y2] = project(b);
     return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
   };
   let lines = "";
-  for (let i = -14; i <= 14; i += 1) lines += line([i * 63.4, 0, FRONT], [i * 63.4, 0, B]);
+  for (let i = -4; i <= 4; i += 1) lines += line([i * 66.7, 0, FRONT], [i * 66.7, 0, B]);
   for (const z of [-420, -270, -110, 60, 220]) lines += line([-X, 0, z], [X, 0, z]);
   byId("room").innerHTML = `
+    <polygon points="${quad([[-X,TOP,B],[X,TOP,B],[X,TOP,FRONT],[-X,TOP,FRONT]])}" fill="var(--room-top)"/>
+    <polygon points="${quad([[-X,0,B],[-X,0,FRONT],[-X,TOP,FRONT],[-X,TOP,B]])}" fill="var(--room-left)"/>
+    <polygon points="${quad([[X,0,B],[X,0,FRONT],[X,TOP,FRONT],[X,TOP,B]])}" fill="var(--room-right)"/>
     <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="var(--room-back)"/>
     <polygon points="${quad([[-X,0,B],[X,0,B],[X,0,FRONT],[-X,0,FRONT]])}" fill="var(--room-floor)"/>
     <g stroke="var(--room-line)" stroke-width="1.2">${lines}</g>
-    ${line([-X, 0, B], [X, 0, B]).replace("<line", '<line stroke="var(--room-edge)"')}`;
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="none" stroke="var(--room-edge)"/>`;
   // Misty's tracks: four wheels, each with a spoke so driving shows.
   byId("wheels").innerHTML = [-20, -8, 4, 16].map((x) => `
     <g transform="translate(${x} -7)"><circle r="4.4" fill="#8a90a0"/>
@@ -987,8 +992,10 @@ function drawScene(scene) {
   byId("floatBadge").classList.toggle("on", Boolean(scene.skill));
   byId("floatText").textContent = scene.skill || "";
   byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
-  setBubble("misty", scene.mistySays, false, scene.lastSpeaker === "person");
-  setBubble("person", scene.personSays, scene.personObserved, scene.lastSpeaker === "misty");
+  // A bubble shows while its line is the step being played, and is gone
+  // once the run moves on.
+  setBubble("misty", scene.speaking === "misty" ? scene.mistySays : "", false);
+  setBubble("person", scene.speaking === "person" ? scene.personSays : "", scene.personObserved);
   if (REDUCED || stage.now.x === null) stage.now.x = mistyXFor(scene.distance);
 }
 
@@ -1035,8 +1042,9 @@ function frame(clock) {
   let front = "", behind = "";
   if (scene.passing) {
     // Walking past at the back, never turning towards Misty.
-    const x = 360 - ((t * 62) % 760);
-    behind += drawPerson("passer", { x, z: -260, exp: "away", motion: "walk", t, stride: REDUCED ? 0 : 1, turn: 1 });
+    const x = 260 - ((t * 62) % 520);
+    const fade = Math.max(0, Math.min(1, (260 - Math.abs(x)) / 40));
+    behind += drawPerson("passer", { x, z: -260, exp: "away", motion: "walk", t, stride: REDUCED ? 0 : 1, turn: 1, opacity: fade });
   } else {
     front = drawPerson("personA", {
       x: STAGE.personX, z: STAGE.front, exp, motion: wave ? "wave" : "stand", t,
@@ -1059,13 +1067,14 @@ function frame(clock) {
   pointTail("person", hx, hy);
 }
 
-function setBubble(who, text, observed, earlier) {
+function setBubble(who, text, observed) {
   const group = byId(`${who}Bubble`);
   const box = byId(`${who}BubbleBox`);
   const node = byId(`${who}BubbleText`);
-  group.setAttribute("opacity", text ? (earlier ? ".4" : "1") : "0");
-  node.textContent = "";
+  // Hiding, the words fade out with the bubble instead of leaving it empty.
+  group.setAttribute("opacity", text ? "1" : "0");
   if (!text) return;
+  node.textContent = "";
   const shown = observed ? `Observed: ${text}` : text;
   const lines = wrap(shown, 36).slice(0, 4);
   const left = Number(box.getAttribute("x")) + 22;

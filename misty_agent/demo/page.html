@@ -286,6 +286,7 @@
           <g id="personFront"></g>
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
+          <text id="measureText" x="0" y="-100" font-size="20" visibility="hidden" aria-hidden="true"></text>
           <g class="bubble" id="mistyBubble" opacity="0">
             <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
             <g id="mistyBubbleBody">
@@ -1151,13 +1152,13 @@ function rowsAbove(who) {
   return Math.max(1, Math.min(BUBBLE.lines, Math.floor(room / BUBBLE.line)));
 }
 
-let measurer = null;
 function textWidth(text) {
-  if (!measurer) {
-    measurer = document.createElement("canvas").getContext("2d");
-    measurer.font = `${BUBBLE.font}px ${getComputedStyle(document.body).fontFamily}`;
-  }
-  return measurer.measureText(text).width;
+  // Measured by the stage's own hidden text, in the font the bubbles are
+  // drawn in: an estimate from elsewhere can pick a different font for
+  // some scripts and wrap a line that then draws wider than its bubble.
+  const measure = byId("measureText");
+  measure.textContent = text;
+  return measure.getComputedTextLength();
 }
 
 function wrapToWidth(text, width, rows = BUBBLE.lines) {
@@ -1166,7 +1167,9 @@ function wrapToWidth(text, width, rows = BUBBLE.lines) {
   const lines = [];
   let line = "";
   for (const token of tokens) {
-    if (line.trim() && textWidth(line + token) > width) { lines.push(line.trim()); line = token.trimStart(); }
+    // Punctuation that may not begin a line stays at the end of the last.
+    const noStart = /^[，。、；：？！）」』〉》…,.;:?!)]/.test(token);
+    if (line.trim() && !noStart && textWidth(line + token) > width) { lines.push(line.trim()); line = token.trimStart(); }
     else line += token;
   }
   if (line.trim()) lines.push(line.trim());
@@ -1196,7 +1199,9 @@ function setBubble(who, text, observed) {
     if (observed) span.setAttribute("font-style", "italic");
     node.appendChild(span);
   });
-  const longest = Math.max(...lines.map(textWidth));
+  // Measured as drawn, not as estimated: the estimate can use a different
+  // font for some scripts, which left a wider margin on one side.
+  const longest = Math.max(...[...node.querySelectorAll("tspan")].map((span) => span.getComputedTextLength()));
   const width = Math.round(Math.max(96, longest + BUBBLE.pad * 2));
   const height = 34 + lines.length * BUBBLE.line;
   const box = byId(`${who}BubbleBox`);

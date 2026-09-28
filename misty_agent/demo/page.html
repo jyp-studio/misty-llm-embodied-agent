@@ -10,7 +10,7 @@
     --panel: #f5f5f7; --page: #ffffff; --accent: #0071e3; --accent-ink: #0066cc;
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
-    --misty: #0071e3; --world: #a85a00;
+    --misty: #0071e3; --world: #a85a00; --card: rgba(255, 255, 255, .84);
     --room-top: #b3bbc7; --room-left: #bdc4ce; --room-right: #b9c1cb; --room-back: #c6cdd6;
     --room-floor: #e1e5eb; --room-line: #d1d6de; --room-edge: #adb5c1; --room-pool: #f4f6f9;
   }
@@ -20,7 +20,7 @@
       --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
       --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
-      --misty: #2997ff; --world: #f5a524;
+      --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
       --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
       --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
     }
@@ -30,7 +30,7 @@
     --panel: #1c1c1e; --page: #000000; --accent: #2997ff; --accent-ink: #2997ff;
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
     --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
-    --misty: #2997ff; --world: #f5a524;
+    --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
     --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
     --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
   }
@@ -224,7 +224,9 @@
             <radialGradient id="shell" cx=".32" cy=".25" r="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".65" stop-color="#f2f4f7"/><stop offset="1" stop-color="#dfe3ea"/></radialGradient>
             <radialGradient id="pool"><stop offset="0" stop-color="var(--room-pool)" stop-opacity=".95"/><stop offset="1" stop-color="var(--room-pool)" stop-opacity="0"/></radialGradient>
             <linearGradient id="figureLight" gradientUnits="userSpaceOnUse" x1="-26" y1="-170" x2="26" y2="-140"><stop offset="0" stop-color="#fafafb"/><stop offset=".55" stop-color="#e9e9eb"/><stop offset="1" stop-color="#d2d3d8"/></linearGradient>
+            <radialGradient id="skillHalo"><stop offset="0" stop-color="var(--misty)" stop-opacity=".9"/><stop offset="1" stop-color="var(--misty)" stop-opacity="0"/></radialGradient>
             <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+            <filter id="lift" x="-20%" y="-40%" width="140%" height="200%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1c2230" flood-opacity=".16"/></filter>
             <filter id="goo" x="-30%" y="-20%" width="160%" height="140%" color-interpolation-filters="sRGB">
               <feGaussianBlur stdDeviation="3.1"/>
               <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8.4"/>
@@ -248,6 +250,16 @@
             <text x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)">blocked</text>
           </g>
 
+          <!-- A Skill Misty calls up: a card that rises from behind it and,
+               once loaded, flies into its head -->
+          <g class="skill-card" id="skillCard" opacity="0">
+            <g filter="url(#lift)"><rect id="skillCardBox" x="-128" y="-32" width="256" height="64" rx="18" fill="var(--card)" stroke="var(--misty)" stroke-width="1.5"/></g>
+            <circle id="skillCardDisc" cx="-94" cy="0" r="17" fill="var(--misty)" fill-opacity=".12"/>
+            <path id="skillCardIcon" d="M-9 -5.5 Q-4.5 -8 0 -5.5 Q4.5 -8 9 -5.5 V6.5 Q4.5 4 0 6.5 Q-4.5 4 -9 6.5 Z M0 -5.5 V6.5" transform="translate(-94 0)" fill="none" stroke="var(--misty)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+            <text id="skillCardKicker" x="-66" y="-6" font-size="11" font-weight="600" letter-spacing="1.2" fill="var(--muted)"></text>
+            <text id="skillCardName" x="-66" y="15" font-size="17" font-weight="600" fill="var(--ink)"></text>
+          </g>
+
           <!-- Misty II, drawn in centimetres, turned three-quarters towards the person -->
           <g class="misty" id="misty">
             <ellipse cx="0" cy="0" rx="75" ry="15" fill="url(#pool)"/>
@@ -259,6 +271,8 @@
             <circle class="led-glow" id="ledGlow" cx="8" cy="-31" r="8" fill="url(#ledGlow)" opacity="0"/>
             <circle cx="8" cy="-31" r="5.2" fill="none" stroke="#c9ced8" stroke-width="1.2"/>
             <circle id="led" cx="8" cy="-31" r="2.8" fill="#8a90a0"/>
+            <circle id="ledFlash" cx="8" cy="-31" r="10" fill="url(#skillHalo)" opacity="0"/>
+            <circle id="ledFlashCore" cx="8" cy="-31" r="2.8" fill="var(--misty)" opacity="0"/>
             <g id="armRight"><ellipse cx="-12" cy="-30" rx="4.6" ry="11" transform="rotate(-12 -12 -30)" fill="url(#shell)" stroke="#d9dde5"/></g>
             <path d="M-29 -15 H22 Q27 -15 29.5 -11 L26.5 -3 Q25 0 21 0 H-23 Q-27 0 -28.5 -3 L-31.5 -11 Q-32 -15 -29 -15 Z" fill="#6b7080"/>
             <g id="wheels"></g>
@@ -270,6 +284,11 @@
               <path d="M-12 -88.5 Q2 -94 16 -88.5" fill="none" stroke="#d9dde5" stroke-width="1.2"/>
               <rect x="-12" y="-83" width="37" height="25" rx="11" fill="#252a38"/>
               <g id="face"></g>
+              <g id="screenBook" transform="translate(6.5 -70.5)" opacity="0" style="color: var(--eye)">
+                <path d="M-10 -5.5 Q-5 -8.5 0 -5.5 V7 Q-5 4 -10 7 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M10 -5.5 Q5 -8.5 0 -5.5 V7 Q5 4 10 7 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path id="screenLeaf" d="M0 -5.5 Q5 -8.5 10 -5.5 V7 Q5 4 0 7 Z" fill="currentColor" fill-opacity=".35" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </g>
               <g class="ears" id="ears">
                 <path d="M31 -78 Q35 -71 31 -64" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
                 <path d="M35 -82 Q41 -71 35 -60" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
@@ -643,7 +662,7 @@ function sceneAt(index) {
     robot: POSE_AT_REST, distance: startingDistance(), present: true,
     tool: null, args: {}, mistySays: "", personSays: "", personObserved: false,
     why: "", driving: false, obstacle: false, flash: false, halted: false,
-    actor: "", waiting: null, done: false, caption: "", cue: null, skill: "",
+    actor: "", waiting: null, done: false, caption: "", cue: null, skill: "", skillCard: null,
     looking: false, waving: false, sensing: "", faceKnown: false,
     distanceKnown: false, lastSpeaker: "", gazeKnown: false, headLowered: false,
     smiling: false,
@@ -692,19 +711,21 @@ function sceneAt(index) {
       }
       scene.cue = step.cue_kind;
     } else if (step.kind === "turn_started") {
-      scene.tool = null; scene.driving = false; scene.stopped = ""; scene.skill = "";
+      scene.tool = null; scene.driving = false; scene.stopped = ""; scene.skill = ""; scene.skillCard = null;
     } else if (step.kind === "decision_noted") {
       scene.why = step.detail;
     } else if (step.kind === "tool_called") {
       scene.tool = step.facts.tool; scene.args = step.facts.args || {};
-      scene.driving = false; scene.skill = ""; scene.stopped = "";
+      scene.driving = false; scene.skill = ""; scene.skillCard = null; scene.stopped = "";
       if (scene.tool === "speak") { scene.mistySays = scene.args.text; scene.lastSpeaker = "misty"; }
-      if (scene.tool === "activate_skill") scene.skill = `Skill: ${scene.args.name}`;
-      if (scene.tool === "read_skill_resource") scene.skill = `Reading ${scene.args.resource}`;
+      // A Skill is a card over Misty's head until the result says it is in.
+      if (scene.tool === "activate_skill") scene.skillCard = { kicker: "SKILL", name: scene.args.name };
+      if (scene.tool === "read_skill_resource") scene.skillCard = { kicker: "SKILL REFERENCE", name: scene.args.resource };
       if (scene.tool === "play_audio") scene.skill = `♪ ${scene.args.sound}`;
     } else if (step.kind === "observation") {
       const result = step.facts.result || {};
       const snapshot = step.facts.snapshot || {};
+      scene.skillCard = null;
       if (typeof snapshot.distance_cm === "number") {
         if (scene.tool === "approach" && snapshot.distance_cm !== scene.distance) scene.driving = last;
         scene.distance = snapshot.distance_cm;
@@ -732,6 +753,7 @@ function sceneAt(index) {
     previousLed = led;
   }
   scene.caption = captionFor(scene);
+  scene.index = index;
   // Somebody the camera watched who never looked at Misty, and never
   // became anybody's Episode, is walking past.
   scene.passing = scene.gazeKnown && !scene.looking && !scene.actor && scene.present;
@@ -979,6 +1001,8 @@ const stage = {
   scene: null, t0: performance.now(), last: performance.now(),
   // What is on screen now, eased towards the step's pose each frame.
   now: { x: null, near: 0, far: 0, roll: 0, faceX: 0, faceY: 0 },
+  // The Skill card: when it came up, and when and how it went.
+  card: { name: "", since: null, left: null, into: false }, index: -1,
 };
 
 function drawScene(scene) {
@@ -999,6 +1023,9 @@ function drawScene(scene) {
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
   byId("floatBadge").classList.toggle("on", Boolean(scene.skill));
+  // Misty's next line waits for a Skill card flying in over the same spot.
+  const cardFlying = showSkillCard(scene);
+  byId("mistyBubble").style.transitionDelay = cardFlying && !REDUCED ? ".55s" : "";
   byId("floatText").textContent = scene.skill || "";
   byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
   // A bubble shows while its line is the step being played, and is gone
@@ -1007,6 +1034,75 @@ function drawScene(scene) {
   setBubble("misty", scene.speaking === "misty" ? scene.mistySays : "", false);
   setBubble("person", scene.speaking === "person" ? scene.personSays : "", scene.personObserved);
   if (REDUCED || stage.now.x === null) stage.now.x = mistyXFor(scene.distance);
+}
+
+function showSkillCard(scene) {
+  // A card comes up when Misty calls a Skill. Going forward past it, the
+  // card flies into Misty's head; going back, it simply fades. Says whether
+  // a card has just started flying in.
+  const card = stage.card, next = scene.skillCard, clock = performance.now();
+  const forward = scene.index > stage.index;
+  stage.index = scene.index;
+  if (next && card.name === next.name && card.left === null) return false;
+  const flying = card.since !== null && card.left === null && forward;
+  if (card.since !== null && card.left === null) Object.assign(card, { left: clock, into: forward });
+  if (!next) return flying;
+  Object.assign(card, { name: next.name, since: clock, left: null, into: false });
+  byId("skillCardKicker").textContent = next.kicker;
+  byId("skillCardName").textContent = next.name;
+  const width = 62 + byId("skillCardName").getComputedTextLength() + 24, left = -width / 2;
+  byId("skillCardBox").setAttribute("x", left.toFixed(1));
+  byId("skillCardBox").setAttribute("width", width.toFixed(1));
+  byId("skillCardDisc").setAttribute("cx", (left + 34).toFixed(1));
+  byId("skillCardIcon").setAttribute("transform", `translate(${(left + 34).toFixed(1)} 0)`);
+  for (const id of ["skillCardKicker", "skillCardName"]) byId(id).setAttribute("x", (left + 62).toFixed(1));
+  return false;
+}
+
+const between = (t, from, to) => Math.max(0, Math.min(1, (t - from) / (to - from)));
+const easeOut = (k) => 1 - (1 - k) ** 3;
+const easeIn = (k) => k ** 3;
+
+function drawSkillCard(clock, mx, gy, k) {
+  // Rises from behind Misty to over its head; the screen reads a book
+  // meanwhile. Once loaded it flies into the head, and the chest light
+  // flashes once.
+  const card = stage.card;
+  const node = byId("skillCard");
+  const rest = [mx + 7.5 * k, gy - 134 * k], head = [mx + 7.5 * k, gy - 69 * k];
+  let x = rest[0], y = rest[1], size = 1, shown = 0, reading = 0, flash = 0, turn = 0;
+  if (card.since !== null && card.left === null) {
+    const e = (clock - card.since) / 1000;
+    const rise = REDUCED ? 1 : easeOut(between(e, 0, .75));
+    x = rest[0] + (1.6 * k - 7.5 * k) * (1 - rise);
+    y = rest[1] + (68 * k) * (1 - rise);
+    if (!REDUCED && e > .75) y += Math.sin((e - .75) * 2.4) * 2;
+    size = 0.3 + 0.7 * rise;
+    shown = REDUCED ? 1 : between(e, 0, .35);
+    reading = REDUCED ? 1 : between(e, .05, .25);
+    turn = REDUCED || e < .25 ? 0 : ((e - .25) % .8) / .8;
+  } else if (card.left !== null) {
+    const e = (clock - card.left) / 1000;
+    if (card.into && !REDUCED) {
+      const fly = easeIn(between(e, 0, .55));
+      y = rest[1] + (head[1] - rest[1]) * fly;
+      size = 1 - 0.96 * fly;
+      shown = 1 - between(e, .35, .55);
+      reading = 1 - between(e, .5, .65);
+      turn = e < .5 ? ((e % .8) / .8) : 0;
+      flash = between(e, .5, .6) * (1 - easeOut(between(e, .6, 1.1)));
+    } else {
+      shown = REDUCED ? 0 : 1 - between(e, 0, .2);
+      reading = shown;
+    }
+  }
+  node.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${size.toFixed(3)})`);
+  node.setAttribute("opacity", shown.toFixed(3));
+  byId("screenBook").setAttribute("opacity", reading.toFixed(3));
+  byId("screenLeaf").setAttribute("transform", `scale(${Math.cos(Math.PI * easeOut(turn)).toFixed(3)} 1)`);
+  byId("face").setAttribute("opacity", (1 - reading).toFixed(3));
+  byId("ledFlash").setAttribute("opacity", flash.toFixed(3));
+  byId("ledFlashCore").setAttribute("opacity", Math.min(1, flash * 1.4).toFixed(3));
 }
 
 function frame(clock) {
@@ -1041,6 +1137,7 @@ function frame(clock) {
   byId("face").setAttribute("transform", `translate(${now.faceX.toFixed(2)} ${now.faceY.toFixed(2)})`);
   byId("armRight").setAttribute("transform", `rotate(${now.near.toFixed(1)} -12 -40)`);
   byId("armLeft").setAttribute("transform", `rotate(${now.far.toFixed(1)} 22 -41)`);
+  drawSkillCard(clock, mx, gy, k);
   const [ox, oy] = project([now.x + 55, 0, STAGE.front]);
   byId("obstacle").setAttribute("transform", `translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${k.toFixed(4)})`);
 

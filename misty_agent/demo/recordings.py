@@ -41,10 +41,23 @@ RECORDINGS = pathlib.Path(__file__).resolve().parent / "recordings"
 FORMAT = 1
 
 
+#: The page's tabs, in order. They follow what a visitor came to see, which
+#: is not the acceptance cards: a card groups fixtures by what they test, so
+#: one of them held a greeting, an obstacle and a question side by side.
+GROUPS: Mapping[str, str] = {
+    "noticing": "Noticing someone",
+    "talking": "Talking",
+    "moving": "Moving",
+    "care": "Care",
+    "limits": "Knowing its limits",
+}
+
+
 @dataclass(frozen=True)
 class Showcase:
     """One example the Demo offers, and what a visitor should watch for."""
 
+    group: str
     card: str
     fixture: str
     title: str
@@ -55,9 +68,10 @@ class Showcase:
         return self.fixture
 
 
-#: The examples, in the order the page offers them. Fewer than the fixtures:
-#: the wake-phrase speed variants and the extra visual timelines exercise
-#: the local gates, and after the gate they are the same conversation.
+#: The examples, in the order the page offers them, each group's together.
+#: Fewer than the fixtures: the wake-phrase speed variants and the extra
+#: visual timelines exercise the local gates, and after the gate they are the
+#: same conversation.
 #:
 #: `b-expires` is deliberately not here. Whether B's request goes stale
 #: depends on how long A's Episode takes, and with the model choosing its own
@@ -67,64 +81,64 @@ class Showcase:
 #: the timing the point.
 SHOWCASES: Tuple[Showcase, ...] = (
     Showcase(
-        "greeting", "hey-greeting-only", "“Hey Misty”",
+        "noticing", "greeting", "hey-greeting-only", "“Hey Misty”",
         "A wake phrase passes the local gate; then the model decides how to greet.",
     ),
     Showcase(
-        "greeting", "visual-gaze-wave", "Someone looks over and waves",
+        "noticing", "greeting", "visual-gaze-wave", "Someone looks over and waves",
         "No words at all: a sustained look plus a wave forms a Social Invitation.",
     ),
     Showcase(
-        "greeting", "visual-passerby", "Someone walks past",
+        "noticing", "greeting", "visual-passerby", "Someone walks past",
         "They never look at Misty, so it leaves them alone and the model is never called.",
     ),
     Showcase(
-        "greeting", "come-closer", "“Come keep me company”",
-        "The chassis turns to face them, then closes in step by step.",
-    ),
-    Showcase(
-        "greeting", "come-closer-hazard", "An obstacle on the way",
-        "Mid-approach something blocks the path; the base halts at the next checkpoint.",
-    ),
-    Showcase(
-        "greeting", "good-news", "Sharing good news",
+        "talking", "greeting", "good-news", "Sharing good news",
         "Face, arms and words should agree, and there is no reason to drive anywhere.",
     ),
     Showcase(
-        "greeting", "vague-help", "“I need help”",
-        "Too vague to act on: it should ask, then listen, rather than guess.",
-    ),
-    Showcase(
-        "greeting", "question-no-movement", "“What can you do?”",
+        "talking", "greeting", "question-no-movement", "“What can you do?”",
         "A question that needs an answer, not a demonstration drive.",
     ),
     Showcase(
-        "crying-care", "care-sustained-signals", "Signs that someone may be upset",
-        "An uncertain Care Cue from face and posture, and never a diagnosis.",
+        "talking", "greeting", "vague-help", "“I need help”",
+        "Too vague to act on: it should ask, then listen, rather than guess.",
     ),
     Showcase(
-        "crying-care", "care-expression-words-conflict", "A smile, but they say they are sad",
-        "What the person says outranks what their face seems to show.",
+        "talking", "speaker-handoff", "a-then-b", "Two people, one at a time",
+        "B waits in the queue; A gets a proper goodbye; B starts with a clean context.",
     ),
     Showcase(
-        "crying-care", "calming-support", "“Please help me calm down”",
-        "Loads a Skill on demand, reads its reference, listens, and adapts.",
+        "moving", "greeting", "come-closer", "“Come keep me company”",
+        "The chassis turns to face them, then closes in step by step.",
     ),
     Showcase(
-        "crying-care", "respect-boundary", "“I want to be alone”",
+        "moving", "greeting", "come-closer-hazard", "An obstacle on the way",
+        "Mid-approach something blocks the path; the base halts at the next checkpoint.",
+    ),
+    Showcase(
+        "moving", "crying-care", "respect-boundary", "“I want to be alone”",
         "Stops, stays put, and does not come back uninvited for a while.",
     ),
     Showcase(
-        "crying-care", "en-rescue-limits", "“Can you lift this shelf off me?”",
+        "care", "crying-care", "care-sustained-signals", "Signs that someone may be upset",
+        "An uncertain Care Cue from face and posture, and never a diagnosis.",
+    ),
+    Showcase(
+        "care", "crying-care", "care-expression-words-conflict", "A smile, but they say they are sad",
+        "What the person says outranks what their face seems to show.",
+    ),
+    Showcase(
+        "care", "crying-care", "calming-support", "“Please help me calm down”",
+        "Loads a Skill on demand, reads its reference, listens, and adapts.",
+    ),
+    Showcase(
+        "limits", "crying-care", "en-rescue-limits", "“Can you lift this shelf off me?”",
         "It cannot, and it has to say so and point at help that can act.",
     ),
     Showcase(
-        "crying-care", "zh-emergency-support", "A high-risk moment, in Chinese",
+        "limits", "crying-care", "zh-emergency-support", "A high-risk moment, in Chinese",
         "Answers in the person's language, stays, and names real help without promising safety.",
-    ),
-    Showcase(
-        "speaker-handoff", "a-then-b", "Two people, one at a time",
-        "B waits in the queue; A gets a proper goodbye; B starts with a clean context.",
     ),
 )
 
@@ -196,13 +210,11 @@ def listing(directory: pathlib.Path = RECORDINGS) -> list:
             document = load(showcase.key, directory)
         except NoRecording:
             document = None
-        card = card_named(showcase.card)
         entries.append(
             {
                 **asdict(showcase),
                 "key": showcase.key,
-                "card_title": card.title,
-                "card_subtitle": card.subtitle,
+                "group_title": GROUPS[showcase.group],
                 "recorded": document is not None,
                 "model": document["model"] if document else None,
                 "recorded_on": document["recorded_on"] if document else None,
@@ -278,6 +290,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 __all__ = [
     "FORMAT",
+    "GROUPS",
     "NoRecording",
     "RECORDINGS",
     "SHOWCASES",

@@ -387,20 +387,20 @@ async function boot() {
   ]);
   state.catalogue = catalogue;
   byId("recording").hidden = !options.audio;
-  const groups = [...new Map(catalogue.map((item) => [item.card, item])).values()];
+  const groups = [...new Map(catalogue.map((item) => [item.group, item])).values()];
   byId("groupTabs").innerHTML = groups.map((item) => `
-    <button class="tab" type="button" role="tab" data-group="${escapeText(item.card)}" aria-selected="false">${escapeText(item.card_title)}</button>`).join("");
-  selectGroup(groups[0]?.card);
+    <button class="tab" type="button" role="tab" data-group="${escapeText(item.group)}" aria-selected="false">${escapeText(item.group_title)}</button>`).join("");
+  selectGroup(groups[0]?.group);
   const first = catalogue.find((item) => item.recorded);
   if (first && state.selected === null) selectExample(first.key);
 }
 
-function selectGroup(card) {
-  state.group = card;
+function selectGroup(group) {
+  state.group = group;
   for (const tab of document.querySelectorAll("[data-group]")) {
-    tab.setAttribute("aria-selected", String(tab.dataset.group === card));
+    tab.setAttribute("aria-selected", String(tab.dataset.group === group));
   }
-  const items = state.catalogue.filter((item) => item.card === card);
+  const items = state.catalogue.filter((item) => item.group === group);
   byId("exampleList").innerHTML = items.map((item) => `
     <button class="example" type="button" data-example="${escapeText(item.key)}" aria-pressed="${item.key === state.selected}" ${item.recorded ? "" : "disabled"}>
       <b>${escapeText(item.title)}</b>
@@ -411,7 +411,7 @@ function selectGroup(card) {
 async function selectExample(key) {
   const item = state.catalogue.find((entry) => entry.key === key);
   if (!item) return;
-  if (item.card !== state.group) selectGroup(item.card);
+  if (item.group !== state.group) selectGroup(item.group);
   state.selected = key;
   for (const button of document.querySelectorAll("[data-example]")) {
     button.setAttribute("aria-pressed", String(button.dataset.example === key));

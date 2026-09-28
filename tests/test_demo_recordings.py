@@ -47,6 +47,20 @@ def test_every_example_names_a_fixture_that_exists_and_names_it_once():
         assert showcase.fixture in offered, showcase
 
 
+def test_the_examples_are_offered_in_groups_a_visitor_can_read():
+    """The tabs follow what a visitor is looking for, not which acceptance
+    card a fixture happens to belong to."""
+    groups = [showcase.group for showcase in SHOWCASES]
+
+    assert set(groups) == set(recordings.GROUPS)
+    # Each group's examples sit together, in the order the tabs are drawn.
+    assert list(dict.fromkeys(groups)) == list(recordings.GROUPS)
+    listed = recordings.listing()
+    assert [item["group_title"] for item in listed] == [
+        recordings.GROUPS[showcase.group] for showcase in SHOWCASES
+    ]
+
+
 def test_a_recording_is_the_models_decisions_over_the_fixtures_inputs():
     document = record(
         recordings.showcase_named("good-news"), Greets(),

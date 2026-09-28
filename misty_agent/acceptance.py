@@ -36,7 +36,7 @@ from misty_agent.app import simulated_session
 from misty_agent.audio_input import LiveInputAdapter, WavAudioFixtureSource
 from misty_agent.config import Settings
 from misty_agent.fakes import FakeClock
-from misty_agent.perception.active import NO_ACTIVE_PERCEPTION
+from misty_agent.perception.active import NO_ACTIVE_PERCEPTION, PlacedPersonPerception
 from misty_agent.perception.asr import Transcription, TranscriptionEnding
 from misty_agent.perception.wake import PocketSphinxWakeDetector
 from misty_agent.runtime import (
@@ -248,6 +248,15 @@ def run_fixture(
         input_kind = "text"
 
     script = selected_text or visual_script
+    # A visual fixture looks through its gate. A text script has no camera,
+    # but it has placed its person in the room: looking reports that
+    # placement, read from the world the Session is about to be built on.
+    if gate is not None:
+        looking = gate
+    elif selected_text is not None:
+        looking = PlacedPersonPerception(lambda: session.readings.latest_reading())
+    else:
+        looking = NO_ACTIVE_PERCEPTION
     session = simulated_session(
         None,
         model=(
@@ -264,7 +273,7 @@ def run_fixture(
                 list(visual_script.heard_after_first_tool) if visual_script else []
             )
         ),
-        active_perception=gate if gate is not None else NO_ACTIVE_PERCEPTION,
+        active_perception=looking,
     )
     result = SocialAgentRuntime(
         source=source, session=session, clock=clock, config=config

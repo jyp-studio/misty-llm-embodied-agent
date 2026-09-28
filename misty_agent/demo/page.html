@@ -11,6 +11,7 @@
     --robot: #fbfbfd; --robot-edge: #3a3a3c; --screen: #1c1c1e; --eye: #7fe3ff;
     --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0071e3; --world: #a85a00; --card: rgba(255, 255, 255, .84);
+    --calm: #2aa8bd; --heat: #f0642c; --irk: #d98a00;
     --room-top: #b3bbc7; --room-left: #bdc4ce; --room-right: #b9c1cb; --room-back: #c6cdd6;
     --room-floor: #e1e5eb; --room-line: #d1d6de; --room-edge: #adb5c1; --room-pool: #f4f6f9;
   }
@@ -21,6 +22,7 @@
       --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
       --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
       --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
+      --calm: #5ac8d8; --heat: #ff7a45; --irk: #f5b43c;
       --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
       --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
     }
@@ -31,6 +33,7 @@
     --robot: #e9e9ee; --robot-edge: #0c0c0d; --stage: #141417; --floor: #2a2a30;
     --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
     --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
+    --calm: #5ac8d8; --heat: #ff7a45; --irk: #f5b43c;
     --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
     --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
   }
@@ -157,8 +160,6 @@
   svg .bubble { transition: opacity .25s; }
   .cone { opacity: 0; transition: opacity .25s; }
   .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
-  .badge-float { opacity: 0; transition: opacity .3s; }
-  .badge-float.on { opacity: 1; }
   .obstacle { opacity: 0; transition: opacity .3s; }
   .obstacle.on { opacity: 1; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -294,11 +295,9 @@
                 <path d="M35 -82 Q41 -71 35 -60" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
               </g>
             </g>
-            <g class="badge-float" id="floatBadge" transform="translate(0 -104) scale(.55)">
-              <rect x="-80" y="-18" width="160" height="30" rx="15" fill="var(--page)" stroke="var(--line)" stroke-width="1.5"/>
-              <text id="floatText" x="0" y="2" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)"></text>
-            </g>
           </g>
+          <!-- A sound Misty plays: a few notes floating up off its head -->
+          <g id="soundNotes" aria-hidden="true"></g>
           <!-- The camera's look, from Misty's screen to the person's face -->
           <path class="cone" id="cone" d="" fill="var(--accent)" opacity=".16"/>
           <!-- The person Misty is talking to -->
@@ -662,7 +661,7 @@ function sceneAt(index) {
     robot: POSE_AT_REST, distance: startingDistance(), present: true,
     tool: null, args: {}, mistySays: "", personSays: "", personObserved: false,
     why: "", driving: false, obstacle: false, flash: false, halted: false,
-    actor: "", waiting: null, done: false, caption: "", cue: null, skill: "", skillCard: null,
+    actor: "", waiting: null, done: false, caption: "", cue: null, sound: null, soundAt: null, skillCard: null,
     looking: false, waving: false, sensing: "", faceKnown: false,
     distanceKnown: false, lastSpeaker: "", gazeKnown: false, headLowered: false,
     smiling: false,
@@ -711,17 +710,20 @@ function sceneAt(index) {
       }
       scene.cue = step.cue_kind;
     } else if (step.kind === "turn_started") {
-      scene.tool = null; scene.driving = false; scene.stopped = ""; scene.skill = ""; scene.skillCard = null;
+      scene.tool = null; scene.driving = false; scene.stopped = ""; scene.sound = null; scene.skillCard = null;
     } else if (step.kind === "decision_noted") {
       scene.why = step.detail;
     } else if (step.kind === "tool_called") {
       scene.tool = step.facts.tool; scene.args = step.facts.args || {};
-      scene.driving = false; scene.skill = ""; scene.skillCard = null; scene.stopped = "";
+      scene.driving = false; scene.sound = null; scene.skillCard = null; scene.stopped = "";
       if (scene.tool === "speak") { scene.mistySays = scene.args.text; scene.lastSpeaker = "misty"; }
       // A Skill is a card over Misty's head until the result says it is in.
       if (scene.tool === "activate_skill") scene.skillCard = { kicker: "SKILL", name: scene.args.name };
       if (scene.tool === "read_skill_resource") scene.skillCard = { kicker: "SKILL REFERENCE", name: scene.args.resource };
-      if (scene.tool === "play_audio") scene.skill = `♪ ${scene.args.sound}`;
+      if (scene.tool === "play_audio") {
+        scene.sound = { name: scene.args.sound, volume: scene.args.volume ?? 50 };
+        scene.soundAt = i;
+      }
     } else if (step.kind === "observation") {
       const result = step.facts.result || {};
       const snapshot = step.facts.snapshot || {};
@@ -812,7 +814,7 @@ function emptyScene() {
     robot: POSE_AT_REST, distance: 190, present: true, tool: null, args: {},
     mistySays: "", personSays: "", personObserved: false, why: "", driving: false,
     obstacle: false, flash: false, halted: false, actor: "", waiting: null,
-    done: false, skill: "", caption: "", faceKnown: false, distanceKnown: false,
+    done: false, sound: null, soundAt: null, caption: "", faceKnown: false, distanceKnown: false,
     lastSpeaker: "", gazeKnown: false, headLowered: false, smiling: false, passing: false,
   };
 }
@@ -1003,6 +1005,8 @@ const stage = {
   now: { x: null, near: 0, far: 0, roll: 0, faceX: 0, faceY: 0 },
   // The Skill card: when it came up, and when and how it went.
   card: { name: "", since: null, left: null, into: false }, index: -1,
+  // The last sound played: which step, and when.
+  sound: { name: "", volume: 50, at: null, since: null, hushed: null },
 };
 
 function drawScene(scene) {
@@ -1022,11 +1026,14 @@ function drawScene(scene) {
   misty.classList.remove("flash");
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
-  byId("floatBadge").classList.toggle("on", Boolean(scene.skill));
   // Misty's next line waits for a Skill card flying in over the same spot.
   const cardFlying = showSkillCard(scene);
   byId("mistyBubble").style.transitionDelay = cardFlying && !REDUCED ? ".55s" : "";
-  byId("floatText").textContent = scene.skill || "";
+  // A sound starts when its step is reached, and plays out on its own.
+  if (!scene.sound) stage.sound.at = null;
+  else if (stage.sound.at !== scene.soundAt) Object.assign(stage.sound, scene.sound, { at: scene.soundAt, since: performance.now(), hushed: null });
+  // Misty's own words clear the air for its bubble.
+  if (scene.speaking === "misty" && stage.sound.hushed === null) stage.sound.hushed = performance.now();
   byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
   // A bubble shows while its line is the step being played, and is gone
   // once the run moves on.
@@ -1105,6 +1112,72 @@ function drawSkillCard(clock, mx, gy, k) {
   byId("ledFlashCore").setAttribute("opacity", Math.min(1, flash * 1.4).toFixed(3));
 }
 
+/* ---------- A sound: notes that float up off Misty's head ----------
+   How they move says which feeling the sound is; how many and how big
+   says how loud. The first note carries the sound's name. */
+
+const GLYPHS = {
+  note: '<ellipse cx="-2" cy="7" rx="5" ry="3.8" transform="rotate(-20 -2 7)" fill="currentColor"/><path d="M2.6 6 V-11 Q9 -8 9.5 -1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  beamed: '<ellipse cx="-7" cy="8" rx="4.4" ry="3.3" transform="rotate(-20 -7 8)" fill="currentColor"/><ellipse cx="6" cy="6" rx="4.4" ry="3.3" transform="rotate(-20 6 6)" fill="currentColor"/><path d="M-3 7 V-9 L10 -11 V5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M-3 -9 L10 -11" stroke="currentColor" stroke-width="3.4"/>',
+  vein: '<path d="M-8 -2.5 H-2.5 V-8 M8 -2.5 H2.5 V-8 M-8 2.5 H-2.5 V8 M8 2.5 H2.5 V8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  sigh: '<path d="M-8 2 Q-4 -4 0 2 T8 2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+};
+
+//: Each built-in sound: its colour, its glyphs, how long and how it moves.
+const SOUNDS = {
+  joy: { colour: "var(--misty)", glyphs: ["note", "beamed", "note"], life: 1.4, motion: "bounce" },
+  amazement: { colour: "var(--misty)", glyphs: ["beamed", "note", "note"], life: 1.2, motion: "pop" },
+  awe: { colour: "var(--calm)", glyphs: ["note", "note", "note"], life: 2.3, motion: "drift" },
+  acceptance: { colour: "var(--calm)", glyphs: ["note", "note", "note"], life: 2.0, motion: "sway" },
+  anger: { colour: "var(--heat)", glyphs: ["vein", "note", "vein"], life: 0.95, motion: "jitter" },
+  annoyance: { colour: "var(--irk)", glyphs: ["sigh", "note", "sigh"], life: 1.1, motion: "shrug" },
+};
+
+function notePath(sound, i, e) {
+  // Where note `i` is, `e` seconds after it left, in stage pixels at
+  // Misty's front-of-stage size.
+  const k = Math.min(1, e / sound.life);
+  const side = [-0.2, 0.9, 0.35][i];
+  let x = side * 60 * easeOut(k), y = -120 * easeOut(k), turn = 0, scale = 1;
+  const fade = k < 0.15 ? k / 0.15 : 1 - between(k, 0.6, 1);
+  switch (sound.motion) {
+    case "bounce": y -= Math.abs(Math.sin(k * Math.PI * 3)) * 14 * (1 - k); turn = Math.sin(k * 12) * 14; break;
+    case "pop": scale = 1 + 0.5 * Math.sin(Math.min(1, k * 3) * Math.PI) * (i === 0 ? 1 : 0.4); x *= 1.3; y *= 1.15; break;
+    case "drift": x = side * 45 * k + Math.sin(k * 5 + i) * 10; y = -150 * easeOut(k); scale = 1 + 0.25 * k; break;
+    case "sway": x = side * 40 * k + Math.sin(k * 7 + i) * 7; y = -130 * easeOut(k); turn = Math.sin(k * 7 + i) * 10; break;
+    case "jitter": x = side * 50 * easeOut(k) + Math.sin(e * 90 + i * 3) * 3; y = -70 * easeOut(k); turn = Math.sin(e * 70 + i) * 14; scale = 1 + 0.2 * Math.sin(e * 40); break;
+    case "shrug": x = side * 45 * easeOut(k); y = -80 * easeOut(k) + Math.sin(k * Math.PI * 2) * 6; turn = -12 * Math.sin(k * Math.PI); break;
+  }
+  return { x, y, turn, scale, fade };
+}
+
+function drawSound(clock, mx, gy, k) {
+  const played = stage.sound;
+  const node = byId("soundNotes");
+  if (played.since === null) { node.innerHTML = ""; return; }
+  const sound = SOUNDS[played.name] || SOUNDS.joy;
+  const e = (clock - played.since) / 1000;
+  const hush = played.hushed === null ? 1 : 1 - between(clock - played.hushed, 0, 200);
+  const count = Math.max(1, Math.min(3, Math.round(played.volume / 50) + 1));
+  const size = (0.8 + played.volume / 250) * 1.25;
+  const f = k / 2.03;
+  const [ox, oy] = [mx + 30 * k, gy - 66 * k];
+  let out = "";
+  for (let i = 0; i < count; i += 1) {
+    const own = e - i * 0.18;
+    if (own < 0 || own > sound.life) continue;
+    // Held still halfway up, without motion, when motion is reduced.
+    const p = REDUCED ? { ...notePath(sound, i, sound.life / 2), fade: 1 } : notePath(sound, i, own);
+    p.fade *= hush;
+    const x = ox + p.x * f, y = oy + p.y * f;
+    out += `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.turn.toFixed(1)}) scale(${(size * p.scale * f).toFixed(3)})" opacity="${p.fade.toFixed(3)}" style="color: ${sound.colour}">${GLYPHS[sound.glyphs[i]]}</g>`;
+    if (i === 0) {
+      out += `<text x="${(x + 16 * size * f / 1.25).toFixed(1)}" y="${(y - 10 * size * f / 1.25).toFixed(1)}" font-size="14" font-weight="600" fill="${sound.colour}" opacity="${p.fade.toFixed(3)}">${escapeText(played.name)}</text>`;
+    }
+  }
+  node.innerHTML = out;
+}
+
 function frame(clock) {
   const scene = stage.scene;
   requestAnimationFrame(frame);
@@ -1138,6 +1211,7 @@ function frame(clock) {
   byId("armRight").setAttribute("transform", `rotate(${now.near.toFixed(1)} -12 -40)`);
   byId("armLeft").setAttribute("transform", `rotate(${now.far.toFixed(1)} 22 -41)`);
   drawSkillCard(clock, mx, gy, k);
+  drawSound(clock, mx, gy, k);
   const [ox, oy] = project([now.x + 55, 0, STAGE.front]);
   byId("obstacle").setAttribute("transform", `translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${k.toFixed(4)})`);
 

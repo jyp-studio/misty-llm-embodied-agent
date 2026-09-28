@@ -85,13 +85,13 @@
   .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 9; }
   .stage svg { display: block; width: 100%; height: 100%; }
   /* What Misty is doing and sensing right now, in the corner of the picture. */
-  .senses { position: absolute; left: 10px; top: 8px; display: flex; flex-wrap: wrap; gap: 5px; max-width: 60%; pointer-events: none; }
-  .senses span { padding: 1px 9px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .senses { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 60%; pointer-events: none; }
+  .senses span { padding: 3px 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 13.5px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
   .senses .sensing { color: var(--ink); }
   .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
   /* With the conversation closed, its model notes and results show here. */
-  .senses .thought { flex-basis: 100%; width: fit-content; max-width: 100%; padding: 3px 10px; color: var(--ink); font-style: italic; line-height: 1.4; border-radius: 12px; }
+  .senses .thought { flex-basis: 100%; width: fit-content; max-width: 100%; padding: 4px 12px; color: var(--ink); font-style: italic; line-height: 1.4; border-radius: 12px; }
   .senses .thought::before { content: "\273B  "; color: var(--misty); font-style: normal; }
   .theatre.talk-open .senses :is(.thought, .result) { display: none; }
   /* A new conversation begins like a change of scene. */
@@ -213,7 +213,7 @@
     .topbar { padding: 10px 16px; align-items: flex-start; flex-direction: column; justify-content: center; }
     .hero { padding: 18px 16px 10px; }
     .senses { left: 6px; top: 5px; max-width: 60%; gap: 4px; }
-    .senses span { padding: 0 7px; font-size: 10.5px; }
+    .senses span { padding: 1px 8px; font-size: 11.5px; }
     main { padding: 0 16px 48px; }
     .theatre, .live { padding: 16px; border-radius: 16px; }
     .controls { flex-wrap: wrap; }
@@ -347,19 +347,19 @@
           </g>
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
-          <text id="measureText" x="0" y="-100" font-size="20" visibility="hidden" aria-hidden="true"></text>
+          <text id="measureText" x="0" y="-100" font-size="16" visibility="hidden" aria-hidden="true"></text>
           <g class="bubble" id="mistyBubble" opacity="0">
             <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
             <g id="mistyBubbleBody">
-              <rect id="mistyBubbleBox" x="0" y="0" width="200" height="60" rx="22" fill="var(--misty)"/>
-              <text id="mistyBubbleText" x="22" y="34" font-size="20" fill="#fff"></text>
+              <rect id="mistyBubbleBox" x="0" y="0" width="200" height="48" rx="18" fill="var(--misty)"/>
+              <text id="mistyBubbleText" x="17" y="27" font-size="16" fill="#fff"></text>
             </g>
           </g>
           <g class="bubble" id="personBubble" opacity="0">
             <path id="personBubbleTail" d="" fill="var(--person-bubble)" stroke="var(--person-bubble)" stroke-width="2" stroke-linejoin="round"/>
             <g id="personBubbleBody">
-              <rect id="personBubbleBox" x="0" y="0" width="200" height="60" rx="22" fill="var(--person-bubble)"/>
-              <text id="personBubbleText" x="22" y="34" font-size="20" fill="var(--person-ink)"></text>
+              <rect id="personBubbleBox" x="0" y="0" width="200" height="48" rx="18" fill="var(--person-bubble)"/>
+              <text id="personBubbleText" x="17" y="27" font-size="16" fill="var(--person-ink)"></text>
             </g>
           </g>
         </svg>
@@ -1378,7 +1378,9 @@ function drawGap(scene, x) {
    wraps, and may cross the middle of the stage like any other. The only
    limits are the edges of the stage and the other figure, which a bubble
    never touches; rows are capped by the room above the speaker's head. */
-const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, over: 30, keep: 16, edge: 12, max: 460, lines: 5 };
+// `chrome` is a bubble's height less its rows, and where its first row's
+// baseline sits.
+const BUBBLE = { font: 16, line: 21, pad: 17, chrome: 27, above: 46, over: 30, keep: 16, edge: 12, max: 380, lines: 5 };
 const bubbles = { misty: null, person: null };
 
 function figureBox(who, settled = false) {
@@ -1445,7 +1447,7 @@ function bubbleLayout(who, width, height) {
     if (corner.right + BUBBLE.keep + width <= to) x = corner.right + BUBBLE.keep;
     else y = corner.bottom + BUBBLE.keep;
   }
-  const bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + facing * 10));
+  const bx = Math.max(x + 24, Math.min(x + width - 24, me.headX + facing * 10));
   const tip = [me.headX + facing * 8, me.headTop - (who === "misty" ? 16 : 10)];
   return { x, y, base: [bx, y + height], tip };
 }
@@ -1453,7 +1455,7 @@ function bubbleLayout(who, width, height) {
 function bubbleRoom(who) {
   // The widest a bubble may be, for where its speaker will be; judged for
   // a bubble of one row, as the first one tried.
-  const oneRow = 34 + BUBBLE.line;
+  const oneRow = BUBBLE.chrome + BUBBLE.line;
   const [from, to] = bubbleSpan(who, bubbleTop(who, oneRow, true), oneRow, true);
   return Math.max(160, Math.min(BUBBLE.max, to - from)) - BUBBLE.pad * 2;
 }
@@ -1462,7 +1464,7 @@ function rowsAbove(who) {
   // How many rows fit above the speaker's head.
   const me = figureBox(who, true);
   const clearance = who === "misty" ? BUBBLE.above : BUBBLE.over;
-  const room = me.headTop - clearance - BUBBLE.edge - 34;
+  const room = me.headTop - clearance - BUBBLE.edge - BUBBLE.chrome;
   return Math.max(1, Math.min(BUBBLE.lines, Math.floor(room / BUBBLE.line)));
 }
 
@@ -1516,8 +1518,8 @@ function setBubble(who, text, observed) {
   // Measured as drawn, not as estimated: the estimate can use a different
   // font for some scripts, which left a wider margin on one side.
   const longest = Math.max(...[...node.querySelectorAll("tspan")].map((span) => span.getComputedTextLength()));
-  const width = Math.round(Math.max(96, longest + BUBBLE.pad * 2));
-  const height = 34 + lines.length * BUBBLE.line;
+  const width = Math.round(Math.max(78, longest + BUBBLE.pad * 2));
+  const height = BUBBLE.chrome + lines.length * BUBBLE.line;
   const box = byId(`${who}BubbleBox`);
   box.setAttribute("width", String(width));
   box.setAttribute("height", String(height));
@@ -1531,7 +1533,7 @@ function placeBubble(who) {
   const { x, y, base, tip } = bubbleLayout(who, size.width, size.height);
   byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
   byId(`${who}BubbleTail`).setAttribute(
-    "d", `M${(base[0] - 11).toFixed(1)} ${(base[1] - 2).toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] + 11).toFixed(1)} ${(base[1] - 2).toFixed(1)}`
+    "d", `M${(base[0] - 9).toFixed(1)} ${(base[1] - 2).toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] + 9).toFixed(1)} ${(base[1] - 2).toFixed(1)}`
   );
 }
 

@@ -522,11 +522,16 @@ function madeBy(provenance) {
   return `${how}${model}${when} · simulated`;
 }
 
+//: How speech was heard: the words themselves are the step that follows,
+//: so these stay behind the switch with the rest of the machinery.
+const HEARING = new Set(["wake", "capture", "asr"]);
+
 function chooseShown() {
   const everything = byId("showEverything").checked;
   state.shown = state.steps
     .map((step, index) => index)
-    .filter((index) => everything || state.steps[index].tells_the_story || isThought(index));
+    .filter((index) => everything || isThought(index)
+      || (state.steps[index].tells_the_story && !HEARING.has(state.steps[index].kind)));
   state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
 }
 

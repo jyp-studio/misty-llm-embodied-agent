@@ -92,9 +92,8 @@
   /* With the conversation closed, how an action turned out shows here. */
   .theatre.talk-open .senses .result { display: none; }
   /* A new conversation begins like a change of scene. */
-  .scene-card { position: absolute; left: 50%; top: 42%; padding: 10px 22px; color: var(--ink); font-size: 18px; font-weight: 600; white-space: nowrap; background: var(--card); border: 1px solid var(--line); border-radius: 999px; opacity: 0; transform: translate(-50%, -50%); pointer-events: none; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
-  .scene-card.on { animation: scene-card 1.6s ease both; }
-  @keyframes scene-card { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.96); } 18%, 70% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; } }
+  .scene-card { position: absolute; left: 50%; top: 42%; padding: 10px 22px; color: var(--ink); font-size: 18px; font-weight: 600; white-space: nowrap; background: var(--card); border: 1px solid var(--line); border-radius: 999px; opacity: 0; transform: translate(-50%, -50%) scale(.96); pointer-events: none; transition: opacity .25s, transform .25s; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .scene-card.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   /* The handle on the stage's right edge that pulls the conversation out. */
   .talk-tab { position: absolute; right: -15px; top: 50%; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 30px; padding: 10px 0; color: var(--muted); font-size: 12px; font-weight: 600; background: var(--page); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 2px 8px rgb(0 0 0 / .08); transform: translateY(-50%); cursor: pointer; }
   .talk-tab:hover { color: var(--accent-ink); border-color: var(--accent); }
@@ -426,7 +425,7 @@ const state = {
   catalogue: [], group: null, selected: null,
   // `steps` is the whole run; `shown` is the plain telling of it, which is
   // what the controls walk. Everything is still there behind the switch.
-  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0, sceneCardAt: null,
+  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0,
 };
 
 /* ---------- Catalogue ---------- */
@@ -533,8 +532,8 @@ function chooseShown() {
   // Of a stretch of watching, the step where the gate made up its mind:
   // what Misty then does follows from what it saw there.
   const sawIt = (index) => !watching(all.slice(index + 1).find(told));
-  state.shown = everything ? all : all.filter((index) => isThought(index) || (told(index)
-    && !HEARING.has(state.steps[index].kind) && (!watching(index) || sawIt(index))));
+  state.shown = everything ? all : all.filter((index) => isThought(index) || opensScene(state.steps[index])
+    || (told(index) && !HEARING.has(state.steps[index].kind) && (!watching(index) || sawIt(index))));
   // Somebody walking past is nothing but watching; that is the story there.
   if (!everything && state.shown.every(watching)) state.shown = all.filter(told);
   state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
@@ -583,6 +582,7 @@ const ACT_ICONS = {
 };
 
 function iconFor(step) {
+  if (opensScene(step)) return "person";
   const result = step.facts?.result || {};
   switch (step.voice) {
     case "person": return step.kind === "observed_cue" ? "eye" : "person";
@@ -605,19 +605,12 @@ function renderTimeline() {
   // The model's note is a row of small print above what it did, the way a
   // coding agent shows its reasoning above its answer.
   const many = state.actors.length > 1;
-  let actor = null;
-  byId("timeline").innerHTML = state.shown.map((absolute, at) => {
-    const step = state.steps[absolute];
-    let lead = "";
-    if (many && step.source === "episode" && step.actor !== actor) {
-      actor = step.actor;
-      lead = `<div class="marker">Talking with ${escapeText(actor)}</div>`;
-    }
-    return `<li data-step="${at}" hidden>${lead}${rowFor(step, many)}</li>`;
-  }).join("");
+  byId("timeline").innerHTML = state.shown.map((absolute, at) =>
+    `<li data-step="${at}" hidden>${rowFor(state.steps[absolute], many)}</li>`).join("");
 }
 
 function rowFor(step, many) {
+  if (opensScene(step)) return `<div class="marker hl">${escapeText(sceneTitleOf(step))}</div>`;
   switch (step.voice) {
     case "person": {
       const seen = step.kind === "observed_cue";
@@ -646,7 +639,7 @@ function renderStrip() {
   const strip = byId("replayStrip");
   strip.innerHTML = state.shown.map((absolute, at) => {
     const step = state.steps[absolute];
-    const said = step.text && ["person", "says"].includes(step.voice) ? `“${step.text}”` : step.summary;
+    const said = step.text && ["person", "says"].includes(step.voice) ? `“${step.text}”` : sceneTitleOf(step) || step.summary;
     const label = `${at + 1}. ${said.length > 90 ? `${said.slice(0, 89)}…` : said}`;
     const classes = `${step.voice}${step.pushback ? " pushback" : ""}`;
     return `<button type="button" data-step="${at}" class="${classes}" title="${escapeText(label)}" aria-label="${escapeText(label)}">${iconSvg(iconFor(step))}</button>`;
@@ -697,16 +690,13 @@ function showMoment(index) {
   }
   stepButtons();
   const scene = sceneAt(state.shown[at]);
-  const title = sceneTitleAt(at);
-  const opening = Boolean(title) && state.sceneCardAt !== at;
-  drawScene(scene, { opening });
+  drawScene(scene);
   drawSenses(scene);
-  drawMind(at, scene, opening ? title : "");
-  state.sceneCardAt = title ? at : null;
-  byId("nowSpoken").textContent = step.text || step.summary;
+  drawMind(at, scene);
+  byId("nowSpoken").textContent = step.text || sceneTitleOf(step) || step.summary;
 }
 
-function drawMind(at, scene, opening) {
+function drawMind(at, scene) {
   // What the conversation carries, for when it is closed: how an action
   // turned out, and the model's note behind what Misty does in this step.
   const senses = byId("senses");
@@ -715,14 +705,10 @@ function drawMind(at, scene, opening) {
     senses.insertAdjacentHTML("beforeend", `<span class="result ${step.pushback ? "pushback" : "doing"}">${escapeText(step.summary)}</span>`);
   }
   setThought(step.voice === "note" ? step.detail : "");
-  // A scene that opens here shows its title on the stage.
-  if (opening) {
-    const card = byId("sceneCard");
-    card.textContent = opening;
-    card.classList.remove("on");
-    void card.offsetWidth;
-    card.classList.add("on");
-  }
+  // A change of scene is a frame of its own, its title across the stage.
+  const title = sceneTitleOf(step);
+  if (title) byId("sceneCard").textContent = title;
+  byId("sceneCard").classList.toggle("on", Boolean(title));
 }
 
 /* A model note, played as a step of its own: a thought cloud where Misty's
@@ -776,15 +762,15 @@ function drawThought() {
     `<circle cx="${(from[0] + (to[0] - from[0]) * t).toFixed(1)}" cy="${(from[1] + (to[1] - from[1]) * t).toFixed(1)}" r="${r}"/>`).join("");
 }
 
-function sceneTitleAt(at) {
-  // A new conversation, or a marker, is a change of scene.
-  const step = state.steps[state.shown[at]];
+function opensScene(step) {
+  // With two people, each conversation opens with whom it is with.
+  return step.kind === "episode_started" && state.actors.length > 1;
+}
+
+function sceneTitleOf(step) {
+  // A marker, or a conversation opening, is a change of scene.
   if (step.voice === "marker") return step.summary;
-  if (state.actors.length > 1 && step.source === "episode") {
-    const before = state.shown.slice(0, at).map((n) => state.steps[n]).filter((s) => s.source === "episode").pop();
-    if (!before || before.actor !== step.actor) return `Talking with ${step.actor}`;
-  }
-  return "";
+  return opensScene(step) ? `Talking with ${step.actor}` : "";
 }
 
 function showConversation(open) {
@@ -1175,7 +1161,7 @@ const stage = {
   sound: { name: "", volume: 50, at: null, since: null, hushed: null },
 };
 
-function drawScene(scene, { opening = false } = {}) {
+function drawScene(scene) {
   // Called once per step: what does not move between steps is set here,
   // and the frame loop eases the rest.
   stage.scene = scene;
@@ -1192,13 +1178,9 @@ function drawScene(scene, { opening = false } = {}) {
   misty.classList.remove("flash");
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
-  // Misty's next line waits for a Skill card flying in over the same spot,
-  // and every line, or thought, waits for the title of a scene that opens here.
+  // Misty's next line waits for a Skill card flying in over the same spot.
   const cardFlying = showSkillCard(scene);
-  const wait = REDUCED ? "" : opening ? "1.2s" : "";
-  byId("mistyBubble").style.transitionDelay = wait || (cardFlying && !REDUCED ? ".55s" : "");
-  byId("personBubble").style.transitionDelay = wait;
-  byId("thoughtCloud").style.transitionDelay = wait;
+  byId("mistyBubble").style.transitionDelay = cardFlying && !REDUCED ? ".55s" : "";
   // A sound starts when its step is reached, and plays out on its own.
   if (!scene.sound) stage.sound.at = null;
   else if (stage.sound.at !== scene.soundAt) Object.assign(stage.sound, scene.sound, { at: scene.soundAt, since: performance.now(), hushed: null });
@@ -1618,6 +1600,7 @@ function atShown(index) {
 
 function delayFor(step) {
   // Long enough to read what appeared, and no longer.
+  if (sceneTitleOf(step)) return 1400;
   if (step.voice === "person" || step.voice === "says") {
     return Math.min(4200, 900 + String(step.text || "").length * 45);
   }

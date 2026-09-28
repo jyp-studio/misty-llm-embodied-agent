@@ -10,6 +10,13 @@ Every behaviour described here runs against simulated or recorded adapters.
 The request shapes of the real drivers are covered by contract tests, while
 physical behaviour, calibration, latency and safety remain hardware-unverified.
 
+<p align="center">
+  <img src="assets/demo-calming-support.gif" width="900" alt="The demo stage replaying a recorded run: a person asks Misty to help them calm down, Misty loads a Skill, offers quiet company or a talk, listens to the answer, and softens its expression before finishing.">
+</p>
+
+<p align="center"><em>A recorded run from the demo: asked for help calming down, Misty loads
+a Skill, offers a choice, listens, and adapts to the answer.</em></p>
+
 ## Highlights
 
 - **Attention comes before action.** A runtime reads its input sources and
@@ -206,7 +213,7 @@ the robot. The current version replaces that design with the attention loop
 and bounded ReAct Episodes described above. `PLAN.md` explains what was kept,
 what was removed and why.
 
-The previous version remains available on the `legacy` branch and at the
+The previous version remains available on the `v1` branch and at the
 `v1-class-project` tag for anyone who wants to compare the two approaches.
 
 ## Next steps

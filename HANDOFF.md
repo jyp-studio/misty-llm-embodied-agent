@@ -148,8 +148,9 @@ body-language spec follows it.
 M10 to start a fresh repository):
 
 1. Keep the existing GitHub repository. Mark the previous version, commit
-   `e0bfa37` on `origin/main`, with a `v1-class-project` tag and a `legacy`
-   branch. The README already refers to both names.
+   `e0bfa37` on `origin/main`, with a `v1-class-project` tag and a `v1`
+   branch (not `legacy`, which is also the name of the gitignored folder that
+   holds the removed AutoMisty code). The README already refers to both names.
 2. Fast-forward `main` to this branch. `origin/main` is an ancestor of it, so
    no history is rewritten and no force push is needed.
 3. Before pushing, scan the full history for keys and personal data, and

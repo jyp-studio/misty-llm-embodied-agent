@@ -49,34 +49,38 @@
   .brand svg { width: 28px; height: 28px; }
   .chip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
   .chip::before { width: 8px; height: 8px; content: ""; background: var(--accent); border-radius: 50%; }
-  .hero { max-width: 860px; margin: 0 auto; padding: 56px 24px 36px; text-align: center; }
-  h1 { margin: 10px 0 0; font-size: clamp(34px, 5.4vw, 56px); line-height: 1.06; letter-spacing: -.035em; }
-  .hero p { margin: 16px auto 0; max-width: 700px; color: var(--muted); font-size: 17px; }
-  main { max-width: 1180px; margin: 0 auto; padding: 0 32px 64px; }
+  /* One line of introduction, so the stage is on the first screen. */
+  .hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; max-width: 1440px; margin: 0 auto; padding: 22px 32px 14px; }
+  h1 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
+  .hero p { margin: 0; color: var(--muted); font-size: 15px; }
+  main { max-width: 1440px; margin: 0 auto; padding: 0 32px 64px; }
   h2 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
-  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 12px; }
-  .tab { padding: 9px 16px; color: var(--ink); background: var(--panel); border: 1px solid transparent; border-radius: 999px; cursor: pointer; }
+  /* The groups and their examples on one row: the stage below is the point. */
+  .picker { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .tabs { display: flex; flex: none; gap: 4px; padding: 4px; background: var(--panel); border-radius: 999px; }
+  .tab { flex: none; padding: 6px 14px; color: var(--ink); font-size: 14px; white-space: nowrap; background: transparent; border: 1px solid transparent; border-radius: 999px; cursor: pointer; }
   .tab[aria-selected="true"] { color: #fff; background: var(--ink); }
   :root[data-theme="dark"] .tab[aria-selected="true"] { color: #000; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tab[aria-selected="true"] { color: #000; } }
-  .examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-  .example { display: grid; gap: 4px; min-height: 92px; padding: 14px 16px; color: var(--ink); text-align: left; background: var(--page); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+  .examples { display: flex; flex: 1; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .example { flex: none; padding: 7px 14px; color: var(--ink); background: var(--page); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
   .example:hover { border-color: var(--faint); }
   .example[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .example b { font-size: 15px; }
-  .example span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+  .example b { font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .example[aria-pressed="true"] b { font-weight: 600; }
   .example[disabled] { cursor: not-allowed; opacity: .55; }
 
-  .theatre { margin-top: 28px; padding: 24px; background: var(--panel); border-radius: 22px; }
-  .theatre-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
-  .theatre-head h2 { font-size: 22px; }
+  .theatre { margin-top: 14px; padding: 18px 20px 16px; background: var(--panel); border-radius: 22px; }
+  .theatre-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 16px; }
+  .theatre-head h2 { font-size: 20px; }
+  .watch { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
   .made-by { color: var(--faint); font-size: 13px; cursor: help; }
-  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 16px; margin-top: 12px; }
   .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 9; }
   .stage svg { display: block; width: 100%; height: 100%; }
-  /* What Misty is doing and sensing right now, under the picture of it. */
-  .senses { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 10px; }
-  .senses span { padding: 3px 10px; color: var(--muted); background: var(--page); border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+  /* What Misty is doing and sensing right now, in the corner of the picture. */
+  .senses { position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap-reverse; gap: 5px; max-width: 60%; pointer-events: none; }
+  .senses span { padding: 1px 9px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
   .senses .sensing { color: var(--ink); }
   .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
@@ -87,7 +91,7 @@
   .chat li[hidden] { display: none; }
   .chat li:last-child { margin-bottom: 0; }
   .chat .bubble-row { display: flex; flex-direction: column; }
-  .chat .bubble { max-width: 86%; padding: 7px 12px; overflow-wrap: anywhere; border-radius: 16px; }
+  .chat .bubble { max-width: 86%; padding: 7px 12px; font-size: 14.5px; overflow-wrap: anywhere; border-radius: 16px; }
   .chat .person .bubble { align-self: flex-end; color: var(--person-ink); background: var(--person-bubble); border-bottom-right-radius: 5px; }
   .chat .person .bubble.seen { font-style: italic; }
   .chat .says .bubble { align-self: flex-start; color: #fff; background: var(--misty); border-bottom-left-radius: 5px; }
@@ -96,9 +100,10 @@
      coding agent shows its thinking and tool calls above its answer. */
   .chat .thought { margin: 0 0 3px; color: var(--faint); font-size: 12.5px; font-style: italic; }
   .chat .thought::before { content: "\273B  "; font-style: normal; }
-  .chat .act { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
-  .chat .act::before { flex: none; width: 7px; height: 7px; content: ""; background: var(--misty); border-radius: 50%; transform: translateY(-1px); }
-  .chat .result { margin-left: 3px; padding-left: 14px; color: var(--muted); border-left: 1.5px solid var(--line); }
+  /* What Misty did reads quieter than what anybody said. */
+  .chat .act { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font-size: 12.5px; }
+  .chat .act::before { flex: none; width: 6px; height: 6px; content: ""; background: var(--misty); border-radius: 50%; opacity: .7; transform: translateY(-1px); }
+  .chat .result { margin-left: 3px; padding-left: 14px; color: var(--muted); font-size: 12.5px; border-left: 1.5px solid var(--line); }
   .chat .result.pushback { color: var(--world); border-left-color: var(--world); }
   .chat .sense { color: var(--faint); font-size: 12.5px; }
   .chat .sense svg { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; }
@@ -109,7 +114,8 @@
   .chat .result { margin-left: 3px; }
   .chat li[aria-current="true"] .hl { outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 2px; }
   .chat .empty { color: var(--faint); cursor: default; }
-  .controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .stage-col { display: flex; flex-direction: column; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
   .controls > button { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--accent-ink); background: var(--page); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
   .controls > button svg { width: 20px; height: 20px; fill: currentColor; }
   .controls > button.primary { width: 46px; height: 46px; color: #fff; background: var(--accent); border-color: var(--accent); }
@@ -132,10 +138,9 @@
   .legend { display: inline-flex; align-items: center; gap: 6px; }
   .legend::before { width: 9px; height: 9px; content: ""; background: var(--dot); border-radius: 50%; }
   .switch { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; cursor: pointer; }
-  .provenance { margin: 10px 0 0; color: var(--faint); font-size: 12px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  .live { margin-top: 28px; padding: 24px; border: 1px solid var(--line); border-radius: 22px; }
+  .live { max-width: 1180px; margin: 28px auto 0; padding: 24px; border: 1px solid var(--line); border-radius: 22px; }
   .live p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
   .live-form { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 16px; }
   .live-form input[type=text] { min-width: 0; padding: 10px 12px; color: var(--ink); background: var(--page); border: 1px solid var(--line); border-radius: 10px; }
@@ -162,6 +167,8 @@
   .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
   .obstacle { opacity: 0; transition: opacity .3s; }
   .obstacle.on { opacity: 1; }
+  .gap { opacity: 0; transition: opacity .3s; }
+  .gap.on { opacity: 1; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes talk { from { transform: scaleY(.25); } to { transform: scaleY(1.25); } }
   @keyframes flash { 50% { opacity: .15; } }
@@ -171,6 +178,8 @@
     .misty *, .cone { animation: none !important; transition: none !important; }
   }
   @media (max-width: 860px) {
+    .picker { flex-direction: column; align-items: stretch; }
+    .tabs { overflow-x: auto; scrollbar-width: none; }
     .stage-wrap { grid-template-columns: 1fr; }
     .chat-wrap { height: 340px; }
     .live-form { grid-template-columns: 1fr; }
@@ -178,8 +187,9 @@
   }
   @media (max-width: 520px) {
     .topbar { padding: 10px 16px; align-items: flex-start; flex-direction: column; justify-content: center; }
-    .hero { padding: 36px 16px 24px; text-align: left; }
-    .hero p { font-size: 16px; }
+    .hero { padding: 18px 16px 10px; }
+    .senses { left: 6px; bottom: 5px; max-width: 80%; gap: 4px; }
+    .senses span { padding: 0 7px; font-size: 10.5px; }
     main { padding: 0 16px 48px; }
     .theatre, .live { padding: 16px; border-radius: 16px; }
     .controls { flex-wrap: wrap; }
@@ -198,20 +208,21 @@
 
 <section class="hero">
   <h1>Misty LLM Agent</h1>
-  <p>A language model decides what this robot does: when to speak, when to come closer, and when to leave someone alone. It acts one tool call at a time, and an attention loop in front of it decides whether an interaction should begin at all.</p>
-  <p>Every example below is a recording of one of those runs, made in simulation. Pick one, press play, and step through what Misty perceived and what it chose to do about it. Nothing on this page needs a robot or an API key.</p>
+  <p>Replays of a language model choosing what a simulated social robot says and does.</p>
 </section>
 
 <main>
   <section aria-labelledby="examples-title">
-    <h2 id="examples-title">Recorded examples</h2>
-    <div class="tabs" id="groupTabs" role="tablist" aria-label="Example groups"></div>
-    <div class="examples" id="exampleList"></div>
+    <h2 id="examples-title" class="sr-only">Recorded examples</h2>
+    <div class="picker">
+      <div class="tabs" id="groupTabs" role="tablist" aria-label="Example groups"></div>
+      <div class="examples" id="exampleList"></div>
+    </div>
   </section>
 
   <section class="theatre" aria-labelledby="runTitle">
     <div class="theatre-head">
-      <h2 id="runTitle">Pick an example</h2>
+      <div><h2 id="runTitle">Pick an example</h2><p class="watch" id="runWatch"></p></div>
       <span class="made-by" id="provenanceBadge"></span>
     </div>
 
@@ -302,6 +313,11 @@
           <path class="cone" id="cone" d="" fill="var(--accent)" opacity=".16"/>
           <!-- The person Misty is talking to -->
           <g id="personFront"></g>
+          <!-- How far apart they are, measured along the floor at their feet -->
+          <g class="gap" id="gap" aria-hidden="true">
+            <path id="gapLine" d="" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round"/>
+            <text id="gapText" y="-8" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)"></text>
+          </g>
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
           <text id="measureText" x="0" y="-100" font-size="20" visibility="hidden" aria-hidden="true"></text>
@@ -320,8 +336,21 @@
             </g>
           </g>
         </svg>
-      </div>
         <div class="senses" id="senses"></div>
+      </div>
+        <div class="controls">
+          <button id="replayBack" type="button" title="Previous step" aria-label="Previous step" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="primary" id="replayJournal" type="button" title="Play" aria-label="Play" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
+          </button>
+          <button id="replayForward" type="button" title="Next step" aria-label="Next step" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="strip" id="replayStrip" role="group" aria-label="Jump to a step"></div>
+          <span id="replayCounter"></span>
+        </div>
       </div>
 
       <div class="chat-wrap">
@@ -329,19 +358,6 @@
       </div>
     </div>
 
-    <div class="controls">
-      <button id="replayBack" type="button" title="Previous step" aria-label="Previous step" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button class="primary" id="replayJournal" type="button" title="Play" aria-label="Play" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
-      </button>
-      <button id="replayForward" type="button" title="Next step" aria-label="Next step" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <div class="strip" id="replayStrip" role="group" aria-label="Jump to a step"></div>
-      <span id="replayCounter"></span>
-    </div>
     <div class="foot">
       <span class="legend" style="--dot: var(--person)">Person</span>
       <span class="legend" style="--dot: var(--misty)">Misty</span>
@@ -349,7 +365,6 @@
       <span class="legend" style="--dot: var(--faint)">What Misty sensed</span>
       <label class="switch"><input type="checkbox" id="showEverything"> Developer view</label>
     </div>
-    <p class="provenance" id="provenanceMeans"></p>
     <p class="sr-only" id="nowSpoken" aria-live="polite"></p>
   </section>
 
@@ -402,9 +417,8 @@ function selectGroup(group) {
   }
   const items = state.catalogue.filter((item) => item.group === group);
   byId("exampleList").innerHTML = items.map((item) => `
-    <button class="example" type="button" data-example="${escapeText(item.key)}" aria-pressed="${item.key === state.selected}" ${item.recorded ? "" : "disabled"}>
+    <button class="example" type="button" data-example="${escapeText(item.key)}" aria-pressed="${item.key === state.selected}" ${item.recorded ? "" : "disabled title=\"Not recorded yet.\""}>
       <b>${escapeText(item.title)}</b>
-      <span>${escapeText(item.recorded ? item.watch_for : "Not recorded yet.")}</span>
     </button>`).join("");
 }
 
@@ -424,6 +438,7 @@ async function selectExample(key) {
   const payload = document_.payload;
   loadRun({
     title: item.title,
+    watchFor: item.watch_for,
     provenance: payload.execution.provenance,
     steps: payload.playback,
   });
@@ -434,12 +449,12 @@ async function selectExample(key) {
 function loadRun(run) {
   pauseReplay();
   byId("runTitle").textContent = run.title;
+  byId("runWatch").textContent = run.watchFor || "";
   const provenance = run.provenance;
   // One quiet line says who made the run; the long version is a hover away,
   // and the part nobody should miss sits under the controls.
   byId("provenanceBadge").textContent = madeBy(provenance);
   byId("provenanceBadge").title = provenance.detail || provenance.kind_means;
-  byId("provenanceMeans").textContent = provenance.hardware_unverified;
   state.steps = run.steps || [];
   state.actors = [...new Set(
     state.steps.filter((step) => step.actor).map((step) => step.actor)
@@ -777,13 +792,13 @@ const SENSING = {
 
 function drawSenses(scene) {
   // What Misty is doing and what it knows of the person, as a few short
-  // labels under the stage rather than a panel of prose beside it.
+  // labels in the corner of the stage rather than a panel of prose beside
+  // it. How far away the person is goes on the floor between them.
   const chips = [];
   const doing = scene.sensing || captionFor(scene);
   if (doing) chips.push([scene.sensing ? "sensing" : "doing", doing]);
   if (scene.stopped) chips.push(["pushback", `Stopped: ${scene.stopped}`]);
   if (scene.faceKnown) chips.push(["", scene.present ? "Face in view" : "Nobody in view"]);
-  if (scene.distanceKnown) chips.push(["", `${Math.round(scene.distance)} cm away`]);
   if (scene.waiting) chips.push(["", `${scene.waiting} is waiting`]);
   byId("senses").innerHTML = chips
     .map(([kind, text]) => `<span class="${kind}">${escapeText(text)}</span>`).join("");
@@ -825,8 +840,8 @@ function emptyScene() {
    into it meets at the centre. Figures are drawn in centimetres and scaled
    by how far back they stand. Distances are a stage cheat, as in any
    theatre: the person keeps to the right, and Misty's gap from them grows
-   with the real distance without being to scale; the chips under the stage
-   carry the real number. */
+   with the real distance without being to scale; the line on the floor
+   between them carries the real number. */
 const STAGE = { W: 960, H: 540, F: 1400, eye: 110, camera: 560, front: -130, back: -330, personX: 150, personSize: 0.88 };
 
 function project([x, y, z]) {
@@ -1237,6 +1252,7 @@ function frame(clock) {
   }
   byId("peopleBehind").innerHTML = behind;
   byId("personFront").innerHTML = front;
+  drawGap(scene, now.x);
 
   // The camera's look, from Misty's screen to the person's face.
   const [ex, ey] = [mx + 22 * k, gy - 72 * k];
@@ -1244,6 +1260,25 @@ function frame(clock) {
   byId("cone").setAttribute("d", `M${ex.toFixed(1)} ${ey.toFixed(1)} L${fx.toFixed(1)} ${(fy - 26).toFixed(1)} L${fx.toFixed(1)} ${(fy + 26).toFixed(1)} Z`);
   placeBubble("misty");
   placeBubble("person");
+}
+
+/* How far apart Misty and the person are: a measuring line along the floor
+   from Misty's front wheel to the person's heel, with the real distance on
+   it. The stage gap is not to scale; the number is. */
+function drawGap(scene, x) {
+  const [x0, y] = project([x + 26, 0, STAGE.front]);
+  const [x1] = project([STAGE.personX - 18 * STAGE.personSize, 0, STAGE.front]);
+  const shown = scene.distanceKnown && scene.present && !scene.passing && x1 - x0 > 60;
+  byId("gap").classList.toggle("on", shown);
+  if (!shown) return;
+  // Ticks stand up from the floor, clear of the labels in the corner below.
+  const tick = 8;
+  byId("gapLine").setAttribute("d",
+    `M${x0.toFixed(1)} ${(y - tick).toFixed(1)} V${y.toFixed(1)} H${x1.toFixed(1)} V${(y - tick).toFixed(1)}`);
+  const text = byId("gapText");
+  text.setAttribute("x", ((x0 + x1) / 2).toFixed(1));
+  text.setAttribute("y", (y - 6).toFixed(1));
+  text.textContent = `${Math.round(scene.distance)} cm`;
 }
 
 /* Where a line's bubble goes: over the speaker's head, shifted a little

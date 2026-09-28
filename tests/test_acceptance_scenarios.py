@@ -335,13 +335,17 @@ def test_the_page_shows_what_kind_of_run_it_was():
     """The labels have to reach a visitor, not only the JSON. A route nobody
     renders is a claim nobody can see. The spec numbers are not shown: the
     page is a showcase for visitors, and `/acceptance` still serves every
-    contract with its number."""
+    contract with its number.
+
+    That none of it ran on hardware is said once, for the whole page, in its
+    footer rather than again under every run: a line repeated under the stage
+    was taking room from the stage."""
     page = answer_page()
 
     assert 'id="provenanceBadge"' in page
     assert "provenance.recorded_on" in page
     assert "provenance.kind_means" in page
-    assert "provenance.hardware_unverified" in page
+    assert "never run on, or been verified with, a real Misty II" in page
 
 
 def test_the_live_panel_labels_itself_too():

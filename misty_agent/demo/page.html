@@ -521,18 +521,22 @@ function madeBy(provenance) {
   return `${how}${model}${when} · simulated`;
 }
 
-//: How Misty heard or saw: what was said, or what Misty did about what it
-//: saw, is the story, so these stay behind the switch with the machinery.
-const SENSING_STEPS = new Set(["wake", "capture", "asr", "visual_gate"]);
+//: How Misty heard: the words themselves are the step that follows, so
+//: these stay behind the switch with the rest of the machinery.
+const HEARING = new Set(["wake", "capture", "asr"]);
 
 function chooseShown() {
   const everything = byId("showEverything").checked;
   const all = state.steps.map((step, index) => index);
   const told = (index) => state.steps[index].tells_the_story;
-  state.shown = everything ? all : all.filter((index) =>
-    isThought(index) || (told(index) && !SENSING_STEPS.has(state.steps[index].kind)));
+  const watching = (index) => state.steps[index]?.kind === "visual_gate";
+  // Of a stretch of watching, the step where the gate made up its mind:
+  // what Misty then does follows from what it saw there.
+  const sawIt = (index) => !watching(all.slice(index + 1).find(told));
+  state.shown = everything ? all : all.filter((index) => isThought(index) || (told(index)
+    && !HEARING.has(state.steps[index].kind) && (!watching(index) || sawIt(index))));
   // Somebody walking past is nothing but watching; that is the story there.
-  if (!everything && !state.shown.length) state.shown = all.filter(told);
+  if (!everything && state.shown.every(watching)) state.shown = all.filter(told);
   state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
 }
 

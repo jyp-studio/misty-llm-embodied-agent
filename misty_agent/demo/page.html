@@ -79,7 +79,7 @@
   .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 9; }
   .stage svg { display: block; width: 100%; height: 100%; }
   /* What Misty is doing and sensing right now, in the corner of the picture. */
-  .senses { position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap-reverse; gap: 5px; max-width: 60%; pointer-events: none; }
+  .senses { position: absolute; left: 10px; top: 8px; display: flex; flex-wrap: wrap; gap: 5px; max-width: 60%; pointer-events: none; }
   .senses span { padding: 1px 9px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
   .senses .sensing { color: var(--ink); }
@@ -188,7 +188,7 @@
   @media (max-width: 520px) {
     .topbar { padding: 10px 16px; align-items: flex-start; flex-direction: column; justify-content: center; }
     .hero { padding: 18px 16px 10px; }
-    .senses { left: 6px; bottom: 5px; max-width: 80%; gap: 4px; }
+    .senses { left: 6px; top: 5px; max-width: 60%; gap: 4px; }
     .senses span { padding: 0 7px; font-size: 10.5px; }
     main { padding: 0 16px 48px; }
     .theatre, .live { padding: 16px; border-radius: 16px; }
@@ -1267,21 +1267,14 @@ function frame(clock) {
 /* How far apart Misty and the person are: a badge with the real distance
    on the floor just in front of them, and a line from it out towards each,
    stopping short of their feet. The stage gap is not to scale; the number
-   is. The line gives way to the labels in the stage's corner. */
+   is. */
 const GAP = { z: STAGE.front + 30, clear: 12, badge: 32, tick: 6 };
 function drawGap(scene, x) {
   const gap = byId("gap");
   const shown = scene.distanceKnown && scene.present && !scene.passing;
   const [x0, y] = project([x + 26, 0, GAP.z]);
   const [x1] = project([STAGE.personX - 30 * STAGE.personSize, 0, GAP.z]);
-  let left = x0 + GAP.clear;
-  const right = x1 - GAP.clear;
-  const senses = byId("senses");
-  if (senses.childElementCount) {
-    const box = byId("stage").getBoundingClientRect();
-    const corner = senses.getBoundingClientRect();
-    if (box.width) left = Math.max(left, ((corner.right - box.left) / box.width) * STAGE.W + GAP.clear);
-  }
+  const left = x0 + GAP.clear, right = x1 - GAP.clear;
   const middle = (x0 + x1) / 2;
   const room = Math.min(middle - left, right - middle) - GAP.badge;
   gap.classList.toggle("on", shown && room > GAP.tick);
@@ -1345,14 +1338,30 @@ function bubbleTop(who, height, settled = false) {
   return Math.max(BUBBLE.edge, me.headTop - gap - height);
 }
 
+function cornerLabels() {
+  // Where the labels in the stage's top-left corner end, in stage units;
+  // null when there are none.
+  const labels = byId("senses"), box = byId("stage").getBoundingClientRect();
+  if (!labels.childElementCount || !box.width) return null;
+  const corner = labels.getBoundingClientRect(), unit = STAGE.W / box.width;
+  return { right: (corner.right - box.left) * unit, bottom: (corner.bottom - box.top) * unit };
+}
+
 function bubbleLayout(who, width, height) {
   // Place a bubble of this size for this speaker, now: its box and tail.
   const me = figureBox(who);
   const facing = who === "misty" ? 1 : -1;
-  const y = bubbleTop(who, height);
+  let y = bubbleTop(who, height);
   const [from, to] = bubbleSpan(who, y, height, false);
   let x = me.headX + facing * ahead(width) - width / 2;
   x = Math.max(from, Math.min(x, to - width));
+  // A bubble reaching the corner labels steps right of them, or, with no
+  // room there, down below them.
+  const corner = cornerLabels();
+  if (corner && y < corner.bottom + BUBBLE.keep && x < corner.right + BUBBLE.keep) {
+    if (corner.right + BUBBLE.keep + width <= to) x = corner.right + BUBBLE.keep;
+    else y = corner.bottom + BUBBLE.keep;
+  }
   const bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + facing * 10));
   const tip = [me.headX + facing * 8, me.headTop - (who === "misty" ? 16 : 10)];
   return { x, y, base: [bx, y + height], tip };

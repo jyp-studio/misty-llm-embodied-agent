@@ -277,7 +277,7 @@
           <g class="obstacle" id="obstacle">
             <rect x="-17" y="-30" width="34" height="30" rx="7" fill="#f3d9a6" stroke="#c99a4a" stroke-width="1"/>
             <path d="M-11 -22 L11 -8 M-11 -8 L11 -22" stroke="#c99a4a" stroke-width="1.6" stroke-linecap="round"/>
-            <text id="obstacleLabel" x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)" opacity="0">blocked</text>
+            <text x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)">blocked</text>
           </g>
 
           <!-- A Skill Misty calls up: a card that rises from behind it and,
@@ -422,7 +422,7 @@ const state = {
   catalogue: [], group: null, selected: null,
   // `steps` is the whole run; `shown` is the plain telling of it, which is
   // what the controls walk. Everything is still there behind the switch.
-  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0, blockedAt: null,
+  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0,
 };
 
 /* ---------- Catalogue ---------- */
@@ -492,7 +492,6 @@ function loadRun(run) {
     state.steps.filter((step) => step.actor).map((step) => step.actor)
   )];
   state.replayAt = 0;
-  state.blockedAt = blockedAt(state.steps);
   chooseShown();
   const hasSteps = state.shown.length > 0;
   byId("replayJournal").disabled = !hasSteps;
@@ -508,15 +507,6 @@ function loadRun(run) {
     byId("replayCounter").textContent = "";
     stepButtons();
   }
-}
-
-function blockedAt(steps) {
-  // Where an approach is stopped by something in the way, if one is: the
-  // obstacle is there from the start, and Misty finds it when it gets there.
-  const halt = steps.find((step) => step.kind === "observation"
-    && ["blocked", "hazard_unavailable"].includes(step.facts?.result?.result));
-  const distance = halt?.facts?.snapshot?.distance_cm;
-  return typeof distance === "number" ? distance : null;
 }
 
 function madeBy(provenance) {
@@ -1203,8 +1193,7 @@ function drawScene(scene) {
   else if (stage.sound.at !== scene.soundAt) Object.assign(stage.sound, scene.sound, { at: scene.soundAt, since: performance.now(), hushed: null });
   // Misty's own words clear the air for its bubble.
   if (scene.speaking === "misty" && stage.sound.hushed === null) stage.sound.hushed = performance.now();
-  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle) || state.blockedAt !== null);
-  byId("obstacleLabel").setAttribute("opacity", scene.obstacle ? "1" : "0");
+  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
   // A bubble shows while its line is the step being played, and is gone
   // once the run moves on.
   stage.distance = scene.distance;
@@ -1384,8 +1373,7 @@ function frame(clock) {
   byId("armLeft").setAttribute("transform", `rotate(${now.far.toFixed(1)} 22 -41)`);
   drawSkillCard(clock, mx, gy, k);
   drawSound(clock, mx, gy, k);
-  const ahead = state.blockedAt !== null ? mistyXFor(state.blockedAt) : now.x;
-  const [ox, oy] = project([ahead + 55, 0, STAGE.front]);
+  const [ox, oy] = project([now.x + 55, 0, STAGE.front]);
   byId("obstacle").setAttribute("transform", `translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${k.toFixed(4)})`);
 
   // The person: waving, walking past, or standing; with a face read from

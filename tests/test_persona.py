@@ -207,39 +207,6 @@ def test_the_persona_says_it_is_speaking_aloud():
 
 
 # ---------------------------------------------------------------------------
-# The body it has (PLAN.md §16.67)
-# ---------------------------------------------------------------------------
-
-def test_the_persona_says_what_its_body_is_for():
-    """Across fifteen recordings `move_arms` and `change_led` were never
-    called and `move_head` once: nothing said when a body helps. The
-    guidance lives here and not in the schemas, one fact in one place."""
-    assert "your face, head, arms and chest light say how you are taking what you hear" in FLAT
-    assert "not in every turn" in FLAT
-
-
-def test_the_persona_ties_each_part_to_a_moment():
-    assert "a happy face, raised arms, a warm light" in FLAT
-    assert "tilt your head a little" in FLAT
-    assert "lower your head a little, keep your arms down, and choose a soft, calm light" in FLAT
-
-
-def test_the_persona_keeps_alarm_colours_away_from_somebody_upset():
-    assert "red reads as alarm" in FLAT
-    assert "do not use it for somebody who is upset" in FLAT
-
-
-def test_the_persona_says_a_performance_is_composed():
-    """PLAN.md §4: expressiveness is composed out of the primitive Tools, not
-    a preset. The model cannot compose what it was never told it may."""
-    assert "put several gestures together" in FLAT
-
-
-def test_the_persona_says_to_come_back_to_rest_before_finishing():
-    assert "put your arms down and your head level before you finish" in FLAT
-
-
-# ---------------------------------------------------------------------------
 # The messages that actually arrive
 # ---------------------------------------------------------------------------
 

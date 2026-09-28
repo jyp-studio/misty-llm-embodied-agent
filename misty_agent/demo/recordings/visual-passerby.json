@@ -1,14 +1,13 @@
 {
  "format": 1,
  "showcase": {
-  "group": "noticing",
   "card": "greeting",
   "fixture": "visual-passerby",
   "title": "Someone walks past",
   "watch_for": "They never look at Misty, so it leaves them alone and the model is never called."
  },
  "model": "gpt-5.6-luna",
- "recorded_on": "2026-09-28",
+ "recorded_on": "2026-09-25",
  "payload": {
   "scenario": {
    "name": "greeting",
@@ -193,21 +192,6 @@
      "input_kind": "text",
      "spec_scenario": 10,
      "situation": "A question that needs no movement: answer it, and do not drive over to demonstrate that driving exists."
-    },
-    {
-     "key": "back-off",
-     "label": "\"Could you back up a bit?\" · keeps far, and checks it is better",
-     "input_kind": "text"
-    },
-    {
-     "key": "timer",
-     "label": "\"Count three seconds\" · waits, then says time is up",
-     "input_kind": "text"
-    },
-    {
-     "key": "show-off",
-     "label": "\"Can you dance?\" · a little show composed out of its body",
-     "input_kind": "text"
     }
    ]
   },
@@ -216,9 +200,9 @@
     "kind": "recorded_model_run",
     "kind_means": "Recorded from a real run against a hosted model and replayed here without calling it again. The inputs come from the example; every decision was the model's own. The robot is simulated.",
     "hardware_unverified": "No Misty II has ever run any of this. Physical behaviour, timing and reliability are unverified.",
-    "headline": "Recorded from gpt-5.6-luna on 2026-09-28",
+    "headline": "Recorded from gpt-5.6-luna on 2026-09-25",
     "model": "not called",
-    "recorded_on": "2026-09-28",
+    "recorded_on": "2026-09-25",
     "robot": "Simulated Misty",
     "detail": "A synthetic frame timeline went through local anonymous tracking and the temporal visual gate; the detector signals are part of the example. No cue formed, so the model was never called. The robot is simulated; no real camera, microphone or Misty II was used.",
     "audio": null,
@@ -291,19 +275,19 @@
      "kind": "visual_gate",
      "label": "Frame 1 · anon-1",
      "headline": "The person is not looking at Misty",
-     "detail": "person count 1 · confidence 0.92"
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
     },
     {
      "kind": "visual_gate",
      "label": "Frame 2 · anon-1",
      "headline": "The person is not looking at Misty",
-     "detail": "person count 1 · confidence 0.92"
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
     },
     {
      "kind": "visual_gate",
      "label": "Frame 3 · anon-1",
      "headline": "The person is not looking at Misty",
-     "detail": "person count 1 · confidence 0.92"
+     "detail": "person_count: 1 · looking: False · hand_visible: False · confidence: 0.92 · gaze_duration_s: 0.0 · wave_span: 0.0 · direction_changes: 0 · eyes_narrowed: False · mouth_open: False · head_lowered: False · mouth_corners_raised: False · care_duration_s: 0.0"
     },
     {
      "kind": "ending",

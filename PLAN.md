@@ -3044,3 +3044,11 @@ Demo 會播模型自己的錄音。back-off 把人擺在 60cm，說「可以退�
 落差——ToolCalled 的姿勢要等 Observation 才兌現，而一般播放把 Observation 藏起來，所以每個手勢
 都晚一步才畫出來。現在一個動作若緊接著的 Observation 確認了它，就在動作那一步畫出確認後的姿勢；
 失敗的呼叫沒有 Observation，照舊什麼也不畫。
+
+**補記（同日）：「Your body」與重錄撤回。** 以上 persona 一節錄了一輪：15 份錄音的肢體 Tool 呼叫
+從 4 次到 10 次，9 份仍為零，而且一 Turn 一 Tool 讓手勢只能跟在話後面。使用者決定肢體語言改在
+開源後照 `.scratch/body-language/spec.md` 的三層設計重做，現在的版本維持處理肢體之前的樣子：
+persona 與其測試還原、錄音換回重錄前那一批（所以 come-closer 仍是「我看不到你」那一份，
+`PlacedPersonPerception` 的修正要到下次重錄才會出現在錄音裡）。`keep`、`wait`、三個新腳本與舞台
+修正保留：它們是能力，不改變現有 15 個範例；三個新腳本暫不上 Demo。錄音測試改為從錄音推導的
+那批也保留，它們對新舊錄音都成立。

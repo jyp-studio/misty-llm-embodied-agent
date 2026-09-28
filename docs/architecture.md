@@ -77,7 +77,11 @@ facts and uncertainty. The first reads the cue's latest anonymous target
 track; the second returns bounded selected-scene facts and is marked as the
 expensive option. Neither Tool can move the robot or diagnose emotion. An
 unavailable visual source returns a typed unavailable ending instead of
-invented facts. Session binds this view to the Trigger Evidence track when the
+invented facts. A text scenario has no camera, but it places its person in
+the simulated room and the Snapshot reports them from that placement, so its
+Episodes look through `PlacedPersonPerception`: the person is reported where
+the scenario placed them, labelled as a simulated placement rather than a
+camera frame, and as unavailable once the placement is empty. Session binds this view to the Trigger Evidence track when the
 Episode opens, so a later queued cue cannot silently replace it. If that track
 is absent from the newest frame, its own last-seen time supplies the age and
 the Tool reports unavailable.
@@ -149,29 +153,42 @@ recordings: `python -m misty_agent.demo.record` runs a chosen subset of
 the same fixtures with the configured hosted model making every decision,
 and writes each run to `misty_agent/demo/recordings/` in the scripted
 route's shape, labelled `recorded_model_run` with the model name and date.
-The page replays them without a key and animates the simulated Misty from
-each Moment's folded pose plus the Tool call, Observation and Snapshot, on
-an eye-level stage whose lines meet at its centre. Misty and the person
-stand three-quarters to each other so both faces read, and the gap between
-them follows the real distance without being to scale. The person is an
-abstract figure whose face is drawn only from the fixture's observable
-signals (looking, head lowered, mouth corners raised), never inferred from
-what they say. It
-plays one list per run — `playback_of` — which keeps the runtime's
+The page offers fifteen of them in five groups (noticing someone, talking,
+moving, care, knowing its limits), replays them without a key, and animates
+the simulated Misty on an eye-level stage whose lines meet at its centre.
+Misty and the person stand three-quarters to each other so both faces read,
+and the gap between them follows the real distance without being to scale.
+The person is an abstract figure whose face is drawn only from the fixture's
+observable signals (looking, head lowered, mouth corners raised), never
+inferred from what they say.
+
+The server plays one list per run, `playback_of`, which keeps the runtime's
 records in the order it wrote them and lets each Episode's Moments out as
-time passes, so a run that never opened an Episode still has its reasoning
-to show, and somebody speaking during one appears where they spoke. Each
-step carries a plain sentence, whether it tells the story, and its voice:
-the person's words, Misty's words, Misty's other actions, what came back,
-what Misty sensed on its own, or a marker. The page draws the run as a
-conversation from those voices beside the stage, with the model's note as
-small print above the call it was written for, and a strip of one icon per
-step as the scrubber. A Turn is four records, and only the call and its note
-say anything a visitor came to see, so the page plays those by default and
-keeps every record behind a developer switch. That projection is
-applied when a recording is served rather than when it is made, so the page
-can change without re-running anything against a paid model. A
-recording is evidence about that model on that day, not a test: the
+time passes, so a run that never opened an Episode still has something to
+show, and somebody speaking during one appears where they spoke. Each step
+carries a plain sentence, whether it tells the story, and its voice: the
+person's words, Misty's words, a model note, Misty's other actions, what came
+back, what Misty sensed on its own, or a marker. That projection is applied
+when a recording is served rather than when it is made, so the page can
+change without re-running anything against a paid model.
+
+The page then chooses the plain telling. It keeps the steps that tell the
+story, leaves out how speech was heard (wake, capture, transcription), keeps
+only the step where a visual gate made up its mind, gives each model note
+that the next call carries a step of its own, and, when two people take
+part, gives each conversation's opening a step of its own. Everything else
+stays behind a developer switch. On the stage, speech appears in bubbles over
+the speaker, a model note appears as a thought cloud, a marker or a
+conversation's opening appears as a title across the stage, and a status
+label in the top left says what Misty is doing or sensing. The distance is a
+badge on the floor between them, a Skill appears as a card that rises and is
+absorbed, a sound floats up as notes, and a `wait` counts down beside Misty's
+head. An action is drawn with the pose its own Observation confirmed, so a
+gesture appears on the step that made it and a failed call shows nothing. The
+full conversation opens in a drawer beside the stage, and a strip of one icon
+per step is the scrubber.
+
+A recording is evidence about that model on that day, not a test: the
 default suite checks the files' shape and runs the boundary audit over what
 Misty said in them. The optional live panel is a separate hosted path that
 plays on the same stage.
@@ -241,8 +258,13 @@ the storyboard's pose where it was. Neither adapter records what happened;
 the Journal written by the ReAct loop and Tool dispatch is the only
 behaviour record, and the Demo replays from it.
 
-`approach` is the only movement Tool and takes no arguments: the model states
-the intent to approach the current Interaction Target and nothing about how.
+`approach` is the only movement Tool. Its one argument, `keep`, says how much
+room to leave the current Interaction Target: `close` (the default, the
+`target_distance_cm` the loop has always converged to), `comfortable` or
+`far`, each a `Settings` field validated to widen in order. The model states
+the intent and that choice, and nothing about how: the Tool copies the
+settings with the chosen target and hands them to the same closed loop, which
+comes closer or backs away as the reading requires.
 A reading now carries a bearing beside its distance, timestamp and
 uncertainty. The controller turns the chassis while the bearing exceeds
 `align_tolerance_deg`, each turn bounded by `max_turn_deg` and divided by the
@@ -270,6 +292,14 @@ and departure timeline. Every result carries a short reason, and the Journal
 keeps the intent, the completed motions, the reason and the Snapshot. These
 are simulated checks of the control law's shape, not a hardware safety
 certification.
+
+`wait(seconds)` keeps the robot still for one to thirty whole seconds, for
+example to time something the person asked for. It moves nothing, which is
+why the model may choose its length, and it polls only the stop: the
+microphone offers no way to look at speech without taking it, so anything
+said meanwhile arrives on the Snapshot afterwards, and the thirty-second
+ceiling bounds how long a changed mind can go unheard. The result reports
+whether the wait elapsed or was stopped, and how long it actually lasted.
 
 Model context is Episode-scoped. The current Trigger Evidence, native Tool
 calls/results, Snapshots, later utterances and activated Skill instructions

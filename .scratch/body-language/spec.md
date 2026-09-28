@@ -12,7 +12,7 @@ Status: needs-triage
 使用者希望 Misty 有豐富的肢體語言：思考時歪頭沉思、說話時舉手等等。§16.67 曾在 persona 加上
 「Your body」一節試過一輪，重錄後 15 份錄音的肢體 Tool 呼叫從 4 次增加到 10 次，但 9 份仍一次都
 沒用，而且即使用了，也只能是「說完 → 停頓 → 舉手 → 停頓 → 再說」。那一節與那批錄音已撤回
-（見 §16.67 補記），現在的 persona 沒有肢體指引；要用時可從 commit `c554008` 取回。
+（見 §16.67 補記），現在的 persona 沒有肢體指引；要用時可從 commit `8869699` 取回。
 
 原因不在 prompt，而在架構：
 
@@ -81,5 +81,5 @@ Status: needs-triage
 ## 參考
 
 - `PLAN.md` §4、§15.2、§15.4、§15.15、§15.19、§16.67
-- commit `c554008` 的 persona「Your body」一節（已撤回）
+- commit `8869699` 的 persona「Your body」一節（已撤回）
 - 2026-09-28 重錄統計：display_image 4、move_arms 2、change_led 2、move_head 2，9/15 份為零

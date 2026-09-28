@@ -90,10 +90,8 @@
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
   .senses .sensing { color: var(--ink); }
   .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
-  /* With the conversation closed, its model notes and results show here. */
-  .senses .thought { flex-basis: 100%; width: fit-content; max-width: 100%; padding: 4px 12px; color: var(--ink); font-style: italic; line-height: 1.4; border-radius: 12px; }
-  .senses .thought::before { content: "\273B  "; color: var(--misty); font-style: normal; }
-  .theatre.talk-open .senses :is(.thought, .result) { display: none; }
+  /* With the conversation closed, how an action turned out shows here. */
+  .theatre.talk-open .senses .result { display: none; }
   /* A new conversation begins like a change of scene. */
   .scene-card { position: absolute; left: 50%; top: 42%; padding: 10px 22px; color: var(--ink); font-size: 18px; font-weight: 600; white-space: nowrap; background: var(--card); border: 1px solid var(--line); border-radius: 999px; opacity: 0; transform: translate(-50%, -50%); pointer-events: none; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
   .scene-card.on { animation: scene-card 1.6s ease both; }
@@ -183,7 +181,7 @@
   .misty.listening .ears { opacity: 1; }
   .misty.listening .ears path { animation: ear 1.1s ease-out infinite; }
   .misty.listening .ears path:nth-child(2) { animation-delay: .35s; }
-  svg .bubble { transition: opacity .25s; }
+  svg .bubble, .thought-cloud { transition: opacity .25s; }
   .cone { opacity: 0; transition: opacity .25s; }
   .cone.on { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
   .obstacle { opacity: 0; transition: opacity .3s; }
@@ -205,7 +203,7 @@
     .theatre :is(.theatre-head, .stage-wrap, .foot) { max-width: none; }
     .theatre .stage-wrap, .theatre.talk-open .stage-wrap { grid-template-columns: 1fr; gap: 16px; }
     .chat-wrap, .theatre .chat-wrap { height: 340px; visibility: visible; opacity: 1; }
-    .talk-tab, .senses :is(.thought, .result) { display: none; }
+    .talk-tab, .senses .result { display: none; }
     .live-form { grid-template-columns: 1fr; }
     .live-form input[type=file] { max-width: none; }
   }
@@ -347,6 +345,12 @@
           </g>
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
+          <!-- The model's note, as a thought cloud over Misty before it acts -->
+          <g class="thought-cloud" id="thoughtCloud" opacity="0" aria-hidden="true">
+            <path id="thoughtCloudShape" d="" fill="var(--page)" stroke="var(--faint)" stroke-width="1.4" stroke-linejoin="round"/>
+            <g id="thoughtCloudPuffs" fill="var(--page)" stroke="var(--faint)" stroke-width="1.4"></g>
+            <text id="thoughtCloudText" y="31" font-size="15" font-style="italic" fill="var(--ink)"></text>
+          </g>
           <text id="measureText" x="0" y="-100" font-size="16" visibility="hidden" aria-hidden="true"></text>
           <g class="bubble" id="mistyBubble" opacity="0">
             <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
@@ -675,29 +679,23 @@ function showMoment(index) {
   const scene = sceneAt(state.shown[at]);
   const title = sceneTitleAt(at);
   const opening = Boolean(title) && state.sceneCardAt !== at;
-  drawScene(scene, { opening });
+  const thinks = Boolean(step.why) && thoughtShown() && !REDUCED;
+  drawScene(scene, { opening, thinks });
   drawSenses(scene);
-  drawMind(at, opening ? title : "");
+  drawMind(at, scene, opening ? title : "");
   state.sceneCardAt = title ? at : null;
   byId("nowSpoken").textContent = step.text || step.summary;
 }
 
-function drawMind(at, opening) {
+function drawMind(at, scene, opening) {
   // What the conversation carries, for when it is closed: how an action
-  // turned out, and the model's note behind what Misty is doing now.
+  // turned out, and the model's note behind what Misty does in this step.
   const senses = byId("senses");
   const step = state.steps[state.shown[at]];
   if (step.voice === "result") {
     senses.insertAdjacentHTML("beforeend", `<span class="result ${step.pushback ? "pushback" : "doing"}">${escapeText(step.summary)}</span>`);
   }
-  for (let n = at; n >= 0; n--) {
-    const earlier = state.steps[state.shown[n]];
-    if (earlier.why) {
-      senses.insertAdjacentHTML("beforeend", `<span class="thought">${escapeText(earlier.why)}</span>`);
-      break;
-    }
-    if (earlier.voice === "person") break;
-  }
+  setThought(step.why || "", scene.speaking === "misty", Boolean(opening));
   // A scene that opens here shows its title on the stage.
   if (opening) {
     const card = byId("sceneCard");
@@ -706,6 +704,70 @@ function drawMind(at, opening) {
     void card.offsetWidth;
     card.classList.add("on");
   }
+}
+
+/* The model's note for a step, as a thought cloud where Misty's bubble would
+   go: it shows before Misty speaks and gives way to the words, or stays for
+   the step when there are none. Only while the conversation, which carries
+   every note, is closed. */
+const thought = { size: null, since: 0, speaks: false, on: false };
+const THOUGHT = { line: 20, pad: 22, max: 300, rows: 4, shows: 1.4, afterTitle: 1.2 };
+
+function thoughtShown() {
+  return !document.querySelector(".theatre").classList.contains("talk-open")
+    && !matchMedia("(max-width: 860px)").matches;
+}
+
+function setThought(text, speaks, afterTitle) {
+  const node = byId("thoughtCloudText");
+  node.textContent = "";
+  thought.size = null;
+  thought.speaks = speaks;
+  thought.since = performance.now() + (afterTitle && !REDUCED ? THOUGHT.afterTitle * 1000 : 0);
+  if (!text) return;
+  wrapToWidth(`\u273B ${text}`, THOUGHT.max, THOUGHT.rows).forEach((line, index) => {
+    const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    span.setAttribute("x", String(THOUGHT.pad));
+    span.setAttribute("dy", index === 0 ? "0" : String(THOUGHT.line));
+    span.textContent = line;
+    node.appendChild(span);
+  });
+  const rows = node.querySelectorAll("tspan");
+  const longest = Math.max(...[...rows].map((span) => span.getComputedTextLength()));
+  thought.size = { width: Math.round(longest + THOUGHT.pad * 2), height: 30 + rows.length * THOUGHT.line };
+}
+
+function cloudPath(x, y, w, h) {
+  // A box whose edges are rows of outward bumps.
+  const bump = 22;
+  const edges = [[x, y, x + w, y], [x + w, y, x + w, y + h], [x + w, y + h, x, y + h], [x, y + h, x, y]];
+  let d = `M${x.toFixed(1)} ${y.toFixed(1)}`;
+  for (const [x0, y0, x1, y1] of edges) {
+    const length = Math.hypot(x1 - x0, y1 - y0), count = Math.max(1, Math.round(length / bump));
+    const dx = (x1 - x0) / count, dy = (y1 - y0) / count, r = (length / count) * 0.62;
+    for (let i = 0; i < count; i++) d += ` a${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${dx.toFixed(1)} ${dy.toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
+
+function drawThought(clock) {
+  // Called every frame, so the cloud follows Misty as it drives.
+  const age = (clock - thought.since) / 1000;
+  let on = Boolean(thought.size) && thoughtShown();
+  // Without motion there is no "before": a cloud only where no words follow.
+  if (on) on = REDUCED ? !thought.speaks : age >= 0 && (!thought.speaks || age < THOUGHT.shows);
+  thought.on = on;
+  byId("thoughtCloud").setAttribute("opacity", on ? "1" : "0");
+  if (!thought.size) return;
+  const { width, height } = thought.size;
+  const { x, y, tip } = bubbleLayout("misty", width, height);
+  byId("thoughtCloudShape").setAttribute("d", cloudPath(x + 8, y + 6, width - 16, height - 12));
+  byId("thoughtCloudText").setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+  // Three puffs, small to large, from Misty's head up to the cloud.
+  const from = [tip[0] + 2, tip[1] + 4];
+  const to = [Math.max(x + 30, Math.min(x + width - 30, tip[0] + 16)), y + height + 2];
+  byId("thoughtCloudPuffs").innerHTML = [[0.18, 3], [0.5, 4.6], [0.82, 6.4]].map(([t, r]) =>
+    `<circle cx="${(from[0] + (to[0] - from[0]) * t).toFixed(1)}" cy="${(from[1] + (to[1] - from[1]) * t).toFixed(1)}" r="${r}"/>`).join("");
 }
 
 function sceneTitleAt(at) {
@@ -1106,7 +1168,7 @@ const stage = {
   sound: { name: "", volume: 50, at: null, since: null, hushed: null },
 };
 
-function drawScene(scene, { opening = false } = {}) {
+function drawScene(scene, { opening = false, thinks = false } = {}) {
   // Called once per step: what does not move between steps is set here,
   // and the frame loop eases the rest.
   stage.scene = scene;
@@ -1124,10 +1186,12 @@ function drawScene(scene, { opening = false } = {}) {
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
   // Misty's next line waits for a Skill card flying in over the same spot,
-  // and every line waits for the title of a scene that opens here.
+  // every line waits for the title of a scene that opens here, and Misty's
+  // waits for its thought cloud, which comes after that title.
   const cardFlying = showSkillCard(scene);
   const wait = REDUCED ? "" : opening ? "1.2s" : "";
-  byId("mistyBubble").style.transitionDelay = wait || (cardFlying && !REDUCED ? ".55s" : "");
+  const afterThought = thinks ? (opening ? "2.7s" : "1.5s") : "";
+  byId("mistyBubble").style.transitionDelay = afterThought || wait || (cardFlying && !REDUCED ? ".55s" : "");
   byId("personBubble").style.transitionDelay = wait;
   // A sound starts when its step is reached, and plays out on its own.
   if (!scene.sound) stage.sound.at = null;
@@ -1299,6 +1363,8 @@ function frame(clock) {
     x: mistyXFor(scene.distance), near: -raise(right), far: -raise(left),
     roll: -roll * 0.6, faceX: (-yaw / 81) * 3 + scanning, faceY: (pitch / 40) * 2,
   };
+  // Eyes up while it thinks.
+  if (thought.on) { target.faceY -= 2.4; target.faceX += 0.8; }
   for (const key of Object.keys(target)) now[key] += (target[key] - now[key]) * ease;
   const moving = Math.abs(target.x - now.x) > 0.5;
   const misty = byId("misty");
@@ -1345,6 +1411,7 @@ function frame(clock) {
   byId("cone").setAttribute("d", `M${ex.toFixed(1)} ${ey.toFixed(1)} L${fx.toFixed(1)} ${(fy - 26).toFixed(1)} L${fx.toFixed(1)} ${(fy + 26).toFixed(1)} Z`);
   placeBubble("misty");
   placeBubble("person");
+  drawThought(clock);
 }
 
 /* How far apart Misty and the person are: a badge with the real distance
@@ -1546,7 +1613,8 @@ function atShown(index) {
 function delayFor(step) {
   // Long enough to read what appeared, and no longer.
   if (step.voice === "person" || step.voice === "says") {
-    return Math.min(4200, 900 + String(step.text || "").length * 45) + (step.why ? 900 : 0);
+    const thinking = step.voice === "says" && step.why && thoughtShown() && !REDUCED ? 1500 : 0;
+    return Math.min(4200, 900 + String(step.text || "").length * 45) + (step.why ? 900 : 0) + thinking;
   }
   if (step.source === "perception") return step.kind === "visual_gate" ? 520 : 800;
   if (step.voice === "machinery") return 260;

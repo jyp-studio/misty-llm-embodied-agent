@@ -72,10 +72,16 @@
 
   .theatre { margin-top: 14px; padding: 18px 20px 16px; background: var(--panel); border-radius: 22px; }
   .theatre-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 16px; }
+  /* The stage alone by default; the conversation pulls out on its right.
+     The head and foot keep to the stage's width, whichever it is. */
+  .theatre-head, .stage-wrap, .foot { max-width: 1000px; margin-left: auto; margin-right: auto; transition: max-width .4s ease; }
+  .theatre.talk-open :is(.theatre-head, .stage-wrap, .foot) { max-width: 100%; }
   .theatre-head h2 { font-size: 20px; }
   .watch { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
   .made-by { color: var(--faint); font-size: 13px; cursor: help; }
-  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+  .stage-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0fr); gap: 0; margin-top: 12px; transition: grid-template-columns .4s ease, gap .4s ease, max-width .4s ease; }
+  .theatre.talk-open .stage-wrap { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 16px; }
+  .stage-frame { position: relative; }
   .stage { position: relative; overflow: hidden; background: var(--stage); border: 1px solid var(--line); border-radius: 16px; aspect-ratio: 16 / 9; }
   .stage svg { display: block; width: 100%; height: 100%; }
   /* What Misty is doing and sensing right now, in the corner of the picture. */
@@ -84,8 +90,23 @@
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
   .senses .sensing { color: var(--ink); }
   .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
+  /* With the conversation closed, its model notes and results show here. */
+  .senses .thought { flex-basis: 100%; width: fit-content; max-width: 100%; padding: 3px 10px; color: var(--ink); font-style: italic; line-height: 1.4; border-radius: 12px; }
+  .senses .thought::before { content: "\273B  "; color: var(--misty); font-style: normal; }
+  .theatre.talk-open .senses :is(.thought, .result) { display: none; }
+  /* A new conversation begins like a change of scene. */
+  .scene-card { position: absolute; left: 50%; top: 42%; padding: 10px 22px; color: var(--ink); font-size: 18px; font-weight: 600; white-space: nowrap; background: var(--card); border: 1px solid var(--line); border-radius: 999px; opacity: 0; transform: translate(-50%, -50%); pointer-events: none; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .scene-card.on { animation: scene-card 1.6s ease both; }
+  @keyframes scene-card { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.96); } 18%, 70% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; } }
+  /* The handle on the stage's right edge that pulls the conversation out. */
+  .talk-tab { position: absolute; right: -15px; top: 50%; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 30px; padding: 10px 0; color: var(--muted); font-size: 12px; font-weight: 600; background: var(--page); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 2px 8px rgb(0 0 0 / .08); transform: translateY(-50%); cursor: pointer; }
+  .talk-tab:hover { color: var(--accent-ink); border-color: var(--accent); }
+  .talk-tab svg { width: 16px; height: 16px; transition: transform .4s ease; }
+  .talk-tab span { writing-mode: vertical-rl; letter-spacing: .02em; }
+  .theatre.talk-open .talk-tab svg { transform: rotate(180deg); }
   /* The run as a conversation. Its height follows the stage column. */
-  .chat-wrap { position: relative; min-height: 320px; background: var(--page); border: 1px solid var(--line); border-radius: 16px; }
+  .chat-wrap { position: relative; min-height: 320px; background: var(--page); border: 1px solid var(--line); border-radius: 16px; visibility: hidden; opacity: 0; transition: opacity .2s, visibility 0s .4s; }
+  .theatre.talk-open .chat-wrap { visibility: visible; opacity: 1; transition: opacity .3s .15s; }
   .chat { position: absolute; inset: 0; margin: 0; padding: 14px; overflow: auto; list-style: none; scroll-behavior: smooth; }
   .chat li { margin: 0 0 8px; cursor: pointer; font-size: 14px; line-height: 1.45; }
   .chat li[hidden] { display: none; }
@@ -175,13 +196,16 @@
   @keyframes ear { from { opacity: .9; } to { opacity: 0; } }
   @keyframes pulse { 50% { opacity: .45; } }
   @media (prefers-reduced-motion: reduce) {
-    .misty *, .cone { animation: none !important; transition: none !important; }
+    .misty *, .cone, .scene-card, .talk-tab svg, .chat-wrap, .theatre-head, .stage-wrap, .foot { animation: none !important; transition: none !important; }
   }
   @media (max-width: 860px) {
     .picker { flex-direction: column; align-items: stretch; }
     .tabs { overflow-x: auto; scrollbar-width: none; }
-    .stage-wrap { grid-template-columns: 1fr; }
-    .chat-wrap { height: 340px; }
+    /* No room beside the stage: the conversation always follows it. */
+    .theatre :is(.theatre-head, .stage-wrap, .foot) { max-width: none; }
+    .theatre .stage-wrap, .theatre.talk-open .stage-wrap { grid-template-columns: 1fr; gap: 16px; }
+    .chat-wrap, .theatre .chat-wrap { height: 340px; visibility: visible; opacity: 1; }
+    .talk-tab, .senses :is(.thought, .result) { display: none; }
     .live-form { grid-template-columns: 1fr; }
     .live-form input[type=file] { max-width: none; }
   }
@@ -228,6 +252,7 @@
 
     <div class="stage-wrap">
       <div class="stage-col">
+      <div class="stage-frame">
       <div class="stage" id="stage" aria-label="Animated simulation of Misty and the people it is talking to">
         <svg viewBox="0 0 960 540" role="img" aria-labelledby="stageText">
           <title id="stageText">Simulated scene</title>
@@ -339,6 +364,12 @@
           </g>
         </svg>
         <div class="senses" id="senses"></div>
+        <div class="scene-card" id="sceneCard" aria-hidden="true"></div>
+      </div>
+        <button class="talk-tab" id="talkTab" type="button" aria-controls="conversation" aria-expanded="false" title="Show the conversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Conversation</span>
+        </button>
       </div>
         <div class="controls">
           <button id="replayBack" type="button" title="Previous step" aria-label="Previous step" disabled>
@@ -355,7 +386,7 @@
         </div>
       </div>
 
-      <div class="chat-wrap">
+      <div class="chat-wrap" id="conversation">
         <ol class="chat" id="timeline" aria-label="What Misty perceived, said and did, in order"></ol>
       </div>
     </div>
@@ -392,7 +423,7 @@ const state = {
   catalogue: [], group: null, selected: null,
   // `steps` is the whole run; `shown` is the plain telling of it, which is
   // what the controls walk. Everything is still there behind the switch.
-  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0,
+  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0, sceneCardAt: null,
 };
 
 /* ---------- Catalogue ---------- */
@@ -642,9 +673,58 @@ function showMoment(index) {
   }
   stepButtons();
   const scene = sceneAt(state.shown[at]);
-  drawScene(scene);
+  const title = sceneTitleAt(at);
+  const opening = Boolean(title) && state.sceneCardAt !== at;
+  drawScene(scene, { opening });
   drawSenses(scene);
+  drawMind(at, opening ? title : "");
+  state.sceneCardAt = title ? at : null;
   byId("nowSpoken").textContent = step.text || step.summary;
+}
+
+function drawMind(at, opening) {
+  // What the conversation carries, for when it is closed: how an action
+  // turned out, and the model's note behind what Misty is doing now.
+  const senses = byId("senses");
+  const step = state.steps[state.shown[at]];
+  if (step.voice === "result") {
+    senses.insertAdjacentHTML("beforeend", `<span class="result ${step.pushback ? "pushback" : "doing"}">${escapeText(step.summary)}</span>`);
+  }
+  for (let n = at; n >= 0; n--) {
+    const earlier = state.steps[state.shown[n]];
+    if (earlier.why) {
+      senses.insertAdjacentHTML("beforeend", `<span class="thought">${escapeText(earlier.why)}</span>`);
+      break;
+    }
+    if (earlier.voice === "person") break;
+  }
+  // A scene that opens here shows its title on the stage.
+  if (opening) {
+    const card = byId("sceneCard");
+    card.textContent = opening;
+    card.classList.remove("on");
+    void card.offsetWidth;
+    card.classList.add("on");
+  }
+}
+
+function sceneTitleAt(at) {
+  // A new conversation, or a marker, is a change of scene.
+  const step = state.steps[state.shown[at]];
+  if (step.voice === "marker") return step.summary;
+  if (state.actors.length > 1 && step.source === "episode") {
+    const before = state.shown.slice(0, at).map((n) => state.steps[n]).filter((s) => s.source === "episode").pop();
+    if (!before || before.actor !== step.actor) return `Talking with ${step.actor}`;
+  }
+  return "";
+}
+
+function showConversation(open) {
+  document.querySelector(".theatre").classList.toggle("talk-open", open);
+  const tab = byId("talkTab");
+  tab.setAttribute("aria-expanded", String(open));
+  tab.title = open ? "Hide the conversation" : "Show the conversation";
+  try { localStorage.setItem("misty.conversation", open ? "open" : "closed"); } catch { /* a remembered choice, nothing more */ }
 }
 
 /* ---------- From moments to a scene ---------- */
@@ -1026,7 +1106,7 @@ const stage = {
   sound: { name: "", volume: 50, at: null, since: null, hushed: null },
 };
 
-function drawScene(scene) {
+function drawScene(scene, { opening = false } = {}) {
   // Called once per step: what does not move between steps is set here,
   // and the frame loop eases the rest.
   stage.scene = scene;
@@ -1043,9 +1123,12 @@ function drawScene(scene) {
   misty.classList.remove("flash");
   if (scene.flash) { void misty.getBBox(); misty.classList.add("flash"); }
   byId("cone").classList.toggle("on", ["observe_target", "inspect_scene"].includes(scene.tool));
-  // Misty's next line waits for a Skill card flying in over the same spot.
+  // Misty's next line waits for a Skill card flying in over the same spot,
+  // and every line waits for the title of a scene that opens here.
   const cardFlying = showSkillCard(scene);
-  byId("mistyBubble").style.transitionDelay = cardFlying && !REDUCED ? ".55s" : "";
+  const wait = REDUCED ? "" : opening ? "1.2s" : "";
+  byId("mistyBubble").style.transitionDelay = wait || (cardFlying && !REDUCED ? ".55s" : "");
+  byId("personBubble").style.transitionDelay = wait;
   // A sound starts when its step is reached, and plays out on its own.
   if (!scene.sound) stage.sound.at = null;
   else if (stage.sound.at !== scene.soundAt) Object.assign(stage.sound, scene.sound, { at: scene.soundAt, since: performance.now(), hushed: null });
@@ -1607,6 +1690,10 @@ function escapeText(value) {
   return node.innerHTML;
 }
 
+byId("talkTab").addEventListener("click", () => {
+  showConversation(!document.querySelector(".theatre").classList.contains("talk-open"));
+});
+try { if (localStorage.getItem("misty.conversation") === "open") showConversation(true); } catch { /* closed, then */ }
 byId("groupTabs").addEventListener("click", (event) => {
   const tab = event.target.closest("[data-group]");
   if (tab) selectGroup(tab.dataset.group);

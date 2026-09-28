@@ -3022,3 +3022,13 @@ boundary audit 修掉一個誤判：Misty 教對方去講的話（「直接說�
 偷看，所以等待中聽到的話照 persona 既有的規則，出現在 `wait` 之後的 Snapshot。上限 30 秒就是為了
 這個代價——改變主意的人最多被忽略半分鐘。結果回報 `ending`（elapsed / stopped）與實際的
 `waited_s`。
+
+**persona 加「Your body」一節。** 十五份錄音裡 `move_arms`、`change_led` 零次、`move_head` 一次：
+工具描述只說「Move both arms to a position」，persona 從沒說過身體什麼時候有用，而每個手勢都多
+花一個 Turn，模型自然全用說話解決。使用者在三個方向裡選了這一個：仍由模型逐一決定（§4 的
+「表現力靠組合」不變），只是告訴它每個部位對應什麼時刻——好消息舉手、暖色燈；專心聽時歪頭；
+對方可能難過時頭放低、手放下、柔和的燈，紅色讀起來像警報所以不用；被要求表演時把幾個手勢
+組合起來、前後各說一句；有抬手轉頭的話結束前歸位。指引只寫在 persona，不寫進工具描述：
+`test_persona` 守著 §15.4 的「一件事一個地方」。沒選的：一個 Turn 多個工具（要改 `react.py`
+一次一個 Tool 的核心設計）、`express(emotion)` 預設組合（等於把 §4 移除的 AutoMisty 手勢搬回來）、
+runtime 自動讓燈反映狀態（那不是模型的決定，畫面上會混淆）。

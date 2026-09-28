@@ -3014,3 +3014,11 @@ boundary audit 修掉一個誤判：Misty 教對方去講的話（「直接說�
 
 代價：ToolCalled 記的是驗證後的完整參數，所以兩份 golden 裡的 `approach` 從 `{"args": {}}` 變成
 `{"args": {"keep": "close"}}`。依 goldens README 的規則，這次是 golden 讓步，並記在該表。
+
+**新增 `wait(seconds)`，1 到 30 秒。** 「數三秒後告訴我時間到了」沒有工具可用：`listen` 等的是回答
+而不是時鐘。秒數由模型選，這和 §4 不讓模型選動作時長並不衝突——`wait` 不驅動任何東西，秒數是
+對方的要求原樣轉交；`layering.control_parameter` 的篩選也照舊通過（參數名是 `seconds`，不是
+`*_s` 這類動作時長）。只有 stop 能提前結束它：麥克風介面只有會把話取走的 `listen`，沒有不取走的
+偷看，所以等待中聽到的話照 persona 既有的規則，出現在 `wait` 之後的 Snapshot。上限 30 秒就是為了
+這個代價——改變主意的人最多被忽略半分鐘。結果回報 `ending`（elapsed / stopped）與實際的
+`waited_s`。

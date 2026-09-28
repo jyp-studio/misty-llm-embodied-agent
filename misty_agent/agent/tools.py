@@ -486,6 +486,15 @@ VOLUME_MIN, VOLUME_MAX = 0, 100
 #: field would look adjustable and not be (`PLAN.md` §10 #4).
 SPEECH_MAX_CHARS = 150
 
+#: Longest `wait`, in seconds. Long enough for "tell me when a minute's up"
+#: to be split into two, short enough that somebody who changes their mind is
+#: not ignored for long: only a stop cuts a wait short, and anything said
+#: meanwhile reaches the model on the snapshot after it (`PLAN.md` §16.67).
+#: A module constant for the reason `SPEECH_MAX_CHARS` is one.
+WAIT_MAX_S = 30
+#: How often a `wait` checks for a stop.
+WAIT_POLL_S = 0.1
+
 #: Where a `look_around` scan points, in order. Well inside the documented
 #: yaw range: the point is to see who is there, not to reach the stops.
 SCAN_YAWS = (-60.0, 0.0, 60.0)
@@ -581,6 +590,16 @@ class PlayAudioArgs(BaseModel):
     volume: int = Field(
         default=50, ge=VOLUME_MIN, le=VOLUME_MAX,
         description="0 is silent, 100 is full volume.",
+    )
+
+
+class WaitArgs(BaseModel):
+    """The one duration the model chooses. `PLAN.md` §4 keeps motion
+    durations away from it; this one moves nothing, and it is the person's
+    request — "tell me in three seconds" — passed on."""
+
+    seconds: int = Field(
+        ge=1, le=WAIT_MAX_S, description="How long to wait, in whole seconds."
     )
 
 
@@ -712,6 +731,25 @@ def build_registry() -> ToolRegistry:
         if ctx.listener is None:
             return ListeningResult(ListeningEnding.UNAVAILABLE).as_tool_result()
         return ctx.listener.listen(timeout_s=ctx.config.listen_timeout_s).as_tool_result()
+
+    @registry.tool(
+        "wait",
+        "Keep still and quiet for a number of seconds, for example to time "
+        "something the person asked you to. Anything said meanwhile reaches "
+        "you on the snapshot afterwards.",
+    )
+    def wait(args: WaitArgs, ctx: ToolContext) -> Mapping[str, Any]:
+        if ctx.clock is None:
+            # The same reasoning as `approach` needing a config: without a
+            # clock this would return at once and report having waited.
+            raise ValueError("wait needs ToolContext.clock to wait on")
+        began = ctx.clock.monotonic()
+        until = began + args.seconds
+        while (now := ctx.clock.monotonic()) < until:
+            if ctx.stop.requested():
+                return {"ending": "stopped", "waited_s": round(now - began, 1)}
+            ctx.clock.sleep(min(WAIT_POLL_S, until - now))
+        return {"ending": "elapsed", "waited_s": float(args.seconds)}
 
     @registry.tool(
         "done",

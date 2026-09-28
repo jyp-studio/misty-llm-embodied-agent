@@ -562,6 +562,7 @@ _ACTIONS = {
     "read_skill_resource": lambda args: f"Reads {args.get('resource')} from the {args.get('name')} Skill",
     "play_audio": lambda args: f"Plays the {args.get('sound')} sound",
     "respect_boundary": lambda args: "Stops and gives them space",
+    "wait": lambda args: f"Waits {args.get('seconds')} seconds",
     "done": lambda args: "Decides it is finished",
 }
 

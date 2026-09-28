@@ -128,6 +128,7 @@ def test_no_tool_can_reach_anybody_but_the_person_in_front_of_it():
         "read_skill_resource",
         "respect_boundary",
         "speak",
+        "wait",
     }
     # And the one Tool that produces words takes only the words: there is no
     # recipient to address them to.

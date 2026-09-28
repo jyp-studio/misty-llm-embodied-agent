@@ -43,6 +43,7 @@ import json
 import pathlib
 import webbrowser
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
@@ -237,6 +238,11 @@ RUNTIME_EXAMPLE = Example(
     "scenario",
     "",
 )
+
+#: When the runtime example claims to have begun. Pinned, as the monotonic
+#: clock already is, so asking for the example twice returns one Journal and
+#: not two whose ids differ by the second each was run in.
+RUNTIME_EXAMPLE_BEGAN = datetime(2026, 9, 1, 9, 0, tzinfo=timezone(timedelta(hours=8)))
 
 
 @dataclass(frozen=True)
@@ -1318,6 +1324,7 @@ def _runtime_example() -> Reply:
         None,
         model=ScenarioModel(EXPLICIT_TEXT_REQUEST.decisions[:3]),
         clock=clock,
+        wall_clock=lambda: RUNTIME_EXAMPLE_BEGAN,
     )
     runtime = SocialAgentRuntime(
         source=ScenarioInputAdapter(

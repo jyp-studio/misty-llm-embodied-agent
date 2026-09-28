@@ -49,6 +49,7 @@ import pathlib
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable, Iterator, Optional, Tuple
 
 from misty_agent.agent.evidence import TriggerEvidence
@@ -114,6 +115,11 @@ class SystemClock:
 
     def sleep(self, seconds: float) -> None:
         time.sleep(seconds)
+
+
+def wall_clock_now() -> datetime:
+    """The real date and time, aware of its zone, for what a human reads."""
+    return datetime.now().astimezone()
 
 
 def load_api_key(path: str = API_KEY_FILE) -> Optional[str]:
@@ -200,6 +206,10 @@ class Session:
     events: Optional[Any] = None
     config: Settings = settings
     clock: Any = None
+    #: When an Episode began, for its id and its opening record. One reading
+    #: serves both, so they cannot disagree, and injectable so a scenario
+    #: replayed twice produces the same Journal twice.
+    wall_clock: Callable[[], datetime] = wall_clock_now
     #: Set while an Episode is running, so the bumper knows where to report.
     _running: Optional[EmergencyStop] = None
     _episodes: int = 0
@@ -318,12 +328,16 @@ class Session:
         # are ordinary, and two Journals sharing an id would be
         # indistinguishable in a directory of them.
         self._episodes += 1
-        episode_id = f"ep-{int(time.time())}-{self._episodes}"
+        began = self.wall_clock()
+        episode_id = f"ep-{int(began.timestamp())}-{self._episodes}"
         subscribers: list = [TerminalRenderer()] if render else []
         if journal_path is not None:
             subscribers.append(JsonlFile(journal_path))
         journal = Journal(
-            episode_id=episode_id, clock=self.clock, subscribers=subscribers
+            episode_id=episode_id,
+            clock=self.clock,
+            wall_clock=lambda: began.isoformat(timespec="seconds"),
+            subscribers=subscribers,
         )
         stop = EmergencyStop(journal, self.robot)
         # One anonymous target per Episode, bound from the Evidence and never
@@ -501,6 +515,7 @@ def simulated_session(
     ears: Any = HEARS_NOTHING,
     active_perception: Any = NO_ACTIVE_PERCEPTION,
     placement: Optional[Any] = None,
+    wall_clock: Callable[[], datetime] = wall_clock_now,
 ) -> Session:
     """One Session against a simulated robot, with the person where
     perception put them, or where a scenario's placement says. Shared by the
@@ -516,6 +531,7 @@ def simulated_session(
         active_perception=active_perception,
         config=settings,
         clock=clock,
+        wall_clock=wall_clock,
     )
 
 

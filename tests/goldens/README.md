@@ -19,8 +19,8 @@ Quietly editing a golden so the code passes is the failure this whole
 arrangement exists to prevent. Editing one is allowed; editing one without
 saying so is not.
 
-**It has been invoked eight times**, across M7 tickets 04 to 08 and
-social-runtime tickets 01, 10 and 11:
+**It has been invoked nine times**, across M7 tickets 04 to 08,
+social-runtime tickets 01, 10 and 11, and the Demo's new examples:
 
 | What | Which side gave way |
 |---|---|
@@ -32,6 +32,7 @@ social-runtime tickets 01, 10 and 11:
 | The turn cap rising from 8 to 12 | the golden (§16.48) |
 | `approach`'s result gaining `rotations`, `distance_cm`, `bearing_deg`, `uncertainty` and `motions` in ticket 10 | the goldens (§16.59) |
 | `approach`'s result gaining `reason`, and the aborted approach reporting `aborted` instead of `timeout`, in ticket 11 | the goldens (§16.60) |
+| `approach` gaining `keep`, so its recorded arguments are `{"keep": "close"}` rather than `{}` | the goldens (§16.67) |
 
 All four files are now on the timing rule below. The aborted one came last
 because only ticket 08 can produce a `stop_requested`, and retiming a golden

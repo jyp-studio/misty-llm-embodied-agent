@@ -151,8 +151,8 @@ _SPEC_FIRST = (
 #:
 #: The first version of this banner said the loop "had to be built to produce
 #: it, not the other way round". `tests/goldens/README.md` keeps a table of
-#: every time a golden and the implementation disagreed: **eight times, and
-#: the goldens gave way in seven of them.** So the flattering version was false,
+#: every time a golden and the implementation disagreed: **nine times, and
+#: the goldens gave way in eight of them.** So the flattering version was false,
 #: written in the one place this ticket exists to keep honest.
 #:
 #: The true version is the better story anyway — a rule that is never invoked
@@ -160,8 +160,8 @@ _SPEC_FIRST = (
 #: was invoked somebody wrote down which side moved.
 AMENDMENTS = (
     "It has been amended since. Where a golden and the loop disagreed, which "
-    "side gave way is written down — eight times so far, and the goldens gave "
-    "way in seven of them (tests/goldens/README.md). Editing one is allowed; "
+    "side gave way is written down — nine times so far, and the goldens gave "
+    "way in eight of them (tests/goldens/README.md). Editing one is allowed; "
     "editing one without saying so is not."
 )
 
@@ -547,7 +547,10 @@ def _perception_beat(record: Mapping[str, Any]) -> Optional[PresentationBeat]:
 _ACTIONS = {
     "speak": lambda args: f"Says “{args.get('text', '')}”",
     "listen": lambda args: "Listens for an answer",
-    "approach": lambda args: "Comes closer",
+    "approach": lambda args: {
+        "comfortable": "Moves to leave them a little room",
+        "far": "Backs off to give them plenty of room",
+    }.get(args.get("keep"), "Comes closer"),
     "look_around": lambda args: "Looks around the room",
     "observe_target": lambda args: "Takes another look at the person",
     "inspect_scene": lambda args: "Inspects the whole scene",

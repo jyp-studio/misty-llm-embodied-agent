@@ -271,6 +271,20 @@ class Settings(BaseSettings):
         default=12.0, gt=0.0,
         description="Half-width of the arrival band around target_distance_cm.",
     )
+    comfortable_distance_cm: float = Field(
+        default=100.0, gt=0.0,
+        description=(
+            "Where `approach(keep='comfortable')` converges instead: a little "
+            "more room than conversation distance. UNCALIBRATED."
+        ),
+    )
+    far_distance_cm: float = Field(
+        default=150.0, gt=0.0,
+        description=(
+            "Where `approach(keep='far')` converges: plenty of room, for "
+            "somebody who asked Misty to back off. UNCALIBRATED."
+        ),
+    )
     min_safe_distance_cm: float = Field(
         default=45.0, gt=0.0,
         description="Forward motion may never bring the robot closer than this.",
@@ -526,6 +540,20 @@ class Settings(BaseSettings):
                 f"outside min_safe_distance_cm={self.min_safe_distance_cm}cm. "
                 f"Require target_distance_cm - distance_tolerance_cm > "
                 f"min_safe_distance_cm."
+            )
+
+        # The three distances `approach` can keep have to widen in order, or
+        # "back off" could bring the robot closer than "come here" does. Being
+        # further than the close one, the other two clear the floor too.
+        if not (
+            self.target_distance_cm
+            < self.comfortable_distance_cm
+            < self.far_distance_cm
+        ):
+            raise ValueError(
+                f"target_distance_cm={self.target_distance_cm} < "
+                f"comfortable_distance_cm={self.comfortable_distance_cm} < "
+                f"far_distance_cm={self.far_distance_cm} must hold."
             )
 
         if self.min_step_cm >= self.max_step_cm:

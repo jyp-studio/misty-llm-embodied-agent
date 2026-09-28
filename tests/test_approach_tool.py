@@ -58,7 +58,7 @@ def registry():
     return build_registry()
 
 
-def run(registry, *, robot, readings, config=None, clock=None, hazards=ALWAYS_CLEAR, stop=NEVER_STOPS):
+def run(registry, *, robot, readings, config=None, clock=None, hazards=ALWAYS_CLEAR, stop=NEVER_STOPS, args=None):
     ctx = ToolContext(
         robot=robot,
         readings=readings,
@@ -66,7 +66,7 @@ def run(registry, *, robot, readings, config=None, clock=None, hazards=ALWAYS_CL
         clock=clock, hazards=hazards, stop=stop,
     )
     return dispatch(
-        registry, "approach", {}, ctx, Journal(episode_id="ep-1"), turn=1
+        registry, "approach", args or {}, ctx, Journal(episode_id="ep-1"), turn=1
     )
 
 
@@ -78,17 +78,69 @@ def test_approach_is_registered(registry):
     assert "approach" in registry.names()
 
 
-def test_it_takes_no_arguments_at_all(registry):
-    """Not "no *physical* arguments" — none.
-
-    §15.2 leaves the door open to a clamped target distance later, and this
-    ticket is not that.
-    """
+def test_its_one_argument_is_which_distance_to_keep_never_a_number(registry):
+    """§15.2 left the door open to a clamped target distance; §16.67 opened
+    it as a choice of three, so the model picks how much room to give and the
+    control layer still owns every centimetre."""
     schema = next(
         s for s in registry.schemas() if s["function"]["name"] == "approach"
     )
+    properties = schema["function"]["parameters"].get("properties", {})
 
-    assert schema["function"]["parameters"].get("properties", {}) == {}
+    assert list(properties) == ["keep"]
+    assert properties["keep"]["enum"] == ["close", "comfortable", "far"]
+    assert properties["keep"]["default"] == "close"
+
+
+def backs_away(registry, keep, start_cm):
+    clock = FakeClock()
+    config = Settings(post_step_settle_s=0.0)
+    world = SimulatedMistyAdapter(
+        clock, start_cm=start_cm, actual_motion_multiplier=1.0, config=config
+    )
+    outcome = run(
+        registry, robot=world, readings=world, config=config, clock=clock,
+        args={"keep": keep},
+    )
+    return outcome, world, config
+
+
+def test_keeping_far_backs_away_from_someone_at_conversation_distance(registry):
+    """Asked to back off at 60cm, `approach` used to report "arrived" and not
+    move: 60cm was the only distance it knew."""
+    outcome, world, config = backs_away(registry, "far", 60.0)
+
+    assert outcome.result["result"] == "arrived"
+    assert outcome.result["steps"] > 0
+    assert abs(world.distance_cm - config.far_distance_cm) <= config.distance_tolerance_cm
+
+
+def test_keeping_a_comfortable_distance_ends_between_the_other_two(registry):
+    outcome, world, config = backs_away(registry, "comfortable", 150.0)
+
+    assert outcome.result["result"] == "arrived"
+    assert abs(world.distance_cm - config.comfortable_distance_cm) <= config.distance_tolerance_cm
+
+
+def test_close_is_what_approach_has_always_done(registry):
+    outcome, world, config = backs_away(registry, "close", 150.0)
+
+    assert outcome.result["result"] == "arrived"
+    assert abs(world.distance_cm - config.target_distance_cm) <= config.distance_tolerance_cm
+
+
+def test_a_distance_the_robot_does_not_have_is_refused(registry):
+    outcome, world, _ = backs_away(registry, "across the room", 60.0)
+
+    assert not outcome.accepted
+    assert world.distance_cm == 60.0
+
+
+def test_the_three_distances_must_widen_in_order():
+    with pytest.raises(ValueError):
+        Settings(comfortable_distance_cm=50.0)
+    with pytest.raises(ValueError):
+        Settings(far_distance_cm=90.0)
 
 
 def test_an_argument_is_refused_rather_than_ignored(registry):

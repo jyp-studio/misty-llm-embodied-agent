@@ -584,6 +584,30 @@ class PlayAudioArgs(BaseModel):
     )
 
 
+#: How much room `approach` leaves, as a choice rather than a number: the
+#: model says how much room the person wants, and the control layer keeps
+#: owning every centimetre (`PLAN.md` §4, §15.2, §16.67). Each names the
+#: `Settings` field the closed loop converges to.
+SPACING_FIELDS = {
+    "close": "target_distance_cm",
+    "comfortable": "comfortable_distance_cm",
+    "far": "far_distance_cm",
+}
+Spacing = Literal["close", "comfortable", "far"]
+
+
+class ApproachArgs(BaseModel):
+    keep: Spacing = Field(
+        default="close",
+        description=(
+            "How much room to leave them. close: near enough to talk, what an "
+            "invitation to come over means. comfortable: a little more room. "
+            "far: plenty of room, for when they ask you to back off or give "
+            "them space."
+        ),
+    )
+
+
 class ActivateSkillArgs(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
@@ -779,11 +803,11 @@ def build_registry() -> ToolRegistry:
 
     @registry.tool(
         "approach",
-        "Approach the current Interaction Target: the chassis turns to face "
-        "them, then comes closer, or steps back if they are too near. Stops "
-        "on its own.",
+        "Go to where `keep` says, relative to the current Interaction Target: "
+        "the chassis turns to face them, then comes closer or backs away "
+        "until it is there. Stops on its own.",
     )
-    def approach(args: NoArguments, ctx: ToolContext) -> Mapping[str, Any]:
+    def approach(args: ApproachArgs, ctx: ToolContext) -> Mapping[str, Any]:
         """The whole of `PLAN.md` §4's layering claim, in six lines.
 
         The model says *whether*. Everything about *how far* — the step size,
@@ -824,8 +848,16 @@ def build_registry() -> ToolRegistry:
                 "steps": 0,
                 "target": ctx.target.as_facts(),
             }
+        # The loop converges to `target_distance_cm`; which distance that is
+        # for this call is the one choice the model makes. Every one of them
+        # is validated on `Settings` to be further out than the close one, so
+        # the safety floor the validator checked still holds.
+        field = SPACING_FIELDS[args.keep]
+        config = ctx.config.model_copy(
+            update={"target_distance_cm": getattr(ctx.config, field)}
+        )
         outcome = run_approach(
-            ctx.readings, ctx.robot, config=ctx.config, clock=ctx.clock,
+            ctx.readings, ctx.robot, config=config, clock=ctx.clock,
             stop=ctx.stop, hazards=ctx.hazards,
         )
         # `.value`, not the member: `ApproachStatus` is a str mixin, so it

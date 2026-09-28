@@ -182,7 +182,7 @@ def test_the_tool_reports_a_typed_result_with_turns_and_a_bounded_trace():
                 yield from keys_of(inner)
     assert [k for k in keys_of(result) if control_parameter(k, commanded=False)] == []
     schema = next(s for s in build_registry().schemas() if s["function"]["name"] == "approach")
-    assert schema["function"]["parameters"].get("properties", {}) == {}
+    assert list(schema["function"]["parameters"].get("properties", {})) == ["keep"]
     assert "Interaction Target" in schema["function"]["description"]
 
 

@@ -562,8 +562,8 @@ def test_the_claim_travels_with_what_happened_to_it_afterwards():
     produce it, not the other way round". That was false.
 
     `tests/goldens/README.md` keeps a table of every time a golden and the
-    implementation disagreed: eight times, and **the goldens gave way in
-    seven of them**. Saying otherwise was a flattering claim in the one place this
+    implementation disagreed: nine times, and **the goldens gave way in
+    eight of them**. Saying otherwise was a flattering claim in the one place this
     ticket exists to keep honest. The caveat therefore ships in the same
     object as the boast, so one cannot be kept without the other.
     """
@@ -571,7 +571,7 @@ def test_the_claim_travels_with_what_happened_to_it_afterwards():
 
     assert example["kind"] == "specification"
     assert "amended" in example["amendments"].lower()
-    assert "seven of them" in example["amendments"]
+    assert "eight of them" in example["amendments"]
 
 
 def test_the_amendment_count_is_the_one_the_goldens_record():
@@ -581,8 +581,8 @@ def test_the_amendment_count_is_the_one_the_goldens_record():
     gave_way = [line for line in table.splitlines() if line.startswith("| ")]
     goldens_gave_way = [line for line in gave_way if "the golden" in line]
 
-    assert len(goldens_gave_way) == 7
-    assert f"eight times" in EXAMPLES[0].amendments
+    assert len(goldens_gave_way) == 8
+    assert f"nine times" in EXAMPLES[0].amendments
 
 
 def test_the_golden_that_came_later_does_not_claim_it_came_first():

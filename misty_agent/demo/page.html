@@ -960,7 +960,9 @@ function captionFor(scene) {
     play_audio: "Playing a sound", done: "Deciding it is done",
   };
   if (!scene.tool) return "";
-  const said = words[scene.tool] || scene.tool.replaceAll("_", " ");
+  // `approach` also backs off, when asked to leave more room.
+  const makingRoom = scene.tool === "approach" && ["comfortable", "far"].includes(scene.args?.keep);
+  const said = makingRoom ? "Making room" : words[scene.tool] || scene.tool.replaceAll("_", " ");
   // The one argument worth naming on the stage: which face, which Skill.
   const named = scene.args?.expression || scene.args?.name || scene.args?.sound;
   return named ? `${said}: ${named}` : said;

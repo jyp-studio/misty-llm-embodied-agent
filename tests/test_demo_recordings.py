@@ -281,6 +281,15 @@ def test_the_loops_own_bookkeeping_is_not_part_of_the_telling():
     assert [step["kind"] for step in playback("hey-greeting-only")].count("turn_started") == 4
 
 
+def test_an_approach_that_leaves_more_room_is_not_told_as_coming_closer():
+    from misty_agent.demo import _ACTIONS
+
+    assert _ACTIONS["approach"]({}) == "Comes closer"
+    assert _ACTIONS["approach"]({"keep": "close"}) == "Comes closer"
+    assert "back" in _ACTIONS["approach"]({"keep": "far"}).lower()
+    assert "closer" not in _ACTIONS["approach"]({"keep": "comfortable"})
+
+
 def test_each_action_is_one_sentence_with_the_reason_on_it():
     """Two records — the note it wrote, the call it made — read as one
     thing: what it did, and why it said it was doing it."""

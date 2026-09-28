@@ -2988,3 +2988,29 @@ Journal 是公開紀錄，私有推理不進去，這正是 Decision Note 存在
 boundary audit 修掉一個誤判：Misty 教對方去講的話（「直接說：『請幫我聯絡當地緊急服務』」）
 被讀成它自己宣稱已聯絡。比對前把有引導詞（說／告訴／say／tell 等）帶出的引號內容挖成等長空白，
 只忽略被引述的話，加引號不會讓自己的宣稱躲過，兩個方向都有測試。
+
+### 16.67 新範例需要的能力：看得見擺好的人、三段距離的 approach、wait，以及肢體表達的指引
+
+使用者要重錄全部範例，並新增三個：叫 Misty 後退、叫 Misty 計時三秒後說時間到、要 Misty 展現
+複雜行為。盤點後，前兩個用現有工具做不到，而且現有錄音裡 `move_arms` 與 `change_led` 一次都沒
+出現、`move_head` 只出現一次。以下每一項都是使用者在選項中挑定的。
+
+**文字腳本的 `observe_target` 不再一律 unavailable。** come-closer 的錄音裡，模型走到人面前後
+呼叫 `observe_target` 確認對方還在，得到「no selected visual observation is available」，目標
+因此被標成 lost；同一筆 Observation 的 Snapshot 卻寫著 face_present、67cm。模型照結果說「我
+現在看不到你」。文字腳本沒有攝影機，但腳本自己把人擺進了模擬房間，Snapshot 也是從那個擺位來
+的。`PlacedPersonPerception` 讓看的結果與 Snapshot 同源：人在就回報 observed、距離與 bearing，
+並附 `simulated: where the scenario placed the person, not a camera frame`；擺位空了（target-lost
+腳本裡人中途離開）仍回報 unavailable。它只接在 `acceptance.py` 的文字腳本路徑，視覺 fixture
+照舊經過 gate，Demo 的 live 路徑不變。
+
+**`approach` 加 `keep`：close / comfortable / far。** §15.2 砍掉 `back_up` 時寫明，將來需要
+「退遠一點」就給 `approach` 加受 clamp 的目標距離，不加第二個 Tool。這裡把「受 clamp 的距離」
+做成三選一而不是公分數：模型說對方要多少空間，控制層仍擁有每一公分（§4）。三個值是
+`target_distance_cm`（60，原本唯一的距離，也是預設）、`comfortable_distance_cm`（100）、
+`far_distance_cm`（150），後兩個 UNCALIBRATED；`Settings` 驗證三者遞增，所以後兩個自然在安全
+地板之外。handler 用 `model_copy` 把這次呼叫的 `target_distance_cm` 換成選到的值再交給同一個
+閉環，控制律一行未改。schema 仍然不出現 distance、cm、velocity 這些字（既有測試照守）。
+
+代價：ToolCalled 記的是驗證後的完整參數，所以兩份 golden 裡的 `approach` 從 `{"args": {}}` 變成
+`{"args": {"keep": "close"}}`。依 goldens README 的規則，這次是 golden 讓步，並記在該表。

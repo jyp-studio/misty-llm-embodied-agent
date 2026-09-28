@@ -1,14 +1,19 @@
 # PLAN — misty-embodied-agent 重構
 
-> 取代舊的 `HANDOFF.md`（已刪除，副本在 `~/dev/misty-embodied-agent.backup/`）。
-> 本文件是 grilling 後的定案共識，給沒有前文脈絡的新對話看的，內容自足。
-> 定案日期：2026-08-09 · 分支：`refactor/react-agent`
+> 本文件是 grilling 後的定案共識與之後每一次決定的紀錄，依時間順序寫成。
+> 定案日期：2026-08-09 · 開發分支原為 `refactor/react-agent`，2026-09-28 發佈後改為 `main`。
+>
+> **前面幾節是 2026-08 的起點，其中幾處已被後面的決定取代，原地標有「已由 §X 取代」。**
+> 目前的狀態看 `HANDOFF.md`，目前的架構看 `docs/architecture.md`。程式與測試以節號
+> 引用本文件，節號不可更動。
 
 ---
 
 ## 0. 一句話
 
 把一個課堂專案（LLM 驅動的 Misty II 具身 agent）重構成**完整的 ReAct agent**，移除第三方 code-gen 框架、重寫驅動層取得乾淨授權、建立無硬體的重放測試台證明並修正感知延遲缺陷，最後以 Docker + CI/CD 交付。
+
+> 「Docker + CI/CD 交付」已由 §16.1 取代：沒有硬體就沒有部署對象，M8 改為可執行性與 demo。
 
 **這是履歷作品，不是可上線的機器人系統。** 所有未經實機驗證的部分都必須誠實標註。
 
@@ -24,6 +29,9 @@
 | 預算 | 大。開發直接呼叫真 LLM API，離線錄放測試暫不做（保留為 later） |
 | README | **最後才重寫**，不是重點 |
 | 工作方式 | 只改本地 `/Users/jyp/dev/misty-embodied-agent`，不動 GitHub |
+
+> 本表有三列已被取代：「交付定位」的 Docker + CI/CD 由 §16.1 取代；「README 最後才重寫」
+> 已在發佈前完成（§16.68）；「不動 GitHub」由 §16.68 取代，2026-09-28 已在原 repo 發佈。
 
 **不要提出任何需要碰硬體的方案**（包括「借 30 分鐘錄 trace」——已排除）。
 
@@ -266,6 +274,8 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 - `FakeRobot.__getattr__` 對未定義方法回 noop，等於假設所有 API 呼叫成功 → `drive_error` 路徑從未被執行，需補錯誤注入
 
 ### CI（`.github/workflows/`）
+
+> 本小節已由 §16.1 取代：離線測試在本機跑一次即可，搬進 GitHub Actions 不會讓任何斷言變強。
 - **每個 push**：`ruff` + `pytest` + `docker build`
 - **不加 mypy**（codebase 大量動態屬性，投報率低，等主體穩了再說）
 - **真 LLM 測試** → `workflow_dispatch` 手動觸發，**不擋 merge**
@@ -287,11 +297,14 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 | **M3** | 驅動層重寫 | `drivers/` 四件；**擷取時打時間戳**（缺陷 A2 的地基）；契約測試 ✅ 見 §11 |
 | **M4** | harness | 合成影格 + 真值軌跡 + 延遲量測。**任務已改**，見 §12 ✅ |
 | **M5** | 重寫感知→控制管線 | latest-value 距離管線 + fresh post-move readings + bounded public `approach()` + 條件式安全與 M5 證據，見 §13 ✅ |
-| **M6** | 測試套件收斂 | 覆蓋盤點 + 刪除 `test_sim.py` + 距離相依噪音 Sweep，見 §14 |
-| **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗）**＋ §14.6 的重建清單** |
-| **M8** | 可執行性與 demo | `main()` + 系統提示 + Journal 落地 + 本機 demo 介面。**不再是「部署」**，理由見 §16 |
-| **M9** | 文件 | README 與架構圖重寫 |
-| **M10** | 收尾 | 開新 repo，乾淨歷史匯入 |
+| **M6** | 測試套件收斂 | 覆蓋盤點 + 刪除 `test_sim.py` + 距離相依噪音 Sweep，見 §14 ✅ |
+| **M7** | ReAct + Journal | `journal.py`（schema 先於實作）+ `tools.py`（12 工具，註冊表）+ `react.py`（step cap / 感知快照 / TTS 抑制窗）**＋ §14.6 的重建清單** ✅ 見 §15 |
+| **M8** | 可執行性與 demo | `main()` + 系統提示 + Journal 落地 + 本機 demo 介面。**不再是「部署」**，理由見 §16 ✅ 見 §16.47 |
+| **M9** | 文件 | README 與架構圖重寫 ✅ 發佈前完成 |
+| **M10** | 收尾 | ~~開新 repo，乾淨歷史匯入~~ 由 §16.68 取代：在原 repo 發佈，舊版保留為 `v1` ✅ |
+
+> M8 之後的 social runtime（`.scratch/social-react-runtime/`，十五張 ticket）不在這張表上，
+> 它的決定記在 §16.48 到 §16.64。
 
 **表上沒有研究方向，那是刻意的。** 使用者想做的「社交機器人如何判斷何時、是否、以及如何主動
 發起互動」不在這張表上 —— 因為這張表是**工程**的順序，而那是一個研究問題，它需要的是文獻、
@@ -330,7 +343,9 @@ config 下抵達帶 cap 更嚴格。M4 的 100→44cm 反例現在經 public `ap
 
 - 專案路徑 `/Users/jyp/dev/misty-embodied-agent`（**不是** `FocusCompany`）
 - 備份 `/Users/jyp/dev/misty-embodied-agent.backup`（含刪除前的 `HANDOFF.md`）
-- 只改本地，**不動 GitHub**；`origin/main` 維持原狀直到 M11
+- ~~只改本地，**不動 GitHub**；`origin/main` 維持原狀直到 M11~~ 已由 §16.68 取代：2026-09-28
+  發佈，`main` 為新版本
+- `legacy/` 是本機資料夾且已 gitignore，舊版本的完整內容在 `v1` 分支
 
 ---
 
@@ -880,6 +895,7 @@ Tool。「12 個左右」是 M0 的估計；現在有實際的控制層了，估
   wall-clock 戳記給人對時。
 - **契約是型別，JSONL 是序列化格式。** 版本欄位只放在 Episode 開始那一筆。**M10 之前 schema
   不保證穩定** —— 這是履歷作品不是發布的 API，假裝穩定要付相容性的代價。
+  （M10 已由 §16.68 取代。開源發佈沒有讓它變成對外 API，schema 仍不保證穩定。）
 - **寫入加鎖，任何 thread 直接寫。** 不採「丟佇列由主迴圈收」：那會讓緊急停止**發生的時間**
   與**被記下的時間**差開，而那個差距正是要量的東西。
 
@@ -3082,3 +3098,9 @@ commit 中。程式碼裡的公開 IP 全部來自 AutoMisty 與 Misty SDK 範�
 push 前改寫：每個含有這 6 個 WAV 的 commit，都把 WAV 與其 `PROVENANCE.md` 換成新版本，commit
 雜湊隨之改變。被改寫的 commit 在當時的門檻（0.78）下，有停頓那段喚醒錄音會通不過；那是歷史快照，
 目前的程式與測試不受影響。
+
+**結果（2026-09-28）。** 改寫後確認 6 個舊 WAV 從任何要推送的 ref 都無法到達，才推送。`v1` 分支與
+`v1-class-project` tag 指向 `e0bfa37`，`main` 快轉到新版本並設為預設分支，沒有 force push。README
+在推送前重寫，開頭放一段 demo 的實際播放錄影（`assets/demo-calming-support.gif`），並有一節說明舊
+版本與它的授權。`docs/architecture.md` 也在同一批更新。發佈後本機刪除了改寫前的備份分支與
+`refs/original`。下一步是 `.scratch/body-language/spec.md`，動手前先 grill 它的未決問題。

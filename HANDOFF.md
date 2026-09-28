@@ -1,18 +1,19 @@
 # HANDOFF: current state
 
-Last updated: 2026-09-28 · branch `refactor/react-agent`
+Last updated: 2026-09-28 · branch `main`
 
-Read `PLAN.md` first for the full decision history. The concise view of the
-current system is `docs/architecture.md`, the vocabulary is in `CONTEXT.md`,
-and specifications live under `.scratch/`.
+This file covers where the work stands. The concise view of the system is
+`docs/architecture.md`, the vocabulary is in `CONTEXT.md`, specifications live
+under `.scratch/`, and `PLAN.md` records every decision and the reasons for it.
 
 ## Where the work stands
 
-The social runtime effort under `.scratch/social-react-runtime/` is complete:
-all fifteen tickets are resolved and the fifteen acceptance situations run in
-the default suite. Since then the work has gone into the demo, into three
-small capabilities, and into preparing the repository for publication. The
-working tree is clean.
+The project is published at `jyp-studio/misty-llm-embodied-agent`. `main` is
+the current version and the repository's default branch. The earlier class
+project is kept, unchanged, as the `v1` branch and the `v1-class-project` tag
+(`PLAN.md` §16.68). The social runtime effort under
+`.scratch/social-react-runtime/` is complete: all fifteen tickets are resolved
+and the fifteen acceptance situations run in the default suite.
 
 ### The runtime
 
@@ -74,8 +75,9 @@ working tree is clean.
 14. `python -m misty_agent --demo` serves a loopback page with fifteen
     recordings of `gpt-5.6-luna` from 2026-09-25, in five groups: noticing
     someone, talking, moving, care, and knowing its limits. Recordings are
-    stored data; the playback is computed when a recording is served, so a
-    presentation change never needs a paid re-recording.
+    stored data in `misty_agent/demo/recordings/`; the playback is computed
+    when a recording is served, so a presentation change never needs a paid
+    re-recording.
 15. The stage stands alone by default and the full conversation opens in a
     drawer on its right, which the page remembers. The plain telling hides
     the loop's bookkeeping and the hearing steps (wake, capture,
@@ -84,18 +86,12 @@ working tree is clean.
     titles such as "Talking with B" are frames of their own. Status labels sit
     in the stage's top left, distance appears as a badge on the floor, and an
     action is drawn with the pose its Observation confirmed.
-16. Three scripts exist for examples that are not on the demo yet:
+16. The recordings predate `PlacedPersonPerception`, so the `come-closer`
+    recording still ends with "I can't see you right now". The fix will show
+    in the next recording.
+17. Three scripts exist for examples that are not on the demo yet:
     `back-off`, `timer` and `show-off`. Each has authored decisions and
-    tests. They are left off the page on purpose until the body-language work.
-
-### Reverted on 2026-09-28
-
-17. A persona section on the body and a re-recording made with it were tried
-    and reverted, as recorded in `PLAN.md` §16.67. The body-language direction
-    is recorded instead in `.scratch/body-language/spec.md`, to be taken up
-    after publication. Because of the revert, the `come-closer` recording
-    still ends with "I can't see you right now"; the `PlacedPersonPerception`
-    fix will only show in a future recording.
+    tests. They stay off the page until the body-language work.
 
 ## Verification
 
@@ -127,12 +123,16 @@ To record the demo examples again (needs a key in `OPENAI_API_KEY` or
 
 No Misty II has ever been available to this project, and none will be. The
 wake path has run only with synthetic WAV files and the visual gates only
-with synthetic frame timelines. Scenario tests use fake clocks, authored
-model decisions and simulated robot effects. The demo recordings are real
-model decisions over the same simulated inputs, which makes them evidence
-about one model on one day and nothing more. Physical behaviour, timing,
-calibration and reliability are hardware-unverified, and passing the movement
-safety tests is not a hardware safety certification.
+with synthetic frame timelines. Those timelines carry authored detector
+signals (where a person stands, whether they look, where the hand is) over
+plain drawn frames, so no face detector runs on them, and the one crop the
+model receives in a visual example shows a grey rectangle rather than a
+person. Scenario tests use fake clocks, authored model decisions and
+simulated robot effects. The demo recordings are real model decisions over
+the same simulated inputs, which makes them evidence about one model on one
+day and nothing more. Physical behaviour, timing, calibration and reliability
+are hardware-unverified, and passing the movement safety tests is not a
+hardware safety certification.
 
 Speaker attribution in the two-person example is scripted: there is no face
 identity and no sound-source direction. Configured hosted services may receive
@@ -141,33 +141,9 @@ external transfer occurs.
 
 ## Next ticket
 
-There is no open ticket. The next piece of work is publication, and the
-body-language spec follows it.
-
-**Publication** (agreed on 2026-09-28, replacing the plan in `PLAN.md` §1 and
-M10 to start a fresh repository; see §16.68):
-
-1. Keep the existing GitHub repository. Mark the previous version, commit
-   `e0bfa37` on `origin/main`, with a `v1-class-project` tag and a `v1`
-   branch (not `legacy`, which is also the name of the gitignored folder that
-   holds the removed AutoMisty code). The README already refers to both names.
-2. Fast-forward `main` to this branch. `origin/main` is an ancestor of it, so
-   no history is rewritten and no force push is needed.
-3. Done on 2026-09-28: the history scan found no keys and no personal data
-   that is not already public, and the third-party material is licensed for
-   redistribution. The wake WAV fixtures were the exception: they came from
-   macOS system voices and were replaced with a public-domain Piper voice,
-   with `wake_minimum_confidence` recalibrated from 0.78 to 0.68 in the same
-   way. `PLAN.md` §16.68 records all of this.
-4. Before the first push, rewrite the unpushed history so that every commit
-   carries the new wake fixtures, and confirm the old files are gone. Every
-   push and tag is confirmed with the user first.
-
-`docs/architecture.md` has not been revised for the demo changes and the new
-Tools since ticket 15, and should be before publication.
-
-**After publication**, grill the open questions in
-`.scratch/body-language/spec.md` before writing any code.
+There is no open ticket. The next piece of work is the body-language design
+in `.scratch/body-language/spec.md`. Grill its open questions before writing
+any code.
 
 Two rules to preserve in anything built next. `Session.episode()` is an
 internal one-Episode dependency: providers enter at `SocialAgentRuntime`

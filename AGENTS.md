@@ -1,11 +1,15 @@
 # misty-embodied-agent
 
-An LLM-driven embodied agent for the Misty II social robot, being refactored
-from a class project into a portfolio piece.
+An LLM-driven embodied agent for the Misty II social robot, rebuilt from a
+class project and published as open source. `main` is the current version;
+the class project is kept as the `v1` branch.
 
-**Read `PLAN.md` first.** It is the full specification and decision record, and
-it is self-contained — a fresh session needs no other context. `HANDOFF.md`
-covers only "where the work stands right now".
+**Read `HANDOFF.md` first** for where the work stands and what comes next,
+then `docs/architecture.md` for the system as it is. `PLAN.md` is the full
+decision record, written in Chinese and in the order decisions were made.
+Code, tests and docs cite it by section (`§16.7`), so read the cited section
+when you need the reason behind something, and keep its section numbers
+stable.
 
 The hard premise that shapes every technical choice: **there is no robot, and
 there never will be.** Nothing here has run against hardware. Anything not

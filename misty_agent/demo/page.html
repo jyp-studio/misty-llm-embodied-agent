@@ -88,7 +88,6 @@
   .senses { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 60%; pointer-events: none; }
   .senses span { padding: 3px 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 13.5px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   .senses .doing { color: var(--misty); border-color: color-mix(in srgb, var(--misty) 45%, transparent); }
-  .senses .sensing { color: var(--ink); }
   .senses .pushback { color: var(--world); border-color: color-mix(in srgb, var(--world) 45%, transparent); }
   /* With the conversation closed, how an action turned out shows here. */
   .theatre.talk-open .senses .result { display: none; }
@@ -522,16 +521,18 @@ function madeBy(provenance) {
   return `${how}${model}${when} · simulated`;
 }
 
-//: How speech was heard: the words themselves are the step that follows,
-//: so these stay behind the switch with the rest of the machinery.
-const HEARING = new Set(["wake", "capture", "asr"]);
+//: How Misty heard or saw: what was said, or what Misty did about what it
+//: saw, is the story, so these stay behind the switch with the machinery.
+const SENSING_STEPS = new Set(["wake", "capture", "asr", "visual_gate"]);
 
 function chooseShown() {
   const everything = byId("showEverything").checked;
-  state.shown = state.steps
-    .map((step, index) => index)
-    .filter((index) => everything || isThought(index)
-      || (state.steps[index].tells_the_story && !HEARING.has(state.steps[index].kind)));
+  const all = state.steps.map((step, index) => index);
+  const told = (index) => state.steps[index].tells_the_story;
+  state.shown = everything ? all : all.filter((index) =>
+    isThought(index) || (told(index) && !SENSING_STEPS.has(state.steps[index].kind)));
+  // Somebody walking past is nothing but watching; that is the story there.
+  if (!everything && !state.shown.length) state.shown = all.filter(told);
   state.replayAt = Math.min(state.replayAt, Math.max(0, state.shown.length - 1));
 }
 
@@ -942,7 +943,7 @@ function drawSenses(scene) {
   const chips = [];
   const thinking = state.steps[scene.index]?.voice === "note";
   const doing = scene.sensing || (thinking ? "Deciding what to do" : captionFor(scene));
-  if (doing) chips.push([scene.sensing ? "sensing" : "doing", doing]);
+  if (doing) chips.push(["doing", doing]);
   if (scene.stopped) chips.push(["pushback", `Stopped: ${scene.stopped}`]);
   if (scene.faceKnown) chips.push(["", scene.present ? "Face in view" : "Nobody in view"]);
   if (scene.waiting) chips.push(["", `${scene.waiting} is waiting`]);

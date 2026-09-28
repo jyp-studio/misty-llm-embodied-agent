@@ -302,6 +302,59 @@ QUESTION_NO_MOVEMENT = TextScenarioScript(
 )
 
 
+BACK_OFF = TextScenarioScript(
+    key="back-off",
+    label="\"Could you back up a bit?\" · keeps far, and checks it is better",
+    inputs=(_said_by(0.0, "Misty, you're a little close. Could you back up a bit?", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "Of course, I'll give you some room."}, 22, 6,
+                 note="Say what is about to happen before the chassis moves."),
+        Decision("approach", {"keep": "far"}, 22, 2,
+                 note="They asked for more room; the controller decides how the chassis gets there."),
+        Decision("speak", {"text": "Is this better?"}, 24, 4,
+                 note="Check the new spacing suits them."),
+        Decision("done", {}, 20, 1, note="They have the room they asked for."),
+    ),
+    placement=Placement(distance_cm=60.0, bearing_deg=0.0),
+)
+
+
+TIMER = TextScenarioScript(
+    key="timer",
+    label="\"Count three seconds\" · waits, then says time is up",
+    inputs=(_said_by(0.0, "Misty, count three seconds and tell me when time's up.", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "Okay, starting now."}, 22, 4,
+                 note="Let them know the three seconds have begun."),
+        Decision("wait", {"seconds": 3}, 22, 2, note="Time the three seconds they asked for."),
+        Decision("speak", {"text": "Time's up!"}, 24, 3, note="Tell them the time has run out."),
+        Decision("done", {}, 20, 1, note="The timer they asked for is finished."),
+    ),
+)
+
+
+SHOW_OFF = TextScenarioScript(
+    key="show-off",
+    label="\"Can you dance?\" · a little show composed out of its body",
+    inputs=(_said_by(0.0, "Misty, show me what you can do! Can you dance?", "person-a"),),
+    decisions=(
+        Decision("speak", {"text": "Sure, here's a little dance!"}, 22, 5,
+                 note="Say a line before the show starts."),
+        Decision("change_led", {"red": 255, "green": 170, "blue": 0}, 22, 3,
+                 note="A warm light for a cheerful moment."),
+        Decision("move_arms", {"left": -29, "right": -29}, 22, 3, note="Arms up to start."),
+        Decision("play_audio", {"sound": "joy", "volume": 60}, 22, 3, note="A cheerful sound to dance to."),
+        Decision("move_head", {"roll": 20}, 22, 3, note="Tilt one way with the music."),
+        Decision("move_head", {"roll": -20}, 22, 3, note="And the other way."),
+        Decision("move_arms", {"left": 90, "right": 90}, 22, 3, note="Arms back down."),
+        Decision("move_head", {}, 22, 2, note="Head level again before finishing."),
+        Decision("speak", {"text": "Ta-da! Thanks for watching."}, 24, 5,
+                 note="Close the show with a line."),
+        Decision("done", {}, 20, 1, note="The show is over."),
+    ),
+)
+
+
 EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
     name="greeting",
     title="Starting a conversation",
@@ -542,6 +595,9 @@ EXPLICIT_TEXT_REQUEST = AcceptanceScenario(
         GOOD_NEWS,
         VAGUE_HELP,
         QUESTION_NO_MOVEMENT,
+        BACK_OFF,
+        TIMER,
+        SHOW_OFF,
     ),
 )
 

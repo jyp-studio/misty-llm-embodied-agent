@@ -622,6 +622,11 @@ def _said_in(
             if heard:
                 return f"Hears “{heard}”", True
             return "Nobody answers", True
+        if "waited_s" in result:
+            # A wait that ran its course is told by what Misty says next.
+            if _text(result.get("ending")) == "stopped":
+                return f"Stops waiting after {result['waited_s']:g}s: something interrupted it", True
+            return str(step.get("headline") or ""), False
         stopped = _text(result.get("result"))
         if stopped:
             where = (

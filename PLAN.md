@@ -3032,3 +3032,15 @@ boundary audit 修掉一個誤判：Misty 教對方去講的話（「直接說�
 `test_persona` 守著 §15.4 的「一件事一個地方」。沒選的：一個 Turn 多個工具（要改 `react.py`
 一次一個 Tool 的核心設計）、`express(emotion)` 預設組合（等於把 §4 移除的 AutoMisty 手勢搬回來）、
 runtime 自動讓燈反映狀態（那不是模型的決定，畫面上會混淆）。
+
+**三個新腳本：`back-off`、`timer`、`show-off`，放在 greeting 卡。** 各有一組寫好的決定供測試，
+Demo 會播模型自己的錄音。back-off 把人擺在 60cm，說「可以退後一點嗎」；timer 說「數三秒後告訴我
+時間到」；show-off 說「你會跳舞嗎」。測試守：back-off 用 `keep: far` 且最後距離拉開；timer 的
+`wait` 是三秒、下一個動作是說話、兩者時間差至少三秒；show-off 用到手臂、頭、燈、音效並在結束前
+手放下頭歸正；三者都以 done 結束並通過 boundary audit。它們還不在 `SHOWCASES`：頁面的清單要求
+每一項都已錄音，錄音要等 API key。
+
+舞台配合兩處：`wait` 在 Misty 頭旁畫一個倒數圈，重播在那一步停留同樣的秒數；以及一個原本就在的
+落差——ToolCalled 的姿勢要等 Observation 才兌現，而一般播放把 Observation 藏起來，所以每個手勢
+都晚一步才畫出來。現在一個動作若緊接著的 Observation 確認了它，就在動作那一步畫出確認後的姿勢；
+失敗的呼叫沒有 Observation，照舊什麼也不畫。

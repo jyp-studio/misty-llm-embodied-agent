@@ -365,7 +365,7 @@ def test_the_greeting_result_says_what_the_current_run_actually_did():
     assert evidence["source"] == "speech"
     assert evidence["transcript"] == "Hey Misty, hello!"
     assert evidence["facts"]["wake_phrase"] == "hey misty"
-    assert evidence["facts"]["confidence"] >= 0.78
+    assert evidence["facts"]["confidence"] >= 0.68
     assert evidence["facts"]["detector"] == "pocketsphinx-local"
     assert evidence["facts"]["capture"] == "captured"
     assert evidence["uncertainty"] == [

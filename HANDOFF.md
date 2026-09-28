@@ -145,7 +145,7 @@ There is no open ticket. The next piece of work is publication, and the
 body-language spec follows it.
 
 **Publication** (agreed on 2026-09-28, replacing the plan in `PLAN.md` §1 and
-M10 to start a fresh repository):
+M10 to start a fresh repository; see §16.68):
 
 1. Keep the existing GitHub repository. Mark the previous version, commit
    `e0bfa37` on `origin/main`, with a `v1-class-project` tag and a `v1`
@@ -153,11 +153,15 @@ M10 to start a fresh repository):
    holds the removed AutoMisty code). The README already refers to both names.
 2. Fast-forward `main` to this branch. `origin/main` is an ancestor of it, so
    no history is rewritten and no force push is needed.
-3. Before pushing, scan the full history for keys and personal data, and
-   check the licences of third-party material (the retained Misty SDK file,
-   the wake WAV fixtures, the PocketSphinx models).
-4. Record the decision in `PLAN.md`. Every push and tag is confirmed with the
-   user first.
+3. Done on 2026-09-28: the history scan found no keys and no personal data
+   that is not already public, and the third-party material is licensed for
+   redistribution. The wake WAV fixtures were the exception: they came from
+   macOS system voices and were replaced with a public-domain Piper voice,
+   with `wake_minimum_confidence` recalibrated from 0.78 to 0.68 in the same
+   way. `PLAN.md` §16.68 records all of this.
+4. Before the first push, rewrite the unpushed history so that every commit
+   carries the new wake fixtures, and confirm the old files are gone. Every
+   push and tag is confirmed with the user first.
 
 `docs/architecture.md` has not been revised for the demo changes and the new
 Tools since ticket 15, and should be before publication.

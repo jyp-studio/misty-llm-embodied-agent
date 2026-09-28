@@ -59,7 +59,7 @@ class WakeDetector(Protocol):
 class PocketSphinxWakeDetector:
     """Speaker-independent local keyword spotting for the two wake phrases."""
 
-    def __init__(self, *, minimum_confidence: float = 0.78) -> None:
+    def __init__(self, *, minimum_confidence: float = 0.68) -> None:
         if not 0.0 < minimum_confidence <= 1.0:
             raise ValueError("minimum_confidence must be in (0, 1]")
         from pocketsphinx import Decoder

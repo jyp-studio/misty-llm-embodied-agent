@@ -215,6 +215,9 @@ what was removed and why.
 
 The previous version remains available on the `v1` branch and at the
 `v1-class-project` tag for anyone who wants to compare the two approaches.
+It is distributed under the AutoMisty Academic Research License, which limits
+it to academic, educational and non-commercial use; the current version is
+licensed under Apache 2.0.
 
 ## Next steps
 

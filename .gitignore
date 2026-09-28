@@ -34,3 +34,6 @@ legacy/
 
 # Claude Code local settings and worktrees
 .claude/
+
+# Local voice recordings, kept out of the repository
+misty-wake/

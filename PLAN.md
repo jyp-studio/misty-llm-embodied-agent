@@ -3052,3 +3052,33 @@ persona 與其測試還原、錄音換回重錄前那一批（所以 come-closer
 `PlacedPersonPerception` 的修正要到下次重錄才會出現在錄音裡）。`keep`、`wait`、三個新腳本與舞台
 修正保留：它們是能力，不改變現有 15 個範例；三個新腳本暫不上 Demo。錄音測試改為從錄音推導的
 那批也保留，它們對新舊錄音都成立。
+
+### 16.68 發佈：同一個 repo 分新舊版本，發佈前的掃描，以及喚醒錄音換成公有領域語音
+
+**取代 §1 與 M10。** §1「只改本地、不動 GitHub」與 M10「開新 repo、乾淨歷史匯入」都是 2026-08-10
+最初那張里程碑表上的規劃，早於後來 Codex 規劃的 social runtime。使用者決定不開新 repo：沿用
+`jyp-studio/misty-llm-embodied-agent`，舊版本（`origin/main` 的 `e0bfa37`，課堂專案）以 `v1` 分支與
+`v1-class-project` tag 保留，`main` 快轉到新版本並作為預設。`origin/main` 是新分支的祖先，所以不需要
+force push。分支不叫 `legacy`，因為那是 M1 移出 AutoMisty 程式的本機資料夾名稱。舊版本整份是
+AutoMisty 的學術研究授權（它的 LICENSE 即是），`v1` 分支帶著它；README 註明兩個版本授權不同。
+
+**發佈前掃描（全部 178 個 commit）。** 常見金鑰格式與填了值的憑證欄位：只有測試假值與佔位字串。
+從未 commit 過 `.env`、`OAI_CONFIG_LIST.json` 或私鑰檔。commit 作者 email 已存在於目前公開的
+commit 中。程式碼裡的公開 IP 全部來自 AutoMisty 與 Misty SDK 範例，且已在公開的舊版本裡。兩張
+人臉照片為 NASA 公有領域作品（`tests/fixtures/PROVENANCE.md`）。`robot_commands.py` 為 Apache-2.0
+並記於 `NOTICE`。
+
+**喚醒錄音換掉。** 原本的 6 段以 macOS `say` 的系統語音產生，而 macOS 授權不允許在公開分享的情境
+散布系統語音。改以 Piper 1.8.0 與 `en_US-ljspeech-medium` 產生：訓練資料 LJ Speech 為公有領域，
+模型為 MIT，Piper 本身（GPL）只當工具用、不隨 repo 散布。每段的文字與合成參數記在
+`tests/fixtures/wake/PROVENANCE.md`；參數是對喚醒文法評分挑出來的。
+
+**`wake_minimum_confidence` 從 0.78 改為 0.68。** 0.78 是 ticket 04 依 macOS 語音定的：落在不該觸發
+的最高分（0.741）與該觸發的最低分（0.792）之間，當時就明說不是準確率聲明。新語音整體分數較低：
+該觸發的 0.727（有停頓那段）到 0.802，不該觸發的 0.539。以同樣方法定在兩者之間的 0.68。它描述的
+仍只是這組合成檔案，真實房間與 Misty II 麥克風的表現依舊未驗證。
+
+**歷史改寫。** 舊錄音從 2026-09-11 起就在 commit 裡，而這段 commit 尚未 push 過，所以在第一次
+push 前改寫：每個含有這 6 個 WAV 的 commit，都把 WAV 與其 `PROVENANCE.md` 換成新版本，commit
+雜湊隨之改變。被改寫的 commit 在當時的門檻（0.78）下，有停頓那段喚醒錄音會通不過；那是歷史快照，
+目前的程式與測試不受影響。

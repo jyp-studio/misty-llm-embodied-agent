@@ -159,7 +159,7 @@ class Settings(BaseSettings):
         description="Maximum hosted transcription round-trip for one utterance.",
     )
     wake_minimum_confidence: float = Field(
-        default=0.78,
+        default=0.68,
         gt=0.0,
         le=1.0,
         description=(

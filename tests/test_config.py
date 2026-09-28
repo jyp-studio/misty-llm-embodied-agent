@@ -39,7 +39,7 @@ def test_defaults_load():
     assert s.audio_block_queue_capacity == 64
     assert s.audio_segment_queue_capacity == 3
     assert s.asr_timeout_s == 15.0
-    assert s.wake_minimum_confidence == 0.78
+    assert s.wake_minimum_confidence == 0.68
 
 
 def test_settings_are_frozen():

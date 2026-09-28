@@ -1,214 +1,229 @@
 # Misty Embodied Agent
 
-An LLM-driven embodied agent for the Misty II social robot, with a bounded
-ReAct core and a simulation-first autonomous runtime.
+An embodied agent for the Misty II social robot in which a language model
+decides what the robot does. The model acts one tool call at a time inside a
+bounded ReAct loop, and an attention loop in front of it decides whether an
+interaction should begin at all.
 
-**There is no Misty II available to this project, and there never will be.**
-Every demonstrated behaviour runs against simulated or recorded adapters.
-Real-driver request shapes have contract coverage; physical behaviour,
-calibration, latency, and safety remain hardware-unverified.
+**No Misty II has ever been available to this project, and none will be.**
+Every behaviour described here runs against simulated or recorded adapters.
+The request shapes of the real drivers are covered by contract tests, while
+physical behaviour, calibration, latency and safety remain hardware-unverified.
 
-## What works now
+## Highlights
 
-- `SocialAgentRuntime` is the highest product seam. It consumes a unified
-  input source, creates an Interaction Cue, and gives one bounded Episode at a
-  time ownership of model context and robot effects.
-- The first vertical path is a timed text Explicit Request driven by
-  `ScenarioInputAdapter` and a fake clock. It reaches the existing ReAct loop,
-  typed Journal, Tool validation, and simulated Misty effects.
-- Typed Trigger Evidence reaches the first model Turn with source, time,
-  selected facts, uncertainty, transcript and an optional bounded image. The
-  hosted adapter talks to the Responses API with reasoning on, preserves
-  native Tool call identity and its paired result, rejects multiple calls in
-  one Turn, asks the provider to store nothing, and records short public
-  Decision Notes without requesting private reasoning. Selected images are strict
-  base64, capped at 8 MiB decoded, and removed from completed runtime results.
-- Runtime shutdown, dependency failure, source exhaustion, and the 12-Turn
-  Episode cap all close with observable bounded endings.
-- The local Demo replays recorded hosted-model runs of those social-robot
-  stories on an animated simulated Misty. The A-to-B case visibly contrasts
-  working context retained inside A's Episode with a clean model context
-  when B's new Episode begins.
-- A temporal local visual gate can form an uncertain Care Cue from sustained
-  observable eye, mouth and head geometry. The model may choose cheap target
-  observation, expensive scene inspection, a question, or no intervention;
-  the gate never diagnoses emotion or fixes the response sequence.
-- Cross-Episode personal memory is not a current product capability. Social
-  state is ephemeral unless a future consent-based policy explicitly changes
-  it. The optional persistent Journal redacts personal prose; this is separate
-  from sending bounded current-Episode Evidence to configured hosted providers.
+- **Attention comes before action.** A runtime reads its input sources and
+  turns what it notices into Interaction Cues: an Explicit Request (a wake
+  phrase or a direct request), a Social Invitation (a sustained look and a
+  wave), or an uncertain Care Cue (sustained observable face and posture
+  geometry). Cues are queued by priority and freshness, and only one Episode
+  owns the robot at a time.
+- **Each Episode is a bounded ReAct loop.** On every Turn the model chooses
+  one typed Tool, receives its result together with a small perception
+  Snapshot, and decides again. The model ends the Episode itself, and a hard
+  cap of twelve Turns guarantees that it ends.
+- **The model decides whether, and the control layer decides how.** The
+  model can ask to approach a person and choose how much room to leave them
+  (`close`, `comfortable` or `far`). A closed loop aligns the chassis, moves
+  in bounded steps from fresh readings, and stops at the first checkpoint
+  that reports a stop request or a hazard. No velocity, duration or drive
+  command ever reaches the model.
+- **Every Episode leaves a typed Journal.** Tool calls, observations,
+  snapshots and short public Decision Notes are recorded as typed records.
+  The model is never asked for its private reasoning, and none is stored.
+- **Skills load on demand.** Local Skills expose only their names and
+  descriptions at first. Their instructions and reference files load when the
+  model activates them, for the current Episode only, and a Skill can never
+  run code or bypass a Tool.
+- **Boundaries are part of the design.** Misty answers in the language the
+  person is using. In a high-risk moment it stays, says plainly what it cannot
+  do, and points to someone nearby or to local emergency services. It never
+  diagnoses, promises safety or claims to have contacted anyone, and no Tool
+  can reach anyone outside the room.
+- **Social context is ephemeral.** Context is kept within one Episode and
+  discarded afterwards. The optional persistent Journal redacts personal
+  prose.
 
-The concise source of truth is [docs/architecture.md](docs/architecture.md).
-`PLAN.md` preserves the longer decision history.
-
-```mermaid
-flowchart LR
-    INPUT["Scenario / audio / visual InputSource"] --> RUNTIME["SocialAgentRuntime<br>Attention Loop"]
-    RUNTIME -->|"one selected Interaction Cue"| EPISODE["bounded ReAct Episode"]
-    EPISODE --> TOOLS["Tool registry + control layer"]
-    TOOLS --> PERCEPTION["target observation / scene inspection"]
-    TOOLS --> SIM["simulated Misty"]
-    EPISODE --> JOURNAL["typed Episode Journal"]
-    RUNTIME --> TRACE["Attention / Cue records"]
-    TRACE --> DEMO["local Demo"]
-    JOURNAL --> DEMO
-```
-
-## Quick start
-
-Use the project virtual environment; a bare `python3` can silently skip the
-perception suite (see `AGENTS.md`). No robot or API key is needed for the
-built-in runtime scenario.
+## The demo
 
 ```bash
 .venv/bin/python -m misty_agent --demo
 ```
 
-The browser page is loopback-only and needs no API key. Its sixteen examples,
-in three groups (starting a conversation, care and boundaries, two people),
-are **recorded runs of a hosted model**: the acceptance fixtures' inputs and
-simulated room, with every decision made by the model, captured once and
-replayed. Each is labelled with the model and the date it was recorded. An
-animated simulated Misty shows every Tool call — the speech bubble and a
-talking mouth, arms, head, face, chest LED, wheels and distance, listening,
-scanning, Skill loading — beside the Decision Note, Observation and a
-scrubbable timeline of every Moment.
+The page runs on this machine only and needs neither a robot nor an API key.
+It plays fifteen recorded runs of a hosted model (`gpt-5.6-luna`) in five
+groups: noticing someone, talking, moving, care, and knowing its limits. Each
+run uses the inputs, timing and simulated room of an acceptance scenario,
+with every decision made by the model, and each is labelled with the model
+and the date it was recorded.
 
-To record them again with the configured model (needs a key, costs a little):
+An animated Misty stands on a small stage. Speech appears in bubbles over the
+speaker, the model's Decision Notes appear as thought clouds, and the stage
+shows what Misty is doing and sensing, the distance between Misty and the
+person, Skills being loaded, and sounds being played. The full conversation
+opens in a panel on the right of the stage. The **Try it live** panel sends
+your own sentence to the hosted model and plays the result on the same stage.
+
+To record the examples again with the configured model (this needs an API key
+and costs a small amount):
 
 ```bash
 .venv/bin/python -m misty_agent.demo.record
 ```
 
-The **Try it live** panel runs your own sentence against the hosted model and
-plays it on the same stage; it needs `OPENAI_API_KEY` in the demo's
-environment or `OAI_CONFIG_LIST.json`. Who said what in the two-person
-examples is part of the fixture: the runtime has no sound-source direction
-and no face identity.
+## Architecture
 
-Add local Skills as `misty_agent/skills/<name>/SKILL.md` with YAML `name` and
-`description` frontmatter. Only metadata reaches the first Turn; instructions
-and references/text assets load on demand. Resources are UTF-8 text, capped
-at 64 KiB; scripts, symlinks and path escapes are refused. No Skill can execute
-code or bypass typed Tools. See [current architecture](docs/architecture.md).
+```mermaid
+flowchart LR
+    INPUT["Text, audio and visual input sources"] --> RUNTIME["SocialAgentRuntime<br>Attention Loop"]
+    RUNTIME -->|"one selected Interaction Cue"| EPISODE["Bounded ReAct Episode"]
+    EPISODE --> TOOLS["Tool registry and control layer"]
+    TOOLS --> PERCEPTION["Target observation and scene inspection"]
+    TOOLS --> ROBOT["Robot interface<br>(simulated Misty)"]
+    EPISODE --> JOURNAL["Typed Episode Journal"]
+    RUNTIME --> TRACE["Attention and Cue records"]
+    TRACE --> DEMO["Local demo"]
+    JOURNAL --> DEMO
+```
 
-The command-line path also crosses `SocialAgentRuntime`:
+[docs/architecture.md](docs/architecture.md) describes the current system in
+full. [PLAN.md](PLAN.md) keeps the complete decision history, including the
+decisions that were later reversed. [CONTEXT.md](CONTEXT.md) defines the
+project's vocabulary, where Turn, Step and Episode have distinct meanings, and
+[docs/adr/](docs/adr/) records the decisions that are hard to reverse.
+[HANDOFF.md](HANDOFF.md) states where the work currently stands.
+
+## Getting started
+
+The project targets Python 3.11. Create the virtual environment and install
+the pinned dependencies:
 
 ```bash
-export OPENAI_API_KEY=sk-...  # omit when injecting a model in tests
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --only-binary=:all: -r requirements.txt
+```
+
+Always run the project through `.venv`. A bare `python3` without MediaPipe
+and OpenCV still reports a passing test suite, because the perception tests
+skip instead of failing. [AGENTS.md](AGENTS.md) explains how to recognise this.
+
+The demo and the offline test suite need no API key. The live panel, the
+command line and the recorder read the OpenAI key from the `OPENAI_API_KEY`
+environment variable or from `OAI_CONFIG_LIST.json` in the project root.
+Both are ignored by git. Copy the example file and replace the placeholder:
+
+```bash
+cp OAI_CONFIG_LIST.json.example OAI_CONFIG_LIST.json
+```
+
+The key does not belong in `.env`, which holds only the `MISTY_` settings
+listed in `.env.example`.
+
+The command line runs one scenario through the same runtime as the demo:
+
+```bash
 .venv/bin/python -m misty_agent --said "Misty, hello"
 ```
 
-`--robot <IP>` assembles the retained real-driver path and prints an explicit
-warning. It has never run on hardware; its presence is not evidence that it works.
+`--robot <IP>` assembles the real driver path and prints a warning each time.
+It has never run against a robot, and its presence is not evidence that it
+works.
 
----
+## Testing
 
-## Testing without a robot
-
-**Simulation suite (free, offline, no robot and no API key):**
+The default suite runs offline and makes no network or model calls:
 
 ```bash
 .venv/bin/python -m pytest tests/ -q -rs
 ```
 
-It runs in the project virtualenv, not a bare `python3` — see `AGENTS.md` for
-how to build it and why the wrong interpreter reports green while silently
-skipping every perception test. The count is deliberately not pinned here; the
-suite is the source of truth for its own size.
+It exercises the real closed-loop approach through its public interface, the
+driver contract tests, the perception pipeline against real pixels, and the
+fifteen acceptance scenarios, which run with authored model decisions so that
+every run is the same. The scenarios set a floor under behaviour; they are
+not a benchmark and produce no score. The suite also checks every recorded
+demo run with the same boundary audit that is applied to live model output.
 
-It exercises the real closed-loop `approach()` through its public interface — convergence under calibration error, safety-floor behaviour inside an explicitly uncalibrated motion assumption, target loss at startup, step caps — plus the driver contract tests and the perception pipeline against real pixels.
-
-Two things it does **not** cover, both recorded rather than hidden: reading noise, and losing the user *after* the robot has already moved. `docs/measurements/m6-coverage-audit.md` itemises every check the previous simulation runner carried and where it went.
-
-**Live model suite (real gpt-5.6-luna, fake robot, ~a few cents at most):**
+A separate suite runs against the real hosted model with a fake robot. It
+costs a few cents at most and is excluded from the default run:
 
 ```bash
-export OPENAI_API_KEY=sk-...
 .venv/bin/python -m pytest -m llm_live
 ```
 
-Deselected from the default run, so an ordinary `pytest` never reaches the network and never reports a skip.
+It asserts invariants rather than answers: the Episode ends, the Turn cap
+holds, no control parameter reaches the model, every Tool call is in range,
+and every drive comes from the closed-loop controller.
+`tests/test_episode_invariants.py` proves offline that each of these checks
+is able to fail.
 
-It asserts **invariants, not answers**: the Episode terminates, the Turn cap holds, no velocity or drive duration ever reaches the model, every Tool call is in range, and every drive came from the closed-loop controller. What the model *chose* is deliberately not a gate — a model that looks around before replying is not a bug — so behavioural observations are counted and reported as a rate instead.
+## Evidence boundary
 
-Every one of those gates is proven able to fail in `tests/test_episode_invariants.py`, which runs offline for free. Without that, a vacuous check in a suite nobody runs in CI would pass forever.
-
----
-
-## Hardware evidence boundary
-
-Motion constants and sensor assumptions are deliberately labelled
-`UNCALIBRATED`. The deterministic world and replay harness prove software
-properties under declared assumptions; they do not prove what a physical Misty
-would do. Do not treat the retained `--robot` path as installation or safety
-guidance.
-
----
+Motion constants and sensor assumptions are marked `UNCALIBRATED` in
+`misty_agent/config.py`. The simulated world and the replay harness prove
+software properties under declared assumptions; they do not show what a
+physical Misty would do. The wake path has run only with synthetic audio, the
+visual gates only with synthetic frame timelines, and the recorded demo runs
+are evidence about one model on one day. None of this is installation or
+safety guidance for real hardware.
 
 ## Project structure
 
 ```
 .
 ├── misty_agent/
-│   ├── runtime.py            # Highest seam: Attention, cues, Episodes, shutdown
-│   ├── audio_input.py        # Local wake gate, bounded capture, hosted-ASR decision
-│   ├── scenarios.py          # Acceptance Scenario source shared by Demo and tests
-│   ├── app.py                # Composition root and one-Episode runtime dependency
-│   ├── config.py             # Every tunable, with UNCALIBRATED ones marked as such
-│   ├── agent/                # journal, react, tools, stop, layering, model
-│   ├── control/              # approach() and the step policy — the closed loop
-│   ├── drivers/              # Misty REST, RTSP audio/video, websocket events
-│   ├── perception/           # face, distance, speech
-│   └── fakes/                # stand-ins: no Misty II was available to this project
-├── harness/                  # python -m harness — regenerates the M5 and M6 reports
-├── tests/                    # goldens/ holds four Journals committed before the loop
-├── docs/architecture.md      # concise current architecture
-├── docs/adr/                 # hard-to-reverse architecture decisions
-├── docs/measurements/        # replay/simulation evidence and its limits
-├── PLAN.md                   # every decision and why, including the reversed ones
-├── CONTEXT.md                # the glossary; Turn, Step and Episode are not synonyms
-└── HANDOFF.md                # current progress and handoff notes
+│   ├── runtime.py          # Attention Loop, Cues, Episodes and shutdown
+│   ├── audio_input.py      # local wake gate, bounded capture, hosted ASR
+│   ├── visual_input.py     # local visual gates for invitations and care cues
+│   ├── scenarios.py        # scenario scripts shared by the demo and the tests
+│   ├── acceptance.py       # the fifteen acceptance contracts and their runner
+│   ├── app.py              # composition root for sessions and the command line
+│   ├── config.py           # every tunable, with uncalibrated values marked
+│   ├── agent/              # ReAct loop, Tools, Journal, persona, model adapter
+│   ├── control/            # the closed-loop approach and its step policy
+│   ├── robot/              # one Robot interface, real and simulated adapters
+│   ├── drivers/            # Misty REST, RTSP audio and video, websocket events
+│   ├── perception/         # face, distance, speech and active perception
+│   ├── skills/             # local Skills loaded on demand
+│   ├── demo/               # the demo page, its server and the recordings
+│   └── fakes/              # stand-ins for the robot and its services
+├── harness/                # replay harness and measurement reports
+├── tests/                  # offline suite; goldens/ holds the reference Journals
+├── docs/                   # architecture, decision records and measurements
+├── .scratch/               # specifications and tickets
+├── PLAN.md                 # decision history
+├── CONTEXT.md              # vocabulary
+└── HANDOFF.md              # where the work stands
 ```
 
-The AutoMisty framework this began as (`AutoMisty.py`, `Agents/`, `CUBS_Misty.py`, `Mistydemo/`) was removed from version control at M1 and lives in `legacy/`, which is gitignored. `PLAN.md` §2–§3 records what was excised and why.
+## Previous version
 
----
+This repository began as a class project. That version ran a fixed loop in
+which a single GPT-4o call produced a strict JSON plan for movement,
+expression, gesture and speech, and it handed elaborate performances to the
+AutoMisty multi-agent framework, which generated Python and executed it on
+the robot. The current version replaces that design with the attention loop
+and bounded ReAct Episodes described above. `PLAN.md` explains what was kept,
+what was removed and why.
 
-## Roadmap
+The previous version remains available on the `legacy` branch and at the
+`v1-class-project` tag for anyone who wants to compare the two approaches.
 
-The current runtime has bounded Cue scheduling, an external Hey/Hi Misty audio
-gate, plus synthetic-fixture-verified Social Invitation and uncertain Care Cue
-visual gates, progressive Skills, bounded listening, anonymous Interaction
-Target ownership with Turn-boundary handoff, one Robot interface with a
-hardware-unverified real adapter and a stateful simulated one, and a
-target-aware approach that aligns the chassis before closing and stops at
-the first checkpoint that reports a stop, a hazard or a missing hazard
-signal, plus Episode-scoped social context and redacted persistence, all
-verified only in simulation. Explicit requests for space now end through a
-typed halt-and-finish Tool; Runtime applies a short anonymous-track Cue
-Suppression to repeated non-explicit cues while allowing a new direct request
-to bypass it. It answers in the person's language, follows a change of language
-mid-conversation, and in a high-risk moment stays, says what it cannot do,
-and points at someone nearby or local emergency services rather than
-diagnosing, promising safety or claiming to have called anyone.
+## Next steps
 
-The spec's fifteen social situations run in the default suite with authored
-model decisions; `/acceptance` serves every contract with its number. They
-are a floor under behaviour, not a benchmark: no score, no leaderboard. The
-Demo shows recorded hosted-model runs over a subset of the same fixtures,
-which are evidence about that model on that day and are not counted as
-passing anything beyond the boundary audit. See
-`.scratch/social-react-runtime/` for the approved spec and tickets.
+The next piece of work gives Misty richer body language: reflexes played by
+the runtime while the model is thinking or listening, a gesture chosen with
+each line and played while it is spoken, and deliberate actions that remain
+ReAct Turns. The direction and its open questions are recorded in
+[.scratch/body-language/spec.md](.scratch/body-language/spec.md).
 
----
+## Acknowledgements and license
 
-## Acknowledgements & license
+Misty II and its REST API are products of Misty Robotics. Face perception
+uses MediaPipe, local wake detection uses PocketSphinx, and the hosted speech
+and model adapters use OpenAI when a key is configured. The original AutoMisty
+code-generation framework was removed from this version, and the retained
+generated Misty SDK file is attributed in `NOTICE`.
 
-Misty II and its REST API are by Misty Robotics. Face perception uses
-MediaPipe; local wake detection uses PocketSphinx; hosted speech/model adapters
-use OpenAI when explicitly configured.
-The original AutoMisty code-generation framework was removed at M1; the
-retained generated Misty SDK file is attributed in `NOTICE`.
-
-This repository is Apache-2.0. See `LICENSE` and `NOTICE`.
+This project is licensed under the Apache License 2.0. See `LICENSE` and
+`NOTICE`.

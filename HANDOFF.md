@@ -1,193 +1,123 @@
-# HANDOFF — current state
+# HANDOFF: current state
 
-Last updated: 2026-09-20 · branch `refactor/react-agent`
+Last updated: 2026-09-28 · branch `refactor/react-agent`
 
-Read `PLAN.md` first for the full decision history. The concise current system
-view is `docs/architecture.md`; ubiquitous language is in `CONTEXT.md`; the
-approved social-runtime effort lives under `.scratch/social-react-runtime/`.
+Read `PLAN.md` first for the full decision history. The concise view of the
+current system is `docs/architecture.md`, the vocabulary is in `CONTEXT.md`,
+and specifications live under `.scratch/`.
 
 ## Where the work stands
 
-Social runtime tickets 01–15 are implemented, and the effort is complete. `SocialAgentRuntime` is the
-highest product seam for the CLI, local Demo, and acceptance coverage:
+The social runtime effort under `.scratch/social-react-runtime/` is complete:
+all fifteen tickets are resolved and the fifteen acceptance situations run in
+the default suite. Since then the work has gone into the demo, into three
+small capabilities, and into preparing the repository for publication. The
+working tree is clean.
 
-1. `ScenarioInputAdapter` feeds a timed text Explicit Request with an injected
-   clock.
-2. The Attention Loop records the cue and opens one bounded ReAct Episode.
-3. Existing Tool dispatch affects the simulated Misty and produces the typed
-   Episode Journal.
-4. Runtime output carries both Attention/Cue records and Episode Journals.
-5. The Demo presents three runnable horizontal social scenarios whose
-   human-readable results derive from current runtime records and Journals.
-6. Offline scenario execution is visually and mechanically separate from the
-   optional Live AI panel, so the no-key path no longer looks blocked by a
-   hosted-model requirement.
-7. Typed Trigger Evidence reaches the first Turn with source, time, facts,
-   transcript, uncertainty and an optional selected image, before any Snapshot.
-8. Model context preserves native assistant Tool calls and matching `tool`
-   results. The OpenAI adapter disables parallel calls and rejects multiple
-   calls rather than silently dropping extras.
-9. Short public Decision Notes are typed Journal records and Demo Moments; no
-   private reasoning or chain-of-thought is requested or stored.
-10. Selected image evidence is strict base64, capped at 8 MiB decoded, and
-    removed from completed runtime results; only its media type remains.
-11. Active Episodes drain Cues at Turn boundaries into a bounded priority,
-    freshness and deduplication queue; there is still only one Episode owner.
-12. `LiveInputAdapter` locally gates VAD segments on Hey/Hi Misty, captures one
-    bounded utterance, and invokes hosted ASR only after a wake match.
-13. Audio block/segment queues have fixed capacities; wake, capture, ASR,
-    backlog and audio-pipeline endings are typed Runtime records. Hosted ASR
-    retries are disabled so one configured timeout remains one total bound.
-14. The greeting Demo selects checked-in synthetic WAV fixtures and shows the
-    current wake → capture → ASR → Episode → simulated effect → ending path.
-15. `VisualInputAdapter` turns local, anonymous detections across a bounded
-   temporal fixture into typed frame outcomes. Sustained gaze plus a wave may
-   form Social Invitation Evidence; empty rooms, passersby and interrupted
-   gaze remain quiet without calling the model.
-16. A qualifying visual cue carries one selected JPEG crop into the first
-   multimodal Turn. Raw periodic frames do not cross that boundary, and the
-   completed Runtime result discards the crop bytes.
-17. The greeting Demo also selects four synthetic visual timelines and shows
-   frame-by-frame gate facts, selected Evidence metadata, the scripted model
-   decision, simulated response, or the reason no Episode opened.
-18. Sustained observable eye, mouth and head geometry on one anonymous track
-   can form an uncertain Care Cue. The gate emits no emotion diagnosis and
-   chooses no response Tool.
-19. `observe_target` and `inspect_scene` expose cheap and expensive typed
-   active-perception results with freshness and uncertainty; neither moves the
-   robot.
-20. The care Demo provides two synthetic timelines: sustained care-relevant
-   geometry and a visual/verbal conflict where explicit words take priority.
-   Both show Evidence, Decision Note, selected Tool, Observation and ending.
+### The runtime
 
-21. Local Skills expose metadata first, then typed activation/reference reads.
-    Loaded guidance and permissions are scoped to one Episode, never scripts.
-22. The care card's calming-support variant runs speak/listen/head expression
-    with timed scripted speech and shows Skill state during Journal replay.
-23. Bounded listen has explicit silence/unavailable/error/aborted results;
-    live audio wiring shares the VAD owner and caps one ASR attempt.
-24. Each Episode binds one anonymous Interaction Target from its Trigger
-    Evidence. Perception Tools report and update visible/lost/reacquired on
-    that track only; a closer or newer face is never a silent switch, and
-    `approach` refuses a lost target. Snapshots carry the target as a fourth
-    fact.
-25. During an Episode, another person's Explicit Request is queued and the
-    model is told once at a Turn boundary. The Episode ends when the model
-    calls `done`; the queued request then opens its own Episode with its own
-    target. Stale queued requests expire; bumper/e-stop still abort at once.
-26. The A→B Demo card runs two scripted anonymous actors and shows target
-    binding, the queued request, the handoff notice, the dequeue and both
-    Episodes. Speaker attribution in that card is scripted, not localised.
-27. Tools and the approach controller depend on one `Robot` interface that
-    returns a typed `Effect`. `RealMistyAdapter` maps behaviours to vendor
-    requests (hardware-unverified); `SimulatedMistyAdapter` holds pose, chest
-    light, last speech and the measured distance, so a refused behaviour
-    reaches the Observation and the storyboard as `ok: false` and no move.
-    There is no recording robot; the Journal is the only behaviour record.
-28. `approach` is target-aware: a reading carries distance, bearing,
-    timestamp and uncertainty; the controller turns the chassis until the
-    bearing is within tolerance, then closes by bounded Steps, each planned
-    from a fresh reading. Head yaw plays no part. Readings without a bearing
-    fail closed as `bearing_unavailable`, which is what the live distance
-    pipeline produces today. Stale readings, the alignment budget, the Step
-    cap and the wall-clock deadline are separate typed results, and the Tool
-    result carries every motion with the reading it was planned from. The simulated adapter has a
-    chassis heading and a relative-polar person; every turning and travel
-    constant is a simulated or hardware-unverified value.
-29. The greeting card's "過來陪我" script shows alignment, each Step with the
-    distance and bearing it was planned from, the chassis heading and the
-    untouched head yaw.
-30. Every movement checkpoint, before the first motion, before each motion
-    and at a fixed poll during it ending exactly at its end, asks whether a stop was
-    requested and whether the hazard source says the base may move. A stop
-    ends the call as `aborted` with no further command; a hazard halts the
-    motors and ends it as `blocked`; a missing or stale hazard reading is
-    `hazard_unavailable`, which is every real call today because no hazard
-    signal reaches this process. Every result carries a reason the model can
-    act on. The simulated world provides the scenario's hazard and departure
-    timeline; the greeting card has a target-lost and a hazard case.
-31. One Episode's local working context retains its Trigger Evidence, native
-    Tool calls/results, Snapshots, later utterances and activated Skill
-    instructions. `Session` and `run_episode` expose no cross-Episode memory
-    injection point; the old summary/fact/exchange store was removed.
-32. The optional `JsonlFile` keeps typed control-flow evidence but redacts
-    Decision Notes, spoken Tool text, listened transcript, Snapshot speech and
-    failure prose. Lossless `to_jsonl` remains for explicitly synthetic,
-    provenance-labelled fixtures.
-33. Demo responses are `no-store`. The A→B card labels the context retained
-    inside A's Episode and the reset before B; it is still a freshly executed
-    scripted simulation, not a real model or robot run.
-34. `respect_boundary` is a typed model Tool: it halts the Robot and ends the
-    Episode with `boundary_respected=True`. The persona tells the model to stop
-    questions and avoid further approach after an explicit request for space;
-    no transcript keyword matcher chooses the response.
-35. `SocialAgentRuntime` then keeps only an anonymous track token and expiry.
-    Same-track Care/Social cues receive typed `cue_suppressed` records;
-    another track remains eligible, and a new Explicit Request records a
-    bypass and opens immediately. TTL expiry, an empty visual scene, shutdown
-    and run completion clear the state.
-36. The care card's `respect-boundary` fixture shows the acknowledgement,
-    controller halt, suppression countdown, suppressed cue and explicit
-    bypass. Every decision and utterance is scripted and the robot is simulated.
+1. `SocialAgentRuntime` is the highest product seam for the command line, the
+   demo and the acceptance tests. Text, audio and visual providers enter
+   through one `InputSource` seam.
+2. The Attention Loop turns input into Interaction Cues (Explicit Request,
+   Social Invitation, Care Cue), queues them by priority, freshness and
+   deduplication, and gives one bounded ReAct Episode at a time ownership of
+   model context and robot effects.
+3. The audio path gates locally on "Hey Misty" and "Hi Misty" before any
+   hosted transcription. The visual gates form a Social Invitation from a
+   sustained look and a wave, and an uncertain Care Cue from sustained
+   observable face and posture geometry. Neither gate diagnoses emotion.
+4. Typed Trigger Evidence reaches the first Turn. The hosted adapter uses the
+   Responses API with reasoning set to `low`, keeps native tool call identity,
+   rejects more than one call in a Turn, stores nothing with the provider, and
+   passes encrypted reasoning items between the Turns of one Episode only.
+5. Each Episode binds one anonymous Interaction Target. Another person's
+   Explicit Request is queued and announced at a Turn boundary, and opens its
+   own Episode after `done`. Social context is discarded with its Episode.
+6. The Turn cap is twelve. Short public Decision Notes are typed Journal
+   records; private reasoning is never requested or stored.
 
-37. The persona tells the model to answer in the person's language and to
-    follow a change of language mid-Episode. The wake phrases stay English:
-    `Hey Misty` and `Hi Misty`, with no Chinese one added.
-38. For self-harm, medical danger or a request to be freed, the persona and
-    an `emergency-boundaries` Skill tell the model to stay, say what it
-    cannot do, and point at someone nearby or local emergency services —
-    never a diagnosis, a promise of safety, a claim of having contacted
-    anyone, or an offer of physical rescue. No Tool can reach off the robot,
-    so the contact claim cannot be true whatever is said.
-39. The care card has a Chinese high-risk case and an English rescue-limits
-    case. `tests/boundary_audit.py` reads spoken output as properties and is
-    proven able to fire offline; `tests/test_llm_live.py` runs the same audit
-    against a real model and reports it, deselected by default.
+### Tools and control
 
-40. The spec's fifteen situations are one declarative set in
-    `misty_agent/acceptance.py`: each names the card and fixture it runs,
-    whether an Episode may open, the records it must make observable, the
-    Tools that would make it unsafe, and whether the base may move. The
-    acceptance tests, the scripted `/scenarios/<card>/run` route and the
-    Demo's recorder call the same `run_fixture`.
-41. The Demo labels what a visitor is looking at — specification fixture,
-    scripted run, recorded model run or live-model run — and every one of
-    them carries the hardware-unverified note. Replay plays, pauses,
-    restarts and scrubs across every Moment of every Episode in the run.
-42. `tests/test_documentation_contract.py` pins one job per document and
-    fails on a claim the code has retired.
-43. The Demo page is in English and shows sixteen recorded hosted-model runs
-    (`misty_agent/demo/recordings/`, made by
-    `python -m misty_agent.demo.record`) instead of scripted runs. An
-    animated simulated Misty draws each Tool call: speech bubble and mouth,
-    arms, head, face, chest LED, wheels and approach distance, listening,
-    scanning and Skill loading. The live panel plays on the same stage.
-    Recording needs a key and costs a little; the suite never records.
+7. Sixteen Tools are registered: `speak`, `listen`, `wait`, `approach`,
+   `look_around`, `observe_target`, `inspect_scene`, `move_head`, `move_arms`,
+   `change_led`, `display_image`, `play_audio`, `activate_skill`,
+   `read_skill_resource`, `respect_boundary` and `done`.
+8. `approach` takes one argument, `keep`, with the values `close` (60 cm, the
+   default), `comfortable` (100 cm) and `far` (150 cm). The closed loop aligns
+   the chassis, moves in bounded steps from fresh readings and stops at the
+   first checkpoint that reports a stop request or a hazard. Readings without
+   a bearing fail closed, which is what the live distance pipeline produces.
+9. `wait(seconds)` keeps still for one to thirty seconds. Only a stop cuts it
+   short; speech heard meanwhile arrives on the following Snapshot.
+10. In text scenarios, `observe_target` and `inspect_scene` report the person
+    where the scenario placed them, labelled as simulated, through
+    `PlacedPersonPerception`. Visual fixtures still look through their gate.
+11. Tools and the controller depend on one `Robot` interface. The real
+    adapter maps behaviours to vendor requests and has never run on a robot;
+    the simulated adapter holds pose, chest light, speech and distance.
 
-Ticket 14 ends at `ab22bf5`; ticket 15 is the current implementation.
+### Boundaries
+
+12. Misty follows the person's language, including a change of language
+    partway through. For self-harm, medical danger or a request to be freed,
+    the persona and the `emergency-boundaries` Skill keep it present, honest
+    about its limits and pointing at local help. `respect_boundary` halts and
+    ends the Episode, and the runtime then suppresses repeated non-explicit
+    cues from the same anonymous track for a short time.
+13. `tests/boundary_audit.py` reads spoken output for diagnosis, promises of
+    safety and claims of contact. It runs over the scripted scenarios, every
+    recorded demo run and, when selected, the live model suite.
+
+### The demo
+
+14. `python -m misty_agent --demo` serves a loopback page with fifteen
+    recordings of `gpt-5.6-luna` from 2026-09-25, in five groups: noticing
+    someone, talking, moving, care, and knowing its limits. Recordings are
+    stored data; the playback is computed when a recording is served, so a
+    presentation change never needs a paid re-recording.
+15. The stage stands alone by default and the full conversation opens in a
+    drawer on its right, which the page remembers. The plain telling hides
+    the loop's bookkeeping and the hearing steps (wake, capture,
+    transcription), keeps the step where a visual gate made up its mind, and
+    shows each Decision Note as a thought cloud on a step of its own. Scene
+    titles such as "Talking with B" are frames of their own. Status labels sit
+    in the stage's top left, distance appears as a badge on the floor, and an
+    action is drawn with the pose its Observation confirmed.
+16. Three scripts exist for examples that are not on the demo yet:
+    `back-off`, `timer` and `show-off`. Each has authored decisions and
+    tests. They are left off the page on purpose until the body-language work.
+
+### Reverted on 2026-09-28
+
+17. A persona section on the body and a re-recording made with it were tried
+    and reverted, as recorded in `PLAN.md` §16.67. The body-language direction
+    is recorded instead in `.scratch/body-language/spec.md`, to be taken up
+    after publication. Because of the revert, the `come-closer` recording
+    still ends with "I can't see you right now"; the `PlacedPersonPerception`
+    fix will only show in a future recording.
 
 ## Verification
 
-Always use `.venv`, never bare `python3`:
+Always use `.venv`, never a bare `python3`:
 
 ```bash
 .venv/bin/python -m pytest tests/ -q -rs
 ```
 
 The default suite must make no hosted-model or network calls and must report
-zero skips. MediaPipe needs a macOS OpenGL context; a restricted shell can fail
-those tests even with the correct virtual environment, so run the final suite
-outside that sandbox rather than accepting partial green.
+zero skips. MediaPipe needs a macOS OpenGL context, so a restricted shell can
+fail those tests even with the correct environment; run the final suite
+outside such a sandbox rather than accepting a partial pass.
 
-To see the Demo:
+To see the demo:
 
 ```bash
 .venv/bin/python -m misty_agent --demo
 ```
 
-Pick a group and an example; it replays a recorded hosted-model run on the
-animated simulated robot. The page is loopback-only and needs no API key.
-To re-record the examples against the configured model (needs a key):
+To record the demo examples again (needs a key in `OPENAI_API_KEY` or
+`OAI_CONFIG_LIST.json`, never in `.env`):
 
 ```bash
 .venv/bin/python -m misty_agent.demo.record
@@ -195,48 +125,48 @@ To re-record the examples against the configured model (needs a key):
 
 ## Evidence boundary
 
-There is no Misty II available to this project, and there never will be. The
-wake path has run only with synthetic WAV files. The visual invitation path has
-run only with synthetic frame timelines and scripted local detections. Both use
-fake clocks, scripted model decisions, and simulated robot effects. MediaPipe
-is a local detector implementation but has not validated the temporal gate
-against a real camera. The vendor audio composition is wired to the same
-`LiveInputAdapter`, but it has never received Misty audio. Physical behaviour,
-timing, threshold calibration, association accuracy, and reliability are
-hardware-unverified.
+No Misty II has ever been available to this project, and none will be. The
+wake path has run only with synthetic WAV files and the visual gates only
+with synthetic frame timelines. Scenario tests use fake clocks, authored
+model decisions and simulated robot effects. The demo recordings are real
+model decisions over the same simulated inputs, which makes them evidence
+about one model on one day and nothing more. Physical behaviour, timing,
+calibration and reliability are hardware-unverified, and passing the movement
+safety tests is not a hardware safety certification.
 
-Handoff is target-aware only in the sense of anonymous track tokens; there is
-no face identity and no sound-source direction, and the A→B card's speaker
-attribution is scripted. Target-aware approach and its safety checkpoints
-are verified only against the simulated relative-polar world with
-scenario-provided hazard state: no bearing and no hazard signal has ever come
-from a Misty II, so the live path fails closed at the first checkpoint, and
-passing these tests is not a hardware safety certification. The care path is
-supported only by synthetic temporal frames and scripted model decisions; it
-is not validated emotion recognition. The A-to-B card runs only scripted text
-actors. A vendor hazard subscription for the real Session does not exist yet.
-
-Configured hosted ASR/VLM/LLM may receive bounded selected Evidence for the
-current Episode; ephemeral storage does not mean no external transfer occurs.
-No real-user media or transcript is written by the Demo.
+Speaker attribution in the two-person example is scripted: there is no face
+identity and no sound-source direction. Configured hosted services may receive
+bounded Evidence for the current Episode; ephemeral storage does not mean no
+external transfer occurs.
 
 ## Next ticket
 
-The social-runtime effort under `.scratch/social-react-runtime/` is
-finished: all fifteen tickets are resolved and the fifteen acceptance
-situations run in the default suite. `PLAN.md` §7 holds what comes after it.
+There is no open ticket. The next piece of work is publication, and the
+body-language spec follows it.
+
+**Publication** (agreed on 2026-09-28, replacing the plan in `PLAN.md` §1 and
+M10 to start a fresh repository):
+
+1. Keep the existing GitHub repository. Mark the previous version, commit
+   `e0bfa37` on `origin/main`, with a `v1-class-project` tag and a `legacy`
+   branch. The README already refers to both names.
+2. Fast-forward `main` to this branch. `origin/main` is an ancestor of it, so
+   no history is rewritten and no force push is needed.
+3. Before pushing, scan the full history for keys and personal data, and
+   check the licences of third-party material (the retained Misty SDK file,
+   the wake WAV fixtures, the PocketSphinx models).
+4. Record the decision in `PLAN.md`. Every push and tag is confirmed with the
+   user first.
+
+`docs/architecture.md` has not been revised for the demo changes and the new
+Tools since ticket 15, and should be before publication.
+
+**After publication**, grill the open questions in
+`.scratch/body-language/spec.md` before writing any code.
 
 Two rules to preserve in anything built next. `Session.episode()` is an
 internal one-Episode dependency: providers enter at `SocialAgentRuntime`
 through the shared `InputSource` seam, and
 `tests/test_acceptance_scenarios.py` fails if a second caller appears.
-Built-in scenarios are run by `misty_agent.acceptance.run_fixture` and
-nothing else, so the Demo's recordings and the tests cannot drift apart.
-
-## Local-work warning
-
-At the time of this handoff, `.env.example`, `CONTEXT.md`, `architecture.svg`,
-`docs/measurements/m4-harness-report.md`, `tests/conftest.py`,
-`.scratch/social-react-runtime/`, and `docs/adr/` contained user-owned work
-outside ticket 01. Do not overwrite or sweep those changes into an unrelated
-commit.
+Built-in scenarios are run by `misty_agent.acceptance.run_fixture` and nothing
+else, so the demo's recordings and the tests cannot drift apart.

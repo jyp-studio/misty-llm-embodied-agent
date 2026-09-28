@@ -1074,17 +1074,12 @@ function frame(clock) {
   placeBubble("person");
 }
 
-/* Where a line's bubble goes.
-   - One line that fits sits over the speaker's head, shifted a little the
-     way they face, with a clear gap above the head. It may cross the
-     middle of the stage, as long as it does not touch the other figure.
-   - A longer line is anchored at the middle and runs out towards the
-     speaker's own edge of the stage: Misty's ends at the middle, the
-     person's starts there. If the speaker has come past the middle, the
-     anchor is their front instead, so the bubble is still before them.
-   - It never overlaps the other figure, and wraps to as many rows as fit
-     above the speaker's head. */
-const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, over: 30, anchor: 60, keep: 16, edge: 12, max: 460, lines: 5 };
+/* Where a line's bubble goes: over the speaker's head, shifted a little
+   the way they face, with a clear gap above the head. A longer line
+   wraps, and may cross the middle of the stage like any other. The only
+   limits are the edges of the stage and the other figure, which a bubble
+   never touches; rows are capped by the room above the speaker's head. */
+const BUBBLE = { font: 20, line: 26, pad: 22, above: 46, over: 30, keep: 16, edge: 12, max: 460, lines: 5 };
 const bubbles = { misty: null, person: null };
 
 function figureBox(who, settled = false) {
@@ -1108,71 +1103,44 @@ function overlapsVertically(y, height, box) {
   return y < box.bottom && y + height > box.top;
 }
 
-// How far a one-row bubble's middle sits ahead of the speaker's head.
+// How far a bubble's middle sits ahead of the speaker's head.
 function ahead(width) { return width * 0.25 + 20; }
 
-function bubbleLayout(who, width, height, mode) {
-  // Place a bubble of this size for this speaker, now. Returns its box
-  // and its tail.
-  const me = figureBox(who);
-  const other = figureBox(who === "misty" ? "person" : "misty");
+function bubbleSpan(who, y, height, settled) {
+  // The stretch of stage a bubble at this height may use: between the
+  // edges, and short of the other figure if it would sit level with it.
+  const other = figureBox(who === "misty" ? "person" : "misty", settled);
   const { edge, keep } = BUBBLE;
-  const centre = STAGE.W / 2;
-  let x, y, bx, tip;
-  if (who === "misty") {
-    y = Math.max(edge, me.headTop - BUBBLE.above - height);
-    const limit = overlapsVertically(y, height, other) ? other.left - keep : STAGE.W - edge;
-    if (mode === "front") {
-      x = Math.min(me.headX + ahead(width) - width / 2, limit - width);
-    } else {
-      const right = Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor));
-      x = right - width;
-    }
-    x = Math.max(edge, x);
-    bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + 8));
-    tip = [me.headX + 8, me.headTop - 16];
-  } else {
-    y = Math.max(edge, me.headTop - BUBBLE.over - height);
-    const limit = overlapsVertically(y, height, other) ? other.right + keep : edge;
-    if (mode === "front") {
-      x = Math.max(limit, me.headX - ahead(width) - width / 2);
-      x = Math.min(x, STAGE.W - edge - width);
-      bx = Math.max(x + 28, Math.min(x + width - 28, me.headX - 12));
-      tip = [me.headX - 8, me.headTop - 10];
-    } else {
-      x = Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
-      x = Math.min(x, STAGE.W - edge - width);
-      bx = Math.max(x + 28, Math.min(x + width - 28, me.headX - 14));
-      tip = [me.headX - 8, me.headTop - 12];
-    }
-  }
+  const level = overlapsVertically(y, height, other);
+  if (who === "misty") return [edge, level ? other.left - keep : STAGE.W - edge];
+  return [level ? other.right + keep : edge, STAGE.W - edge];
+}
+
+function bubbleTop(who, height, settled = false) {
+  const me = figureBox(who, settled);
+  const gap = who === "misty" ? BUBBLE.above : BUBBLE.over;
+  return Math.max(BUBBLE.edge, me.headTop - gap - height);
+}
+
+function bubbleLayout(who, width, height) {
+  // Place a bubble of this size for this speaker, now: its box and tail.
+  const me = figureBox(who);
+  const facing = who === "misty" ? 1 : -1;
+  const y = bubbleTop(who, height);
+  const [from, to] = bubbleSpan(who, y, height, false);
+  let x = me.headX + facing * ahead(width) - width / 2;
+  x = Math.max(from, Math.min(x, to - width));
+  const bx = Math.max(x + 28, Math.min(x + width - 28, me.headX + facing * 10));
+  const tip = [me.headX + facing * 8, me.headTop - (who === "misty" ? 16 : 10)];
   return { x, y, base: [bx, y + height], tip };
 }
 
-function bubbleRoom(who, mode) {
-  // The widest a bubble may be in this mode, for where its speaker will be.
-  const me = figureBox(who, true);
-  const other = figureBox(who === "misty" ? "person" : "misty", true);
-  const { edge, keep } = BUBBLE;
-  const centre = STAGE.W / 2;
-  // The other figure only limits a bubble that would sit level with it;
-  // judged here for a bubble of one row, as the one being tried.
+function bubbleRoom(who) {
+  // The widest a bubble may be, for where its speaker will be; judged for
+  // a bubble of one row, as the first one tried.
   const oneRow = 34 + BUBBLE.line;
-  let room;
-  if (who === "misty") {
-    const y = Math.max(edge, me.headTop - BUBBLE.above - oneRow);
-    const limit = overlapsVertically(y, oneRow, other) ? other.left - keep : STAGE.W - edge;
-    room = mode === "front"
-      ? limit - edge
-      : Math.min(limit, Math.max(centre, me.headX + BUBBLE.anchor)) - edge;
-  } else {
-    const y = Math.max(edge, me.headTop - BUBBLE.over - oneRow);
-    const limit = overlapsVertically(y, oneRow, other) ? other.right + keep : edge;
-    room = mode === "front"
-      ? (STAGE.W - edge) - limit
-      : (STAGE.W - edge) - Math.max(limit, Math.min(centre, me.headX - BUBBLE.anchor));
-  }
-  return Math.max(160, Math.min(BUBBLE.max, room)) - BUBBLE.pad * 2;
+  const [from, to] = bubbleSpan(who, bubbleTop(who, oneRow, true), oneRow, true);
+  return Math.max(160, Math.min(BUBBLE.max, to - from)) - BUBBLE.pad * 2;
 }
 
 function rowsAbove(who) {
@@ -1217,12 +1185,7 @@ function setBubble(who, text, observed) {
   group.setAttribute("opacity", text ? "1" : "0");
   if (!text) { bubbles[who] = null; return; }
   const shown = observed ? `Observed: ${text}` : text;
-  let mode = "front";
-  let lines = wrapToWidth(shown, bubbleRoom(who, mode));
-  if (lines.length > 1) {
-    mode = "long";
-    lines = wrapToWidth(shown, bubbleRoom(who, mode), rowsAbove(who));
-  }
+  const lines = wrapToWidth(shown, bubbleRoom(who), rowsAbove(who));
   const node = byId(`${who}BubbleText`);
   node.textContent = "";
   lines.forEach((line, index) => {
@@ -1239,14 +1202,14 @@ function setBubble(who, text, observed) {
   const box = byId(`${who}BubbleBox`);
   box.setAttribute("width", String(width));
   box.setAttribute("height", String(height));
-  bubbles[who] = { width, height, mode };
+  bubbles[who] = { width, height };
 }
 
 function placeBubble(who) {
   // Called every frame, so a bubble follows Misty as it drives.
   const size = bubbles[who];
   if (!size) return;
-  const { x, y, base, tip } = bubbleLayout(who, size.width, size.height, size.mode);
+  const { x, y, base, tip } = bubbleLayout(who, size.width, size.height);
   byId(`${who}BubbleBody`).setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
   byId(`${who}BubbleTail`).setAttribute(
     "d", `M${(base[0] - 11).toFixed(1)} ${(base[1] - 2).toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] + 11).toFixed(1)} ${(base[1] - 2).toFixed(1)}`

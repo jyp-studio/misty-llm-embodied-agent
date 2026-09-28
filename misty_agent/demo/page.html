@@ -313,10 +313,12 @@
           <path class="cone" id="cone" d="" fill="var(--accent)" opacity=".16"/>
           <!-- The person Misty is talking to -->
           <g id="personFront"></g>
-          <!-- How far apart they are, measured along the floor at their feet -->
+          <!-- How far apart they are: a badge on the floor in front of them,
+               with a line out to each -->
           <g class="gap" id="gap" aria-hidden="true">
-            <path id="gapLine" d="" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round"/>
-            <text id="gapText" y="-8" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)"></text>
+            <path id="gapLine" d="" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-linecap="round"/>
+            <rect id="gapBadge" x="-32" y="-12" width="64" height="24" rx="12" fill="var(--card)" stroke="var(--line)"/>
+            <text id="gapText" y="4.5" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)" style="font-variant-numeric: tabular-nums"></text>
           </g>
 
           <!-- Speech bubbles, each with a tail to whoever is speaking -->
@@ -1262,22 +1264,36 @@ function frame(clock) {
   placeBubble("person");
 }
 
-/* How far apart Misty and the person are: a measuring line along the floor
-   from Misty's front wheel to the person's heel, with the real distance on
-   it. The stage gap is not to scale; the number is. */
+/* How far apart Misty and the person are: a badge with the real distance
+   on the floor just in front of them, and a line from it out towards each,
+   stopping short of their feet. The stage gap is not to scale; the number
+   is. The line gives way to the labels in the stage's corner. */
+const GAP = { z: STAGE.front + 30, clear: 12, badge: 32, tick: 6 };
 function drawGap(scene, x) {
-  const [x0, y] = project([x + 26, 0, STAGE.front]);
-  const [x1] = project([STAGE.personX - 18 * STAGE.personSize, 0, STAGE.front]);
-  const shown = scene.distanceKnown && scene.present && !scene.passing && x1 - x0 > 60;
-  byId("gap").classList.toggle("on", shown);
-  if (!shown) return;
-  // Ticks stand up from the floor, clear of the labels in the corner below.
-  const tick = 8;
-  byId("gapLine").setAttribute("d",
-    `M${x0.toFixed(1)} ${(y - tick).toFixed(1)} V${y.toFixed(1)} H${x1.toFixed(1)} V${(y - tick).toFixed(1)}`);
+  const gap = byId("gap");
+  const shown = scene.distanceKnown && scene.present && !scene.passing;
+  const [x0, y] = project([x + 26, 0, GAP.z]);
+  const [x1] = project([STAGE.personX - 30 * STAGE.personSize, 0, GAP.z]);
+  let left = x0 + GAP.clear;
+  const right = x1 - GAP.clear;
+  const senses = byId("senses");
+  if (senses.childElementCount) {
+    const box = byId("stage").getBoundingClientRect();
+    const corner = senses.getBoundingClientRect();
+    if (box.width) left = Math.max(left, ((corner.right - box.left) / box.width) * STAGE.W + GAP.clear);
+  }
+  const middle = (x0 + x1) / 2;
+  const room = Math.min(middle - left, right - middle) - GAP.badge;
+  gap.classList.toggle("on", shown && room > GAP.tick);
+  if (!shown || room <= GAP.tick) return;
+  const t = GAP.tick;
+  byId("gapLine").setAttribute("d", [
+    `M${left.toFixed(1)} ${(y - t).toFixed(1)} v${t * 2} M${left.toFixed(1)} ${y.toFixed(1)} H${(middle - GAP.badge).toFixed(1)}`,
+    `M${(middle + GAP.badge).toFixed(1)} ${y.toFixed(1)} H${right.toFixed(1)} M${right.toFixed(1)} ${(y - t).toFixed(1)} v${t * 2}`,
+  ].join(" "));
+  byId("gapBadge").setAttribute("transform", `translate(${middle.toFixed(1)} ${y.toFixed(1)})`);
   const text = byId("gapText");
-  text.setAttribute("x", ((x0 + x1) / 2).toFixed(1));
-  text.setAttribute("y", (y - 6).toFixed(1));
+  text.setAttribute("transform", `translate(${middle.toFixed(1)} ${y.toFixed(1)})`);
   text.textContent = `${Math.round(scene.distance)} cm`;
 }
 

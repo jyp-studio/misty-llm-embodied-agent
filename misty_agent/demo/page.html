@@ -110,7 +110,6 @@
   .chat .bubble-row { display: flex; flex-direction: column; }
   .chat .bubble { max-width: 86%; padding: 7px 12px; font-size: 14.5px; overflow-wrap: anywhere; border-radius: 16px; }
   .chat .person .bubble { align-self: flex-end; color: var(--person-ink); background: var(--person-bubble); border-bottom-right-radius: 5px; }
-  .chat .person .bubble.seen { font-style: italic; }
   .chat .says .bubble { align-self: flex-start; color: #fff; background: var(--misty); border-bottom-left-radius: 5px; }
   .chat .who { align-self: flex-end; margin-bottom: 2px; color: var(--person); font-size: 12px; font-weight: 600; }
   /* The model's own trace: small print before what it does, the way a
@@ -122,12 +121,10 @@
   .chat .act::before { flex: none; width: 6px; height: 6px; content: ""; background: var(--misty); border-radius: 50%; opacity: .7; transform: translateY(-1px); }
   .chat .result { margin-left: 3px; padding-left: 14px; color: var(--muted); font-size: 12.5px; border-left: 1.5px solid var(--line); }
   .chat .result.pushback { color: var(--world); border-left-color: var(--world); }
-  .chat .sense { color: var(--faint); font-size: 12.5px; }
-  .chat .sense svg { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; }
   .chat .marker { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; cursor: default; }
   .chat .marker::before, .chat .marker::after { flex: 1; height: 1px; content: ""; background: var(--line); }
   .chat .machinery { color: var(--faint); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .chat .act, .chat .result, .chat .sense, .chat .machinery { width: fit-content; max-width: 100%; padding: 1px 6px; margin-left: -6px; border-radius: 8px; }
+  .chat .act, .chat .result, .chat .machinery { width: fit-content; max-width: 100%; padding: 1px 6px; margin-left: -6px; border-radius: 8px; }
   .chat .result { margin-left: 3px; }
   .chat li[aria-current="true"] .hl { outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 2px; }
   .chat .empty { color: var(--faint); cursor: default; }
@@ -280,7 +277,7 @@
           <g class="obstacle" id="obstacle">
             <rect x="-17" y="-30" width="34" height="30" rx="7" fill="#f3d9a6" stroke="#c99a4a" stroke-width="1"/>
             <path d="M-11 -22 L11 -8 M-11 -8 L11 -22" stroke="#c99a4a" stroke-width="1.6" stroke-linecap="round"/>
-            <text x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)">blocked</text>
+            <text id="obstacleLabel" x="0" y="-38" text-anchor="middle" font-size="9" font-weight="700" fill="var(--world)" opacity="0">blocked</text>
           </g>
 
           <!-- A Skill Misty calls up: a card that rises from behind it and,
@@ -425,7 +422,7 @@ const state = {
   catalogue: [], group: null, selected: null,
   // `steps` is the whole run; `shown` is the plain telling of it, which is
   // what the controls walk. Everything is still there behind the switch.
-  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0,
+  steps: [], shown: [], replayTimer: null, replayAt: 0, runSerial: 0, blockedAt: null,
 };
 
 /* ---------- Catalogue ---------- */
@@ -495,6 +492,7 @@ function loadRun(run) {
     state.steps.filter((step) => step.actor).map((step) => step.actor)
   )];
   state.replayAt = 0;
+  state.blockedAt = blockedAt(state.steps);
   chooseShown();
   const hasSteps = state.shown.length > 0;
   byId("replayJournal").disabled = !hasSteps;
@@ -510,6 +508,15 @@ function loadRun(run) {
     byId("replayCounter").textContent = "";
     stepButtons();
   }
+}
+
+function blockedAt(steps) {
+  // Where an approach is stopped by something in the way, if one is: the
+  // obstacle is there from the start, and Misty finds it when it gets there.
+  const halt = steps.find((step) => step.kind === "observation"
+    && ["blocked", "hazard_unavailable"].includes(step.facts?.result?.result));
+  const distance = halt?.facts?.snapshot?.distance_cm;
+  return typeof distance === "number" ? distance : null;
 }
 
 function madeBy(provenance) {
@@ -613,10 +620,10 @@ function rowFor(step, many) {
   if (opensScene(step)) return `<div class="marker hl">${escapeText(sceneTitleOf(step))}</div>`;
   switch (step.voice) {
     case "person": {
-      const seen = step.kind === "observed_cue";
+      // A cue the camera observed is Misty's perception, not their words.
+      if (step.kind === "observed_cue") return `<div class="act hl">Sees: ${escapeText(seenIn(step))}</div>`;
       const who = many && step.actor ? `<span class="who">${escapeText(step.actor)}</span>` : "";
-      const words = seen ? `Seen: ${step.text}` : step.text;
-      return `<div class="bubble-row person">${who}<div class="bubble hl${seen ? " seen" : ""}">${escapeText(words)}</div></div>`;
+      return `<div class="bubble-row person">${who}<div class="bubble hl">${escapeText(step.text)}</div></div>`;
     }
     case "says":
       return `<div class="bubble-row says"><div class="bubble hl">${escapeText(step.text)}</div></div>`;
@@ -627,7 +634,7 @@ function rowFor(step, many) {
     case "result":
       return `<div class="result hl${step.pushback ? " pushback" : ""}">${escapeText(step.summary)}</div>`;
     case "sense":
-      return `<div class="sense hl" title="${escapeText(step.label || "")}">${iconSvg(iconFor(step))}${escapeText(step.summary)}</div>`;
+      return `<div class="act hl" title="${escapeText(step.label || "")}">${escapeText(step.summary)}</div>`;
     case "marker":
       return `<div class="marker hl">${escapeText(step.summary)}</div>`;
     default:
@@ -908,11 +915,14 @@ function sceneAt(index) {
   scene.caption = captionFor(scene);
   scene.index = index;
   // Somebody the camera watched who never looked at Misty, and never
-  // became anybody's Episode, is walking past.
-  scene.passing = scene.gazeKnown && !scene.looking && !scene.actor && scene.present;
+  // became anybody's Episode in the whole run, is walking past. Somebody
+  // who will, only not yet, is standing there with their head down.
+  const everAnEpisode = state.steps.some((step) => step.kind === "episode_started");
+  scene.passing = scene.gazeKnown && !scene.looking && !everAnEpisode && scene.present;
   // Who is speaking in this very step, if anybody.
-  const voice = state.steps[index]?.voice;
-  scene.speaking = voice === "says" ? "misty" : voice === "person" ? "person" : "";
+  const current = state.steps[index];
+  const said = current?.voice === "person" && current.kind !== "observed_cue";
+  scene.speaking = current?.voice === "says" ? "misty" : said ? "person" : "";
   return scene;
 }
 
@@ -931,14 +941,21 @@ function drawSenses(scene) {
   // labels in the corner of the stage rather than a panel of prose beside
   // it. How far away the person is goes on the floor between them.
   const chips = [];
-  const thinking = state.steps[scene.index]?.voice === "note";
-  const doing = scene.sensing || (thinking ? "Deciding what to do" : captionFor(scene));
+  const current = state.steps[scene.index];
+  const thinking = current?.voice === "note";
+  const seen = current?.kind === "observed_cue" ? `Sees: ${seenIn(current)}` : "";
+  const doing = seen || scene.sensing || (thinking ? "Deciding what to do" : captionFor(scene));
   if (doing) chips.push(["doing", doing]);
   if (scene.stopped) chips.push(["pushback", `Stopped: ${scene.stopped}`]);
   if (scene.faceKnown) chips.push(["", scene.present ? "Face in view" : "Nobody in view"]);
   if (scene.waiting) chips.push(["", `${scene.waiting} is waiting`]);
   byId("senses").innerHTML = chips
     .map(([kind, text]) => `<span class="${kind}">${escapeText(text)}</span>`).join("");
+}
+
+function seenIn(step) {
+  // What the camera made of them, without the label saying it was a cue.
+  return String(step.text || "").replace(/\s*\(observable cue\)$/, "");
 }
 
 function captionFor(scene) {
@@ -1186,7 +1203,8 @@ function drawScene(scene) {
   else if (stage.sound.at !== scene.soundAt) Object.assign(stage.sound, scene.sound, { at: scene.soundAt, since: performance.now(), hushed: null });
   // Misty's own words clear the air for its bubble.
   if (scene.speaking === "misty" && stage.sound.hushed === null) stage.sound.hushed = performance.now();
-  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle));
+  byId("obstacle").classList.toggle("on", Boolean(scene.obstacle) || state.blockedAt !== null);
+  byId("obstacleLabel").setAttribute("opacity", scene.obstacle ? "1" : "0");
   // A bubble shows while its line is the step being played, and is gone
   // once the run moves on.
   stage.distance = scene.distance;
@@ -1366,7 +1384,8 @@ function frame(clock) {
   byId("armLeft").setAttribute("transform", `rotate(${now.far.toFixed(1)} 22 -41)`);
   drawSkillCard(clock, mx, gy, k);
   drawSound(clock, mx, gy, k);
-  const [ox, oy] = project([now.x + 55, 0, STAGE.front]);
+  const ahead = state.blockedAt !== null ? mistyXFor(state.blockedAt) : now.x;
+  const [ox, oy] = project([ahead + 55, 0, STAGE.front]);
   byId("obstacle").setAttribute("transform", `translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${k.toFixed(4)})`);
 
   // The person: waving, walking past, or standing; with a face read from

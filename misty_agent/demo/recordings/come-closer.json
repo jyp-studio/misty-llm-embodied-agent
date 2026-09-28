@@ -1,13 +1,14 @@
 {
  "format": 1,
  "showcase": {
+  "group": "moving",
   "card": "greeting",
   "fixture": "come-closer",
   "title": "“Come keep me company”",
   "watch_for": "The chassis turns to face them, then closes in step by step."
  },
  "model": "gpt-5.6-luna",
- "recorded_on": "2026-09-25",
+ "recorded_on": "2026-09-28",
  "payload": {
   "scenario": {
    "name": "greeting",
@@ -192,6 +193,21 @@
      "input_kind": "text",
      "spec_scenario": 10,
      "situation": "A question that needs no movement: answer it, and do not drive over to demonstrate that driving exists."
+    },
+    {
+     "key": "back-off",
+     "label": "\"Could you back up a bit?\" · keeps far, and checks it is better",
+     "input_kind": "text"
+    },
+    {
+     "key": "timer",
+     "label": "\"Count three seconds\" · waits, then says time is up",
+     "input_kind": "text"
+    },
+    {
+     "key": "show-off",
+     "label": "\"Can you dance?\" · a little show composed out of its body",
+     "input_kind": "text"
     }
    ]
   },
@@ -200,9 +216,9 @@
     "kind": "recorded_model_run",
     "kind_means": "Recorded from a real run against a hosted model and replayed here without calling it again. The inputs come from the example; every decision was the model's own. The robot is simulated.",
     "hardware_unverified": "No Misty II has ever run any of this. Physical behaviour, timing and reliability are unverified.",
-    "headline": "Recorded from gpt-5.6-luna on 2026-09-25",
+    "headline": "Recorded from gpt-5.6-luna on 2026-09-28",
     "model": "gpt-5.6-luna",
-    "recorded_on": "2026-09-25",
+    "recorded_on": "2026-09-28",
     "robot": "Simulated Misty",
     "detail": "What people say, and when, is part of the example. Every decision was made by gpt-5.6-luna; this page replays that recording without calling it. The robot is simulated; no real camera, microphone or Misty II was used.",
     "audio": null,
@@ -255,22 +271,34 @@
      "detail": "emergency-boundaries: Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone. · supportive-interaction: Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer."
     },
     {
+     "kind": "decision_note",
+     "label": "Decision Note",
+     "headline": "I’ll come over and keep you company.",
+     "detail": "A public purpose, not private reasoning."
+    },
+    {
      "kind": "tool_call",
      "label": "Tool call",
      "headline": "speak",
-     "detail": "turn-1-tool"
+     "detail": "call_2k9Ge0L8cP5HpOc0cPpIeNG4"
     },
     {
      "kind": "observation",
      "label": "Observation",
-     "headline": "“Of course—I’m coming over to keep you company.”",
+     "headline": "“I’ll come over and keep you company.”",
      "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
+    },
+    {
+     "kind": "decision_note",
+     "label": "Decision Note",
+     "headline": "I’m coming over now so we can spend some time together.",
+     "detail": "A public purpose, not private reasoning."
     },
     {
      "kind": "tool_call",
      "label": "Tool call",
      "headline": "approach",
-     "detail": "turn-2-tool"
+     "detail": "call_cvmXmm0ybXiNEyzWD8VdZ6t1"
     },
     {
      "kind": "approach",
@@ -321,10 +349,16 @@
      "detail": "Current target: 67.0 cm at bearing 7.11°. Turning the head is not alignment; only the chassis heading counts. Simulated state."
     },
     {
+     "kind": "decision_note",
+     "label": "Decision Note",
+     "headline": "I’m here with you. What would you like to talk about?",
+     "detail": "A public purpose, not private reasoning."
+    },
+    {
      "kind": "tool_call",
      "label": "Tool call",
      "headline": "speak",
-     "detail": "turn-3-tool"
+     "detail": "call_q5sJoPBwX2iya9afd3d4V5hG"
     },
     {
      "kind": "observation",
@@ -333,88 +367,52 @@
      "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
     },
     {
-     "kind": "tool_call",
-     "label": "Tool call",
-     "headline": "listen",
-     "detail": "turn-4-tool"
-    },
-    {
-     "kind": "listening",
-     "label": "Tool result",
-     "headline": "Nothing new was heard",
-     "detail": "Listening ended: silence; unavailable, speaker not identified."
-    },
-    {
-     "kind": "tool_call",
-     "label": "Tool call",
-     "headline": "speak",
-     "detail": "turn-5-tool"
-    },
-    {
-     "kind": "observation",
-     "label": "Observation",
-     "headline": "“No rush—I’m happy to sit with you quietly, or we can talk whenever you’re ready.”",
-     "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
-    },
-    {
-     "kind": "tool_call",
-     "label": "Tool call",
-     "headline": "listen",
-     "detail": "turn-6-tool"
-    },
-    {
-     "kind": "listening",
-     "label": "Tool result",
-     "headline": "Nothing new was heard",
-     "detail": "Listening ended: silence; unavailable, speaker not identified."
-    },
-    {
-     "kind": "tool_call",
-     "label": "Tool call",
-     "headline": "speak",
-     "detail": "turn-7-tool"
-    },
-    {
-     "kind": "observation",
-     "label": "Observation",
-     "headline": "“I’ll stay nearby in spirit; call me whenever you’d like to talk.”",
-     "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
-    },
-    {
      "kind": "decision_note",
      "label": "Decision Note",
-     "headline": "I’ll check that you’re still nearby so I can remain present without interrupting you.",
+     "headline": "I’ll listen for what you’d like to share.",
      "detail": "A public purpose, not private reasoning."
     },
     {
      "kind": "tool_call",
      "label": "Tool call",
-     "headline": "observe_target",
-     "detail": "call_J4jRBEpSLW7vD3lBvjiY8ZFx"
+     "headline": "listen",
+     "detail": "call_hOTbgfd3tooXlYnUGGERb8vk"
     },
     {
-     "kind": "observation",
-     "label": "Observation",
-     "headline": "A cheap look at the target",
-     "detail": "unavailable · fresh for 1.0s · uncertainty kept"
+     "kind": "listening",
+     "label": "Tool result",
+     "headline": "Nothing new was heard",
+     "detail": "Listening ended: silence; unavailable, speaker not identified."
+    },
+    {
+     "kind": "decision_note",
+     "label": "Decision Note",
+     "headline": "No rush—I’m happy to sit with you quietly.",
+     "detail": "A public purpose, not private reasoning."
     },
     {
      "kind": "tool_call",
      "label": "Tool call",
      "headline": "speak",
-     "detail": "turn-9-tool"
+     "detail": "call_5cmVmbEQ1XkdptlmdYFtB4Gp"
     },
     {
      "kind": "observation",
      "label": "Observation",
-     "headline": "“I can’t see you right now, so I’ll pause here; come back and call me when you’d like company.”",
+     "headline": "“No rush—I’m happy to sit with you quietly.”",
      "detail": "Spoken in simulation; a Snapshot went back with the next Turn."
+    },
+    {
+     "kind": "decision_note",
+     "label": "Decision Note",
+     "headline": "I’ll stay available here without interrupting you.",
+     "detail": "A public purpose, not private reasoning."
     },
     {
      "kind": "tool_call",
      "label": "Tool call",
      "headline": "done",
-     "detail": "turn-10-tool"
+     "detail": "call_X7Aln2Z7MJqjtxyeYUhqiHan"
     },
     {
      "kind": "context_retained",
@@ -432,7 +430,7 @@
    "decision_explanation": {
     "available": true,
     "headline": "The Journal recorded a Decision Note",
-    "detail": "I’ll check that you’re still nearby so I can remain present without interrupting you."
+    "detail": "I’ll come over and keep you company."
    },
    "attention": {
     "active_cue": null,
@@ -470,14 +468,14 @@
      "cue_id": "cue-1"
     },
     {
-     "t": 19.2,
+     "t": 14.196,
      "type": "episode_completed",
      "cue_id": "cue-1",
-     "episode_id": "ep-1790348347-1",
+     "episode_id": "ep-1790578706-1",
      "outcome": "done"
     },
     {
-     "t": 19.2,
+     "t": 14.196,
      "type": "attention_stopped",
      "ending": "input_exhausted"
     }
@@ -508,16 +506,16 @@
      "detail": "selected cue-1"
     },
     {
-     "t": 19.2,
+     "t": 14.196,
      "type": "episode_completed",
      "cue_id": "cue-1",
-     "episode_id": "ep-1790348347-1",
+     "episode_id": "ep-1790578706-1",
      "outcome": "done",
      "headline": "Episode ended: done",
-     "detail": "ep-1790348347-1"
+     "detail": "ep-1790578706-1"
     },
     {
-     "t": 19.2,
+     "t": 14.196,
      "type": "attention_stopped",
      "ending": "input_exhausted",
      "headline": "Attention Loop stopped: input_exhausted",
@@ -530,11 +528,11 @@
      "cue_kind": "explicit_request",
      "outcome": {
       "outcome": "done",
-      "turns": 10,
+      "turns": 6,
       "steps": 6,
       "boundary_respected": false
      },
-     "episode_id": "ep-1790348347-1"
+     "episode_id": "ep-1790578706-1"
     }
    ]
   },
@@ -544,21 +542,21 @@
     "cue_id": "cue-1",
     "cue_kind": "explicit_request",
     "cue_text": "Misty, come over and keep me company.",
-    "episode_id": "ep-1790348347-1",
+    "episode_id": "ep-1790578706-1",
     "outcome": {
      "outcome": "done",
-     "turns": 10,
+     "turns": 6,
      "steps": 6,
      "boundary_respected": false
     },
     "moves": [],
     "storyboard": {
-     "episode_id": "ep-1790348347-1",
+     "episode_id": "ep-1790578706-1",
      "trigger": "speech",
-     "started_at": "2026-09-25T22:59:07+08:00",
+     "started_at": "2026-09-28T14:58:26+08:00",
      "outcome": "done",
      "ending": "it decided it was finished",
-     "turns": 10,
+     "turns": 6,
      "steps": 6,
      "moments": [
       {
@@ -590,7 +588,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"schema\": \"0.1.0-unstable\", \"started_at_wall_clock\": \"2026-09-25T22:59:07+08:00\", \"t\": 0.0, \"trigger\": \"speech\", \"type\": \"episode_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"schema\": \"0.1.0-unstable\", \"started_at_wall_clock\": \"2026-09-28T14:58:26+08:00\", \"t\": 0.0, \"trigger\": \"speech\", \"type\": \"episode_started\"}"
       },
       {
        "t": 0.0,
@@ -623,7 +621,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"source\": \"speech\", \"state\": \"bound\", \"t\": 0.0, \"track_reference\": \"person-a\", \"type\": \"target_bound\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"source\": \"speech\", \"state\": \"bound\", \"t\": 0.0, \"track_reference\": \"person-a\", \"type\": \"target_bound\"}"
       },
       {
        "t": 0.0,
@@ -663,7 +661,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"skills\": [{\"description\": \"Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone.\", \"name\": \"emergency-boundaries\"}, {\"description\": \"Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer.\", \"name\": \"supportive-interaction\"}], \"t\": 0.0, \"type\": \"skills_available\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"skills\": [{\"description\": \"Stay with someone describing self-harm, a medical emergency or being trapped, and point them at real help without diagnosing, promising rescue or claiming to have contacted anyone.\", \"name\": \"emergency-boundaries\"}, {\"description\": \"Support someone who explicitly asks for help calming down, using brief conversation and gentle expression without diagnosing or moving closer.\", \"name\": \"supportive-interaction\"}], \"t\": 0.0, \"type\": \"skills_available\"}"
       },
       {
        "t": 0.0,
@@ -692,14 +690,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 0.0, \"turn\": 1, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 0.0, \"turn\": 1, \"type\": \"turn_started\"}"
       },
       {
        "t": 0.0,
        "turn": 1,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "2416+69 tokens",
+       "detail": "2861+111 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -720,18 +718,49 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 2416,
-        "tokens_out": 69
+        "tokens_in": 2861,
+        "tokens_out": 111
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 0.0, \"tokens_in\": 2416, \"tokens_out\": 69, \"turn\": 1, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 0.0, \"tokens_in\": 2861, \"tokens_out\": 111, \"turn\": 1, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 0.0,
+       "turn": 1,
+       "kind": "decision_noted",
+       "headline": "decision note",
+       "detail": "I’ll come over and keep you company.",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool_call_id": "call_2k9Ge0L8cP5HpOc0cPpIeNG4"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"I’ll come over and keep you company.\", \"t\": 0.0, \"tool_call_id\": \"call_2k9Ge0L8cP5HpOc0cPpIeNG4\", \"turn\": 1, \"type\": \"decision_noted\"}"
       },
       {
        "t": 0.0,
        "turn": 1,
        "kind": "tool_called",
-       "headline": "speak(text='Of course—I’m coming over to keep you company.')",
+       "headline": "speak(text='I’ll come over and keep you company.')",
        "detail": "",
        "tone": "action",
        "robot": {
@@ -754,12 +783,12 @@
        "facts": {
         "tool": "speak",
         "args": {
-         "text": "Of course—I’m coming over to keep you company."
+         "text": "I’ll come over and keep you company."
         }
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {\"text\": \"Of course—I’m coming over to keep you company.\"}, \"episode_id\": \"ep-1790348347-1\", \"t\": 0.0, \"tool\": \"speak\", \"turn\": 1, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {\"text\": \"I’ll come over and keep you company.\"}, \"episode_id\": \"ep-1790578706-1\", \"t\": 0.0, \"tool\": \"speak\", \"turn\": 1, \"type\": \"tool_called\"}"
       },
       {
        "t": 0.001,
@@ -788,7 +817,7 @@
        "facts": {
         "result": {
          "ok": true,
-         "estimated_speech_ms": 4136
+         "estimated_speech_ms": 3682
         },
         "snapshot": {
          "distance_cm": 150,
@@ -803,7 +832,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"estimated_speech_ms\": 4136, \"ok\": true}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 0.001, \"turn\": 1, \"type\": \"observation\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"result\": {\"estimated_speech_ms\": 3682, \"ok\": true}, \"snapshot\": {\"distance_cm\": 150, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 0.001, \"turn\": 1, \"type\": \"observation\"}"
       },
       {
        "t": 0.001,
@@ -832,14 +861,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 0.001, \"turn\": 2, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 0.001, \"turn\": 2, \"type\": \"turn_started\"}"
       },
       {
        "t": 0.001,
        "turn": 2,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "2524+36 tokens",
+       "detail": "3052+50 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -860,18 +889,49 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 2524,
-        "tokens_out": 36
+        "tokens_in": 3052,
+        "tokens_out": 50
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 0.001, \"tokens_in\": 2524, \"tokens_out\": 36, \"turn\": 2, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 0.001, \"tokens_in\": 3052, \"tokens_out\": 50, \"turn\": 2, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 0.001,
+       "turn": 2,
+       "kind": "decision_noted",
+       "headline": "decision note",
+       "detail": "I’m coming over now so we can spend some time together.",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool_call_id": "call_cvmXmm0ybXiNEyzWD8VdZ6t1"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"I’m coming over now so we can spend some time together.\", \"t\": 0.001, \"tool_call_id\": \"call_cvmXmm0ybXiNEyzWD8VdZ6t1\", \"turn\": 2, \"type\": \"decision_noted\"}"
       },
       {
        "t": 0.001,
        "turn": 2,
        "kind": "tool_called",
-       "headline": "approach()",
+       "headline": "approach(keep='close')",
        "detail": "",
        "tone": "action",
        "robot": {
@@ -893,11 +953,13 @@
        },
        "facts": {
         "tool": "approach",
-        "args": {}
+        "args": {
+         "keep": "close"
+        }
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348347-1\", \"t\": 0.001, \"tool\": \"approach\", \"turn\": 2, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {\"keep\": \"close\"}, \"episode_id\": \"ep-1790578706-1\", \"t\": 0.001, \"tool\": \"approach\", \"turn\": 2, \"type\": \"tool_called\"}"
       },
       {
        "t": 9.193,
@@ -1003,7 +1065,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"bearing_deg\": 7.11, \"distance_cm\": 67.0, \"motions\": [{\"bearing_deg\": 25.0, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 12.5}, {\"bearing_deg\": 12.53, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 6.265}, {\"bearing_deg\": 6.28, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 35.0, \"rotate_deg\": null}, {\"bearing_deg\": 8.18, \"distance_cm\": 115.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 33.5, \"rotate_deg\": null}, {\"bearing_deg\": 11.5, \"distance_cm\": 82.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 5.75}, {\"bearing_deg\": 5.79, \"distance_cm\": 82.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 15.399999999999999, \"rotate_deg\": null}], \"reason\": \"within the arrival band after 6 motion(s)\", \"result\": \"arrived\", \"rotations\": 3, \"steps\": 6, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}, \"uncertainty\": [\"simulated relative bearing, not a camera measurement\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 9.193, \"turn\": 2, \"type\": \"observation\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"result\": {\"bearing_deg\": 7.11, \"distance_cm\": 67.0, \"motions\": [{\"bearing_deg\": 25.0, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 12.5}, {\"bearing_deg\": 12.53, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 6.265}, {\"bearing_deg\": 6.28, \"distance_cm\": 150.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 35.0, \"rotate_deg\": null}, {\"bearing_deg\": 8.18, \"distance_cm\": 115.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 33.5, \"rotate_deg\": null}, {\"bearing_deg\": 11.5, \"distance_cm\": 82.0, \"interrupted\": false, \"kind\": \"rotate\", \"move_cm\": null, \"rotate_deg\": 5.75}, {\"bearing_deg\": 5.79, \"distance_cm\": 82.0, \"interrupted\": false, \"kind\": \"forward\", \"move_cm\": 15.399999999999999, \"rotate_deg\": null}], \"reason\": \"within the arrival band after 6 motion(s)\", \"result\": \"arrived\", \"rotations\": 3, \"steps\": 6, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}, \"uncertainty\": [\"simulated relative bearing, not a camera measurement\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 9.193, \"turn\": 2, \"type\": \"observation\"}"
       },
       {
        "t": 9.193,
@@ -1032,14 +1094,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 9.193, \"turn\": 3, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 9.193, \"turn\": 3, \"type\": \"turn_started\"}"
       },
       {
        "t": 9.193,
        "turn": 3,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "2978+56 tokens",
+       "detail": "3541+75 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -1060,12 +1122,43 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 2978,
-        "tokens_out": 56
+        "tokens_in": 3541,
+        "tokens_out": 75
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 9.193, \"tokens_in\": 2978, \"tokens_out\": 56, \"turn\": 3, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 9.193, \"tokens_in\": 3541, \"tokens_out\": 75, \"turn\": 3, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 9.193,
+       "turn": 3,
+       "kind": "decision_noted",
+       "headline": "decision note",
+       "detail": "I’m here with you. What would you like to talk about?",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool_call_id": "call_q5sJoPBwX2iya9afd3d4V5hG"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"I’m here with you. What would you like to talk about?\", \"t\": 9.193, \"tool_call_id\": \"call_q5sJoPBwX2iya9afd3d4V5hG\", \"turn\": 3, \"type\": \"decision_noted\"}"
       },
       {
        "t": 9.193,
@@ -1099,7 +1192,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {\"text\": \"I’m here with you. What would you like to talk about?\"}, \"episode_id\": \"ep-1790348347-1\", \"t\": 9.193, \"tool\": \"speak\", \"turn\": 3, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {\"text\": \"I’m here with you. What would you like to talk about?\"}, \"episode_id\": \"ep-1790578706-1\", \"t\": 9.193, \"tool\": \"speak\", \"turn\": 3, \"type\": \"tool_called\"}"
       },
       {
        "t": 9.194,
@@ -1143,7 +1236,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"estimated_speech_ms\": 5500, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 9.194, \"turn\": 3, \"type\": \"observation\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"result\": {\"estimated_speech_ms\": 5500, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 9.194, \"turn\": 3, \"type\": \"observation\"}"
       },
       {
        "t": 9.194,
@@ -1172,14 +1265,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 9.194, \"turn\": 4, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 9.194, \"turn\": 4, \"type\": \"turn_started\"}"
       },
       {
        "t": 9.194,
        "turn": 4,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "3089+13 tokens",
+       "detail": "3696+56 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -1200,12 +1293,43 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 3089,
-        "tokens_out": 13
+        "tokens_in": 3696,
+        "tokens_out": 56
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 9.194, \"tokens_in\": 3089, \"tokens_out\": 13, \"turn\": 4, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 9.194, \"tokens_in\": 3696, \"tokens_out\": 56, \"turn\": 4, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 9.194,
+       "turn": 4,
+       "kind": "decision_noted",
+       "headline": "decision note",
+       "detail": "I’ll listen for what you’d like to share.",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool_call_id": "call_hOTbgfd3tooXlYnUGGERb8vk"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"I’ll listen for what you’d like to share.\", \"t\": 9.194, \"tool_call_id\": \"call_hOTbgfd3tooXlYnUGGERb8vk\", \"turn\": 4, \"type\": \"decision_noted\"}"
       },
       {
        "t": 9.194,
@@ -1237,7 +1361,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348347-1\", \"t\": 9.194, \"tool\": \"listen\", \"turn\": 4, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {}, \"episode_id\": \"ep-1790578706-1\", \"t\": 9.194, \"tool\": \"listen\", \"turn\": 4, \"type\": \"tool_called\"}"
       },
       {
        "t": 14.195,
@@ -1288,7 +1412,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"age_s\": null, \"ending\": \"silence\", \"fresh_for_s\": 5.0, \"kind\": \"listening\", \"source\": \"unavailable\", \"transcript\": null, \"uncertainty\": [\"Speaker attribution is unverified\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 14.195, \"turn\": 4, \"type\": \"observation\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"result\": {\"age_s\": null, \"ending\": \"silence\", \"fresh_for_s\": 5.0, \"kind\": \"listening\", \"source\": \"unavailable\", \"transcript\": null, \"uncertainty\": [\"Speaker attribution is unverified\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 14.195, \"turn\": 4, \"type\": \"observation\"}"
       },
       {
        "t": 14.195,
@@ -1317,14 +1441,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 14.195, \"turn\": 5, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 14.195, \"turn\": 5, \"type\": \"turn_started\"}"
       },
       {
        "t": 14.195,
        "turn": 5,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "3222+92 tokens",
+       "detail": "3872+91 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -1345,18 +1469,49 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 3222,
-        "tokens_out": 92
+        "tokens_in": 3872,
+        "tokens_out": 91
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 14.195, \"tokens_in\": 3222, \"tokens_out\": 92, \"turn\": 5, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 14.195, \"tokens_in\": 3872, \"tokens_out\": 91, \"turn\": 5, \"type\": \"model_called\"}"
+      },
+      {
+       "t": 14.195,
+       "turn": 5,
+       "kind": "decision_noted",
+       "headline": "decision note",
+       "detail": "No rush—I’m happy to sit with you quietly.",
+       "tone": "action",
+       "robot": {
+        "expression": "neutral",
+        "led": [
+         0,
+         0,
+         0
+        ],
+        "head": [
+         0.0,
+         0.0,
+         0.0
+        ],
+        "arms": [
+         90.0,
+         90.0
+        ]
+       },
+       "facts": {
+        "tool_call_id": "call_5cmVmbEQ1XkdptlmdYFtB4Gp"
+       },
+       "active_skills": [],
+       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"No rush—I’m happy to sit with you quietly.\", \"t\": 14.195, \"tool_call_id\": \"call_5cmVmbEQ1XkdptlmdYFtB4Gp\", \"turn\": 5, \"type\": \"decision_noted\"}"
       },
       {
        "t": 14.195,
        "turn": 5,
        "kind": "tool_called",
-       "headline": "speak(text='No rush—I’m happy to sit with you quietly, or we can talk whenever you’re ready.')",
+       "headline": "speak(text='No rush—I’m happy to sit with you quietly.')",
        "detail": "",
        "tone": "action",
        "robot": {
@@ -1379,12 +1534,12 @@
        "facts": {
         "tool": "speak",
         "args": {
-         "text": "No rush—I’m happy to sit with you quietly, or we can talk whenever you’re ready."
+         "text": "No rush—I’m happy to sit with you quietly."
         }
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {\"text\": \"No rush—I’m happy to sit with you quietly, or we can talk whenever you’re ready.\"}, \"episode_id\": \"ep-1790348347-1\", \"t\": 14.195, \"tool\": \"speak\", \"turn\": 5, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {\"text\": \"No rush—I’m happy to sit with you quietly.\"}, \"episode_id\": \"ep-1790578706-1\", \"t\": 14.195, \"tool\": \"speak\", \"turn\": 5, \"type\": \"tool_called\"}"
       },
       {
        "t": 14.196,
@@ -1413,7 +1568,7 @@
        "facts": {
         "result": {
          "ok": true,
-         "estimated_speech_ms": 7318
+         "estimated_speech_ms": 4136
         },
         "snapshot": {
          "distance_cm": 67,
@@ -1428,7 +1583,7 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"estimated_speech_ms\": 7318, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 14.196, \"turn\": 5, \"type\": \"observation\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"result\": {\"estimated_speech_ms\": 4136, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 14.196, \"turn\": 5, \"type\": \"observation\"}"
       },
       {
        "t": 14.196,
@@ -1457,14 +1612,14 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 14.196, \"turn\": 6, \"type\": \"turn_started\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"t\": 14.196, \"turn\": 6, \"type\": \"turn_started\"}"
       },
       {
        "t": 14.196,
        "turn": 6,
        "kind": "model_called",
        "headline": "model replied in 0ms",
-       "detail": "3339+73 tokens",
+       "detail": "4043+51 tokens",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -1485,304 +1640,19 @@
        },
        "facts": {
         "latency_ms": 0,
-        "tokens_in": 3339,
-        "tokens_out": 73
+        "tokens_in": 4043,
+        "tokens_out": 51
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 14.196, \"tokens_in\": 3339, \"tokens_out\": 73, \"turn\": 6, \"type\": \"model_called\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"latency_ms\": 0, \"t\": 14.196, \"tokens_in\": 4043, \"tokens_out\": 51, \"turn\": 6, \"type\": \"model_called\"}"
       },
       {
        "t": 14.196,
        "turn": 6,
-       "kind": "tool_called",
-       "headline": "listen()",
-       "detail": "",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "tool": "listen",
-        "args": {}
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348347-1\", \"t\": 14.196, \"tool\": \"listen\", \"turn\": 6, \"type\": \"tool_called\"}"
-      },
-      {
-       "t": 19.197,
-       "turn": 6,
-       "kind": "observation",
-       "headline": "returned",
-       "detail": "67cm away",
-       "tone": "result",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "result": {
-         "ending": "silence",
-         "transcript": null,
-         "source": "unavailable",
-         "age_s": null,
-         "fresh_for_s": 5.0,
-         "uncertainty": [
-          "Speaker attribution is unverified"
-         ],
-         "kind": "listening"
-        },
-        "snapshot": {
-         "distance_cm": 67,
-         "face_present": true,
-         "new_speech": null,
-         "target": {
-          "track_reference": "person-a",
-          "state": "bound",
-          "bound_at_s": 0.0
-         }
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"age_s\": null, \"ending\": \"silence\", \"fresh_for_s\": 5.0, \"kind\": \"listening\", \"source\": \"unavailable\", \"transcript\": null, \"uncertainty\": [\"Speaker attribution is unverified\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 19.197, \"turn\": 6, \"type\": \"observation\"}"
-      },
-      {
-       "t": 19.197,
-       "turn": 7,
-       "kind": "turn_started",
-       "headline": "turn 7",
-       "detail": "",
-       "tone": "boundary",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {},
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 19.197, \"turn\": 7, \"type\": \"turn_started\"}"
-      },
-      {
-       "t": 19.197,
-       "turn": 7,
-       "kind": "model_called",
-       "headline": "model replied in 0ms",
-       "detail": "3472+83 tokens",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "latency_ms": 0,
-        "tokens_in": 3472,
-        "tokens_out": 83
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 19.197, \"tokens_in\": 3472, \"tokens_out\": 83, \"turn\": 7, \"type\": \"model_called\"}"
-      },
-      {
-       "t": 19.197,
-       "turn": 7,
-       "kind": "tool_called",
-       "headline": "speak(text='I’ll stay nearby in spirit; call me whenever you’d like to talk.')",
-       "detail": "",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "tool": "speak",
-        "args": {
-         "text": "I’ll stay nearby in spirit; call me whenever you’d like to talk."
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {\"text\": \"I’ll stay nearby in spirit; call me whenever you’d like to talk.\"}, \"episode_id\": \"ep-1790348347-1\", \"t\": 19.197, \"tool\": \"speak\", \"turn\": 7, \"type\": \"tool_called\"}"
-      },
-      {
-       "t": 19.198,
-       "turn": 7,
-       "kind": "observation",
-       "headline": "ok",
-       "detail": "67cm away",
-       "tone": "result",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "result": {
-         "ok": true,
-         "estimated_speech_ms": 5955
-        },
-        "snapshot": {
-         "distance_cm": 67,
-         "face_present": true,
-         "new_speech": null,
-         "target": {
-          "track_reference": "person-a",
-          "state": "bound",
-          "bound_at_s": 0.0
-         }
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"estimated_speech_ms\": 5955, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"bound\", \"track_reference\": \"person-a\"}}, \"t\": 19.198, \"turn\": 7, \"type\": \"observation\"}"
-      },
-      {
-       "t": 19.198,
-       "turn": 8,
-       "kind": "turn_started",
-       "headline": "turn 8",
-       "detail": "",
-       "tone": "boundary",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {},
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 19.198, \"turn\": 8, \"type\": \"turn_started\"}"
-      },
-      {
-       "t": 19.198,
-       "turn": 8,
-       "kind": "model_called",
-       "headline": "model replied in 0ms",
-       "detail": "3585+79 tokens",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "latency_ms": 0,
-        "tokens_in": 3585,
-        "tokens_out": 79
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 19.198, \"tokens_in\": 3585, \"tokens_out\": 79, \"turn\": 8, \"type\": \"model_called\"}"
-      },
-      {
-       "t": 19.198,
-       "turn": 8,
        "kind": "decision_noted",
        "headline": "decision note",
-       "detail": "I’ll check that you’re still nearby so I can remain present without interrupting you.",
+       "detail": "I’ll stay available here without interrupting you.",
        "tone": "action",
        "robot": {
         "expression": "neutral",
@@ -1802,306 +1672,15 @@
         ]
        },
        "facts": {
-        "tool_call_id": "call_J4jRBEpSLW7vD3lBvjiY8ZFx"
+        "tool_call_id": "call_X7Aln2Z7MJqjtxyeYUhqiHan"
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"note\": \"I’ll check that you’re still nearby so I can remain present without interrupting you.\", \"t\": 19.198, \"tool_call_id\": \"call_J4jRBEpSLW7vD3lBvjiY8ZFx\", \"turn\": 8, \"type\": \"decision_noted\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"note\": \"I’ll stay available here without interrupting you.\", \"t\": 14.196, \"tool_call_id\": \"call_X7Aln2Z7MJqjtxyeYUhqiHan\", \"turn\": 6, \"type\": \"decision_noted\"}"
       },
       {
-       "t": 19.198,
-       "turn": 8,
-       "kind": "tool_called",
-       "headline": "observe_target()",
-       "detail": "",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "tool": "observe_target",
-        "args": {}
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348347-1\", \"t\": 19.198, \"tool\": \"observe_target\", \"turn\": 8, \"type\": \"tool_called\"}"
-      },
-      {
-       "t": 19.199,
-       "turn": 8,
-       "kind": "observation",
-       "headline": "returned",
-       "detail": "67cm away",
-       "tone": "result",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "result": {
-         "kind": "target_observation",
-         "cost": "cheap",
-         "ending": "unavailable",
-         "age_s": 0.0,
-         "fresh_for_s": 1.0,
-         "fresh": false,
-         "facts": {},
-         "uncertainty": [
-          "no selected visual observation is available"
-         ],
-         "target": {
-          "track_reference": "person-a",
-          "state": "lost",
-          "bound_at_s": 0.0
-         }
-        },
-        "snapshot": {
-         "distance_cm": 67,
-         "face_present": true,
-         "new_speech": null,
-         "target": {
-          "track_reference": "person-a",
-          "state": "lost",
-          "bound_at_s": 0.0
-         }
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"age_s\": 0.0, \"cost\": \"cheap\", \"ending\": \"unavailable\", \"facts\": {}, \"fresh\": false, \"fresh_for_s\": 1.0, \"kind\": \"target_observation\", \"target\": {\"bound_at_s\": 0.0, \"state\": \"lost\", \"track_reference\": \"person-a\"}, \"uncertainty\": [\"no selected visual observation is available\"]}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"lost\", \"track_reference\": \"person-a\"}}, \"t\": 19.199, \"turn\": 8, \"type\": \"observation\"}"
-      },
-      {
-       "t": 19.199,
-       "turn": 9,
-       "kind": "turn_started",
-       "headline": "turn 9",
-       "detail": "",
-       "tone": "boundary",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {},
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 19.199, \"turn\": 9, \"type\": \"turn_started\"}"
-      },
-      {
-       "t": 19.199,
-       "turn": 9,
-       "kind": "model_called",
-       "headline": "model replied in 0ms",
-       "detail": "3779+100 tokens",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "latency_ms": 0,
-        "tokens_in": 3779,
-        "tokens_out": 100
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 19.199, \"tokens_in\": 3779, \"tokens_out\": 100, \"turn\": 9, \"type\": \"model_called\"}"
-      },
-      {
-       "t": 19.199,
-       "turn": 9,
-       "kind": "tool_called",
-       "headline": "speak(text='I can’t see you right now, so I’ll pause here; come back and call me when you’d like company.')",
-       "detail": "",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "tool": "speak",
-        "args": {
-         "text": "I can’t see you right now, so I’ll pause here; come back and call me when you’d like company."
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {\"text\": \"I can’t see you right now, so I’ll pause here; come back and call me when you’d like company.\"}, \"episode_id\": \"ep-1790348347-1\", \"t\": 19.199, \"tool\": \"speak\", \"turn\": 9, \"type\": \"tool_called\"}"
-      },
-      {
-       "t": 19.2,
-       "turn": 9,
-       "kind": "observation",
-       "headline": "ok",
-       "detail": "67cm away",
-       "tone": "result",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "result": {
-         "ok": true,
-         "estimated_speech_ms": 9136
-        },
-        "snapshot": {
-         "distance_cm": 67,
-         "face_present": true,
-         "new_speech": null,
-         "target": {
-          "track_reference": "person-a",
-          "state": "lost",
-          "bound_at_s": 0.0
-         }
-        }
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"result\": {\"estimated_speech_ms\": 9136, \"ok\": true}, \"snapshot\": {\"distance_cm\": 67, \"face_present\": true, \"new_speech\": null, \"target\": {\"bound_at_s\": 0.0, \"state\": \"lost\", \"track_reference\": \"person-a\"}}, \"t\": 19.2, \"turn\": 9, \"type\": \"observation\"}"
-      },
-      {
-       "t": 19.2,
-       "turn": 10,
-       "kind": "turn_started",
-       "headline": "turn 10",
-       "detail": "",
-       "tone": "boundary",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {},
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"t\": 19.2, \"turn\": 10, \"type\": \"turn_started\"}"
-      },
-      {
-       "t": 19.2,
-       "turn": 10,
-       "kind": "model_called",
-       "headline": "model replied in 0ms",
-       "detail": "3901+31 tokens",
-       "tone": "action",
-       "robot": {
-        "expression": "neutral",
-        "led": [
-         0,
-         0,
-         0
-        ],
-        "head": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "arms": [
-         90.0,
-         90.0
-        ]
-       },
-       "facts": {
-        "latency_ms": 0,
-        "tokens_in": 3901,
-        "tokens_out": 31
-       },
-       "active_skills": [],
-       "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"latency_ms\": 0, \"t\": 19.2, \"tokens_in\": 3901, \"tokens_out\": 31, \"turn\": 10, \"type\": \"model_called\"}"
-      },
-      {
-       "t": 19.2,
-       "turn": 10,
+       "t": 14.196,
+       "turn": 6,
        "kind": "tool_called",
        "headline": "done()",
        "detail": "",
@@ -2129,13 +1708,13 @@
        },
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"args\": {}, \"episode_id\": \"ep-1790348347-1\", \"t\": 19.2, \"tool\": \"done\", \"turn\": 10, \"type\": \"tool_called\"}"
+       "line": "{\"args\": {}, \"episode_id\": \"ep-1790578706-1\", \"t\": 14.196, \"tool\": \"done\", \"turn\": 6, \"type\": \"tool_called\"}"
       },
       {
-       "t": 19.2,
-       "turn": 10,
+       "t": 14.196,
+       "turn": 6,
        "kind": "episode_finished",
-       "headline": "episode done after 10 turn(s)",
+       "headline": "episode done after 6 turn(s)",
        "detail": "6 step(s)",
        "tone": "boundary",
        "robot": {
@@ -2158,7 +1737,7 @@
        "facts": {},
        "active_skills": [],
        "skill_status": "Active Skills: none (not loaded, or the Episode has ended)",
-       "line": "{\"episode_id\": \"ep-1790348347-1\", \"outcome\": \"done\", \"steps\": 6, \"t\": 19.2, \"turns\": 10, \"type\": \"episode_finished\"}"
+       "line": "{\"episode_id\": \"ep-1790578706-1\", \"outcome\": \"done\", \"steps\": 6, \"t\": 14.196, \"turns\": 6, \"type\": \"episode_finished\"}"
       }
      ]
     }
@@ -2182,7 +1761,7 @@
      90.0
     ]
    },
-   "speech": "I can’t see you right now, so I’ll pause here; come back and call me when you’d like company.",
+   "speech": "No rush—I’m happy to sit with you quietly.",
    "sound": null,
    "halted": false,
    "halted_at_s": null,

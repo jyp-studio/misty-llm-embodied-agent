@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 
 import pytest
 
@@ -267,6 +268,19 @@ def told(key):
     return [step for step in playback(key) if step["tells_the_story"]]
 
 
+def called(steps, tool):
+    """The step where a Tool was called, found by the Tool rather than by
+    its wording: a re-recording is free to pick another argument."""
+    return next(
+        step for step in steps
+        if step["kind"] == "tool_called" and step["facts"]["tool"] == tool
+    )
+
+
+def turns_in(key):
+    return [step["kind"] for step in playback(key)].count("turn_started")
+
+
 def test_the_loops_own_bookkeeping_is_not_part_of_the_telling():
     """`turn 1`, `model replied in 0ms`, `available Skills`: how the loop
     works, not what happened in the room. `0ms` is not even true of a
@@ -278,7 +292,9 @@ def test_the_loops_own_bookkeeping_is_not_part_of_the_telling():
         "target_bound", "skills_available", "decision_noted",
     }
     assert "tool_called" in kinds
-    assert [step["kind"] for step in playback("hey-greeting-only")].count("turn_started") == 4
+    # Still in the playback, one per Turn, for the developer view.
+    calls = [step["kind"] for step in playback("hey-greeting-only")].count("tool_called")
+    assert turns_in("hey-greeting-only") == calls
 
 
 def test_an_approach_that_leaves_more_room_is_not_told_as_coming_closer():
@@ -298,9 +314,9 @@ def test_each_action_is_one_sentence_with_the_reason_on_it():
 
     assert said[0].startswith("“"), "the person speaks first"
     assert any(line.startswith("Says “") for line in said)
-    assert "Comes closer" in said
+    assert called(steps, "approach")["summary"] in said
     assert any("something is in the way" in line for line in said)
-    assert any("115cm away" in line for line in said)
+    assert any(re.search(r"\(\d+cm away\)", line) for line in said)
     # Whenever the model wrote a note, it rides on the call it was written
     # for rather than sitting in a row of its own. (Recorded runs do not
     # always carry one: `tool_choice` requires a call, not a sentence.)
@@ -364,7 +380,7 @@ def test_every_step_says_whose_it_is():
                 assert step["text"], (showcase.key, step["summary"])
 
     voices = {step["summary"]: step["voice"] for step in told("come-closer-hazard")}
-    assert voices["Comes closer"] == "acts"
+    assert called(told("come-closer-hazard"), "approach")["voice"] == "acts"
     assert voices["Nobody answers"] == "result"
     blocked = next(step for step in told("come-closer-hazard") if "in the way" in step["summary"])
     assert blocked["voice"] == "result" and blocked["pushback"]
@@ -381,7 +397,7 @@ def test_someone_speaking_during_an_episode_appears_where_they_spoke():
     asked = story.index("“Hey Misty, my turn.”")
     assert story.index("Listens for an answer") < asked
     assert asked < story.index("B is waiting for a turn")
-    assert asked < next(i for i, line in enumerate(story) if "goodbye" in line)
+    assert asked < next(i for i, line in enumerate(story) if "goodbye" in line.lower())
     who = {step["text"]: step.get("actor") for step in told("a-then-b") if step["voice"] == "person"}
     assert who["Hey Misty, my turn."] == "B"
 
@@ -398,4 +414,4 @@ def test_what_was_understood_keeps_the_order_it_was_understood_in():
         "Transcribed",
         "“Hey Misty, hello!”",
     ]
-    assert story[-1] == "Conversation over after 4 turns"
+    assert story[-1] == f"Conversation over after {turns_in('hey-greeting-only')} turns"

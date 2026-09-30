@@ -12,8 +12,11 @@
     --person: #8a8a8e; --person-bubble: #e9e9eb; --person-ink: #1d1d1f; --warn: #b42318; --ok: #1f7a3a; --stage: #f2f4f8; --floor: #dfe3ea;
     --misty: #0071e3; --world: #a85a00; --card: rgba(255, 255, 255, .84);
     --calm: #2aa8bd; --heat: #f0642c; --irk: #d98a00;
-    --room-top: #b3bbc7; --room-left: #bdc4ce; --room-right: #b9c1cb; --room-back: #c6cdd6;
-    --room-floor: #e1e5eb; --room-line: #d1d6de; --room-edge: #adb5c1; --room-pool: #f4f6f9;
+    /* A pale sky-blue room, lit by a window we never see. */
+    --room-top: #e3f0fb; --room-left: #d9eaf8; --room-right: #d9eaf8; --room-back: #e6f2fc; --room-back-low: #cfe5f7;
+    --room-floor: #f2f8fd; --room-line: #dae8f3; --room-edge: #cfe5f7; --room-pool: #fbfdff;
+    --room-light: #ffffff; --room-light-strength: 1; --plant-tone: none;
+    --stage-person-bubble: #ffffff; --bubble-shadow: #3b5b7a; --bubble-shadow-strength: .22;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -23,8 +26,11 @@
       --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
       --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
       --calm: #5ac8d8; --heat: #ff7a45; --irk: #f5b43c;
-      --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
-      --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
+      /* The same room at night: deep blue-slate, the window's light turned to moonlight. */
+      --room-top: #182231; --room-left: #1b2635; --room-right: #1b2635; --room-back: #22303f; --room-back-low: #1a2533;
+      --room-floor: #141c27; --room-line: #1f2a38; --room-edge: #2a3849; --room-pool: #2a3a4e;
+      --room-light: #d6e6fa; --room-light-strength: .22; --plant-tone: saturate(.7) brightness(.8);
+      --stage-person-bubble: #33455b; --bubble-shadow: #000000; --bubble-shadow-strength: .45;
     }
   }
   :root[data-theme="dark"] {
@@ -34,8 +40,11 @@
     --person: #98989d; --person-bubble: #3a3a3c; --person-ink: #f5f5f7; --warn: #ff6961; --ok: #32d74b;
     --misty: #2997ff; --world: #f5a524; --card: rgba(28, 28, 30, .84);
     --calm: #5ac8d8; --heat: #ff7a45; --irk: #f5b43c;
-    --room-top: #16181d; --room-left: #1b1e24; --room-right: #1a1d22; --room-back: #202329;
-    --room-floor: #131519; --room-line: #22252c; --room-edge: #2b2f37; --room-pool: #2c3440;
+    /* The same room at night: deep blue-slate, the window's light turned to moonlight. */
+    --room-top: #182231; --room-left: #1b2635; --room-right: #1b2635; --room-back: #22303f; --room-back-low: #1a2533;
+    --room-floor: #141c27; --room-line: #1f2a38; --room-edge: #2a3849; --room-pool: #2a3a4e;
+    --room-light: #d6e6fa; --room-light-strength: .22; --plant-tone: saturate(.7) brightness(.8);
+    --stage-person-bubble: #33455b; --bubble-shadow: #000000; --bubble-shadow-strength: .45;
   }
   * { box-sizing: border-box; }
   body {
@@ -256,6 +265,8 @@
             <linearGradient id="figureLight" gradientUnits="userSpaceOnUse" x1="-26" y1="-170" x2="26" y2="-140"><stop offset="0" stop-color="#fafafb"/><stop offset=".55" stop-color="#e9e9eb"/><stop offset="1" stop-color="#d2d3d8"/></linearGradient>
             <radialGradient id="skillHalo"><stop offset="0" stop-color="var(--misty)" stop-opacity=".9"/><stop offset="1" stop-color="var(--misty)" stop-opacity="0"/></radialGradient>
             <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+            <!-- Speech bubbles, bubble and tail as one, lift a little off the wall -->
+            <filter id="bubbleShadow" x="-20%" y="-30%" width="140%" height="170%"><feDropShadow dx="0" dy="1.5" stdDeviation="2.5" style="flood-color: var(--bubble-shadow); flood-opacity: var(--bubble-shadow-strength)"/></filter>
             <filter id="lift" x="-20%" y="-40%" width="140%" height="200%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1c2230" flood-opacity=".16"/></filter>
             <filter id="goo" x="-30%" y="-20%" width="160%" height="140%" color-interpolation-filters="sRGB">
               <feGaussianBlur stdDeviation="3.1"/>
@@ -353,17 +364,17 @@
             <text id="thoughtCloudText" y="31" font-size="15" font-style="italic" fill="var(--ink)"></text>
           </g>
           <text id="measureText" x="0" y="-100" font-size="16" visibility="hidden" aria-hidden="true"></text>
-          <g class="bubble" id="mistyBubble" opacity="0">
+          <g class="bubble" id="mistyBubble" opacity="0" filter="url(#bubbleShadow)">
             <path id="mistyBubbleTail" d="" fill="var(--misty)" stroke="var(--misty)" stroke-width="2" stroke-linejoin="round"/>
             <g id="mistyBubbleBody">
               <rect id="mistyBubbleBox" x="0" y="0" width="200" height="48" rx="18" fill="var(--misty)"/>
               <text id="mistyBubbleText" x="17" y="27" font-size="16" fill="#fff"></text>
             </g>
           </g>
-          <g class="bubble" id="personBubble" opacity="0">
-            <path id="personBubbleTail" d="" fill="var(--person-bubble)" stroke="var(--person-bubble)" stroke-width="2" stroke-linejoin="round"/>
+          <g class="bubble" id="personBubble" opacity="0" filter="url(#bubbleShadow)">
+            <path id="personBubbleTail" d="" fill="var(--stage-person-bubble)" stroke="var(--stage-person-bubble)" stroke-width="2" stroke-linejoin="round"/>
             <g id="personBubbleBody">
-              <rect id="personBubbleBox" x="0" y="0" width="200" height="48" rx="18" fill="var(--person-bubble)"/>
+              <rect id="personBubbleBox" x="0" y="0" width="200" height="48" rx="18" fill="var(--stage-person-bubble)"/>
               <text id="personBubbleText" x="17" y="27" font-size="16" fill="var(--person-ink)"></text>
             </g>
           </g>
@@ -1033,18 +1044,80 @@ function drawRoom() {
   let lines = "";
   for (let i = -4; i <= 4; i += 1) lines += line([i * 66.7, 0, FRONT], [i * 66.7, 0, B]);
   for (const z of [-420, -270, -110, 60, 220]) lines += line([-X, 0, z], [X, 0, z]);
+  // The back wall on screen, which the window light is clipped to.
+  const [wallX0, wallY0] = project([-X, TOP, B]), [wallX1, wallY1] = project([X, 0, B]);
   byId("room").innerHTML = `
+    <defs>
+      <linearGradient id="roomWall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--room-back)"/><stop offset="1" stop-color="var(--room-back-low)"/></linearGradient>
+      <clipPath id="roomWallClip"><rect x="${wallX0}" y="${wallY0}" width="${wallX1 - wallX0}" height="${wallY1 - wallY0}"/></clipPath>
+    </defs>
     <polygon points="${quad([[-X,TOP,B],[X,TOP,B],[X,TOP,FRONT],[-X,TOP,FRONT]])}" fill="var(--room-top)"/>
     <polygon points="${quad([[-X,0,B],[-X,0,FRONT],[-X,TOP,FRONT],[-X,TOP,B]])}" fill="var(--room-left)"/>
     <polygon points="${quad([[X,0,B],[X,0,FRONT],[X,TOP,FRONT],[X,TOP,B]])}" fill="var(--room-right)"/>
-    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="var(--room-back)"/>
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="url(#roomWall)"/>
     <polygon points="${quad([[-X,0,B],[X,0,B],[X,0,FRONT],[-X,0,FRONT]])}" fill="var(--room-floor)"/>
     <g stroke="var(--room-line)" stroke-width="1.2">${lines}</g>
-    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="none" stroke="var(--room-edge)"/>`;
+    <polygon points="${quad([[-X,0,B],[X,0,B],[X,TOP,B],[-X,TOP,B]])}" fill="none" stroke="var(--room-edge)"/>
+    <g clip-path="url(#roomWallClip)">${windowLight(wallY1)}</g>
+    ${snakePlant(196, 440, 1.25)}`;
   // Misty's tracks: four wheels, each with a spoke so driving shows.
   byId("wheels").innerHTML = [-20, -8, 4, 16].map((x) => `
     <g transform="translate(${x} -7)"><circle r="4.4" fill="#8a90a0"/>
       <g class="wheel-spokes"><circle r="4.4" fill="none"/><path d="M-3 0H3M0-3V3" stroke="#5b6070" stroke-width="1.1" stroke-linecap="round"/></g></g>`).join("");
+}
+
+/* Sun through a window we never see: three sheared panes on the back wall,
+   their left edges upright and their tops on one diagonal. Each is brightest
+   along its top edge and fades downwards, and each to the right is fainter,
+   so the last is only a sliver under the line. Drawn in stage pixels. */
+function windowLight(wallBottom) {
+  const X0 = 200, Y0 = 84, WIDTH = 130, GAP = 36, SLOPE = 0.6;
+  const floor = wallBottom - 46;   // a flat bottom, clear of the floor
+  const drop = SLOPE * WIDTH;
+  const tops = [0, 1, 2].map((i) => Y0 + SLOPE * i * (WIDTH + GAP));
+  const strengths = [0.6, 0.42, 0.3];
+  let gradients = "", panes = "";
+  strengths.forEach((top, i) => {
+    const last = i === strengths.length - 1;
+    gradients += `<linearGradient id="roomPane${i}" x1="0" y1="0" x2="0.12" y2="1">
+      <stop offset="0" stop-color="var(--room-light)" stop-opacity="${top}"/>
+      <stop offset="0.5" stop-color="var(--room-light)" stop-opacity="${(top * 0.45).toFixed(2)}"/>
+      <stop offset="1" stop-color="var(--room-light)" stop-opacity="${last ? (top * 0.2).toFixed(2) : 0}"/></linearGradient>`;
+    const x = X0 + i * (WIDTH + GAP), y = tops[i];
+    const f = (n) => n.toFixed(1);
+    // The last pane's bottom meets its top edge's low end: a right triangle.
+    const points = last
+      ? `${x},${f(y)} ${x + WIDTH},${f(y + drop)} ${x},${f(y + drop)}`
+      : `${x},${f(y)} ${x + WIDTH},${f(y + drop)} ${x + WIDTH},${f(floor)} ${x},${f(floor)}`;
+    panes += `<polygon points="${points}" fill="url(#roomPane${i})"/>`;
+  });
+  return `<defs>${gradients}<filter id="roomLightBlur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.5"/></filter></defs>
+    <g filter="url(#roomLightBlur)" style="opacity: var(--room-light-strength)">${panes}</g>`;
+}
+
+/* A snake plant in a white pot, standing in the corner behind Misty: tall
+   pointed leaves in two greens, each with a paler edge. Drawn in its own
+   units from the pot's foot at (x, y), then scaled. */
+function snakePlant(x, y, size) {
+  const leaves = [  // base x, tip x, tip y, half width, colour
+    [-10, -34, -150, 9, "#4e9e63"], [-3, -8, -178, 10, "#5fb273"],
+    [6, 22, -160, 9, "#4e9e63"], [13, 44, -118, 8, "#6cbf7f"],
+    [-16, -46, -108, 8, "#6cbf7f"], [2, 6, -132, 8, "#3f8a55"],
+  ];
+  const f = (n) => Number(n.toFixed(1));
+  const drawn = leaves.map(([base, tipX, tipY, half, colour]) => {
+    const lean = (tipX - base) * 0.35;
+    const left = [f(base - half * 1.4 + lean), f(tipY * 0.45)], right = [f(base + half * 1.4 + lean), f(tipY * 0.45)];
+    return `<path d="M${base - half} -26 Q${left[0]} ${left[1]} ${tipX} ${tipY} Q${right[0]} ${right[1]} ${base + half} -26 Z" fill="${colour}" stroke="#d9e8b6" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M${base} -26 Q${f((base + tipX) / 2)} ${f(tipY * 0.5)} ${tipX} ${tipY}" stroke="#fff" stroke-opacity=".25" stroke-width="1.5" fill="none"/>`;
+  }).join("");
+  return `<g class="plant" transform="translate(${x} ${y}) scale(${size})" style="filter: var(--plant-tone)">
+    <defs><linearGradient id="plantPot" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e9e1d8"/></linearGradient></defs>
+    <ellipse cx="0" cy="2" rx="30" ry="6" fill="#c9a98e" opacity=".25"/>
+    ${drawn}
+    <path d="M-26 -30 H26 Q25 -6 18 0 H-18 Q-25 -6 -26 -30 Z" fill="url(#plantPot)" stroke="#e2d6c8" stroke-width="1.5"/>
+    <rect x="-28" y="-34" width="56" height="7" rx="3.5" fill="#fff" stroke="#e2d6c8" stroke-width="1.5"/>
+  </g>`;
 }
 
 /* Misty's screen, in the head's own centimetres. */

@@ -27,11 +27,13 @@ choice, listens and adapts its response.</em></p>
 
 ## Demo
 
-The local demo presents 15 recordings of `gpt-5.6-luna` made on September 25,
-2026. The examples cover starting conversations, responding to visual cues,
+The local demo presents 15 recordings of `gpt-5.6-luna` made on September 25, 2026. The examples cover starting conversations, responding to visual cues,
 approaching a person, offering support and respecting a request for space.
 
 Start with **“Please help me calm down”** to follow a complete interaction.
+Text examples begin after the wake phrase: in a real room the person would
+first say “Hey Misty”. The “Hey Misty” example runs that step through the
+local wake detector.
 The stage shows speech, gestures, observations and public Decision Notes.
 Open the conversation panel to read the exchange, or use **Try it live** to
 send your own message to the model.
@@ -50,13 +52,6 @@ configured below and incurs API charges.
 <p align="center">
   <a href="assets/architecture.svg"><img src="assets/architecture.svg" width="100%" alt="System architecture in two panels. (a) A continuous stream of audio and camera frames passes through a voice gate and a visual gate, which form cues; the cue queue orders them by priority, and the selected cue's Trigger Evidence e opens an episode. (b) In the episode, the LLM policy reads Skills on demand and chooses one action per turn, stated as intent; a safety controller sets speed and duration; the observation, with a Snapshot of distance, face and speech, returns to the policy for the next turn. Frames from the demo show Misty loading a Skill, asking what kind of company the person wants, and hearing the reply."></a>
 </p>
-
-<p align="center"><em>Click the figure for full size. The trigger evidence
-e opens an episode. At turn t the policy reads Skills k<sub>t</sub> when
-needed, takes one action a<sub>t</sub> and observes o<sub>t</sub>, for at
-most T turns (<code>max_turns_per_episode</code>, 12 by default). The
-figure shows Skills read within a turn; the current code spends a turn on
-<code>activate_skill</code>. The robot and the room are simulated.</em></p>
 
 **Attention determines when to engage.** Local wake detection and temporal
 visual gates produce three kinds of cue: Explicit Request, Social Invitation
@@ -80,10 +75,6 @@ the control layer.
 selection, and the typed Journal captures tool calls, observations, outcomes
 and public Decision Notes. Episode context is discarded when the interaction
 ends. Optional persistent Journals redact personal prose.
-
-[The architecture note](docs/architecture.md) describes the interfaces and
-failure paths. [CONTEXT.md](CONTEXT.md) defines the vocabulary, and the
-[architecture decisions](docs/adr/) explain the principal design choices.
 
 ## Research directions
 
@@ -142,13 +133,13 @@ Always use `.venv/bin/python` and check that the suite reports zero skips.
 Missing MediaPipe or OpenCV dependencies can otherwise cause perception
 tests to be skipped.
 
-| Coverage | Evidence |
-| --- | --- |
-| Cue selection, expiry, interruptions and social boundaries | [15 acceptance contracts](misty_agent/acceptance.py) and [scenario tests](tests/test_acceptance_scenarios.py) |
-| Episode limits, tool arguments and control boundaries | [Invariant tests](tests/test_episode_invariants.py) and the [live model suite](tests/test_llm_live.py) |
-| Face perception, reading freshness and movement | [Perception tests](tests/test_perception_face.py), [replay harness](harness/) and [measurement reports](docs/measurements/) |
-| Misty REST requests and WebSocket events | [Driver contract tests](tests/test_drivers_contract.py) |
-| Recorded interactions | [Dated recordings](misty_agent/demo/recordings/) and [recording checks](tests/test_demo_recordings.py) |
+| Coverage                                                   | Evidence                                                                                                                    |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Cue selection, expiry, interruptions and social boundaries | [15 acceptance contracts](misty_agent/acceptance.py) and [scenario tests](tests/test_acceptance_scenarios.py)               |
+| Episode limits, tool arguments and control boundaries      | [Invariant tests](tests/test_episode_invariants.py) and the [live model suite](tests/test_llm_live.py)                      |
+| Face perception, reading freshness and movement            | [Perception tests](tests/test_perception_face.py), [replay harness](harness/) and [measurement reports](docs/measurements/) |
+| Misty REST requests and WebSocket events                   | [Driver contract tests](tests/test_drivers_contract.py)                                                                     |
+| Recorded interactions                                      | [Dated recordings](misty_agent/demo/recordings/) and [recording checks](tests/test_demo_recordings.py)                      |
 
 With an API key configured, run the model tests or record new demo examples:
 
@@ -161,7 +152,13 @@ Both commands call the hosted model and incur API charges.
 
 ## Scope
 
-**No Misty II has ever been available to this project, and none will be.**
+This project continues a class project that ran on a Misty II (see
+[Provenance](#provenance-and-license)). The robot stayed with the course, so
+this rebuild concentrates on what software can establish without it: the
+attention runtime, the bounded agent loop, the control layer and the
+evidence behind each.
+
+**No Misty II has been available since the course, and none will be.**
 Robot behaviour is evaluated in simulation. The demo combines scripted
 inputs with recorded model decisions; offline acceptance tests use authored
 decisions. Wake tests use synthetic audio, visual cue tests use authored
@@ -183,15 +180,16 @@ external processing.
 
 ## Extend the project
 
-| Area | Entry points |
-| --- | --- |
-| Attention and cue policy | [Runtime](misty_agent/runtime.py), [visual input](misty_agent/visual_input.py), [audio input](misty_agent/audio_input.py) |
-| Model and observation tools | [Agent](misty_agent/agent/), [perception](misty_agent/perception/) |
-| Behaviour instructions | [Local Skills](misty_agent/skills/) |
-| Motion and robot adapters | [Control](misty_agent/control/), [robot interface](misty_agent/robot/) |
-| Repeatable experiments | [Scenarios](misty_agent/scenarios.py), [acceptance runner](misty_agent/acceptance.py), [harness](harness/) |
+| Area                        | Entry points                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Attention and cue policy    | [Runtime](misty_agent/runtime.py), [visual input](misty_agent/visual_input.py), [audio input](misty_agent/audio_input.py) |
+| Model and observation tools | [Agent](misty_agent/agent/), [perception](misty_agent/perception/)                                                        |
+| Behaviour instructions      | [Local Skills](misty_agent/skills/)                                                                                       |
+| Motion and robot adapters   | [Control](misty_agent/control/), [robot interface](misty_agent/robot/)                                                    |
+| Repeatable experiments      | [Scenarios](misty_agent/scenarios.py), [acceptance runner](misty_agent/acceptance.py), [harness](harness/)                |
 
-[HANDOFF.md](HANDOFF.md) records the current state and next work.
+[The architecture note](docs/architecture.md) describes the interfaces and
+failure paths. [HANDOFF.md](HANDOFF.md) records the current state and next work.
 [PLAN.md](PLAN.md) preserves the decision history. The next planned extension
 is richer body language during speech, listening and model deliberation;
 its open design decisions are in the [body language spec](.scratch/body-language/spec.md).

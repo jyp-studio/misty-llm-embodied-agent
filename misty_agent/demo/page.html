@@ -298,7 +298,7 @@
             <g id="armLeft"><ellipse cx="22" cy="-32" rx="3.6" ry="9.5" transform="rotate(-8 22 -32)" fill="#e3e6ec" stroke="#d9dde5"/></g>
             <path d="M-15 -50 C-21 -50 -23 -42 -23.5 -32 L-24.5 -19 Q-24.5 -15 -20.5 -15 H20.5 Q24.5 -15 24.5 -19 L23.5 -32 C23 -42 21 -50 15 -50 Z" fill="url(#shell)" stroke="#d9dde5"/>
             <path d="M-15 -50 C-21 -50 -23 -42 -23.5 -32 L-24.5 -19 Q-24.5 -15 -20.5 -15 H-12 C-15 -26 -15 -40 -10 -50 Z" fill="#e3e6ec" opacity=".75"/>
-            <circle class="led-glow" id="ledGlow" cx="8" cy="-31" r="8" fill="url(#ledGlow)" opacity="0"/>
+            <circle class="led-glow" id="ledGlowDot" cx="8" cy="-31" r="8" fill="url(#ledGlow)" opacity="0"/>
             <circle cx="8" cy="-31" r="5.2" fill="none" stroke="#c9ced8" stroke-width="1.2"/>
             <circle id="led" cx="8" cy="-31" r="2.8" fill="#8a90a0"/>
             <circle id="ledFlash" cx="8" cy="-31" r="10" fill="url(#skillHalo)" opacity="0"/>
@@ -1200,8 +1200,8 @@ function drawScene(scene) {
   const [r, g, b] = robot.led || [0, 0, 0];
   const lit = r + g + b > 0;
   byId("led").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "#8a90a0");
-  byId("ledGlow").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "url(#ledGlow)");
-  byId("ledGlow").setAttribute("opacity", lit ? ".45" : "0");
+  byId("ledGlowDot").setAttribute("fill", lit ? `rgb(${r},${g},${b})` : "url(#ledGlow)");
+  byId("ledGlowDot").setAttribute("opacity", lit ? ".45" : "0");
   misty.classList.toggle("talking", scene.tool === "speak");
   misty.classList.toggle("listening", scene.tool === "listen");
   misty.classList.remove("flash");
